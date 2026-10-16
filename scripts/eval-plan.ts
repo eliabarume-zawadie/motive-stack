@@ -33,6 +33,7 @@ const PROVIDER = "openai";
 const MODEL = "gpt-6-luna";
 const SERVICE_TIER = "default";
 const DOCS_READ_ON = "2026-10-16";
+const WRITE = !process.argv.includes("--no-write"); // --no-write: compute and print only, leaving the committed plan files untouched
 
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 const fileSha = (p: string) => sha(readFileSync(p, "utf8").replace(/\r\n/g, "\n")); // line endings differ by checkout; the content is what matters
@@ -134,7 +135,7 @@ const plan = {
   commands,
 };
 mkdirSync("docs/eval", { recursive: true });
-writeFileSync("docs/eval/plan-original-vs-current.json", JSON.stringify(plan, null, 2) + "\n");
+if (WRITE) writeFileSync("docs/eval/plan-original-vs-current.json", JSON.stringify(plan, null, 2) + "\n");
 
 /* =============================================================================================== the document */
 const L: string[] = [];
@@ -276,5 +277,5 @@ L.push("7. **The model id is an alias** with no dated snapshot; behaviour could 
 L.push("8. **The original arm is a reconstruction** (section 7), the fixtures are 14 synthetic cases, and the evaluator is heuristic. A result is an indication, not proof of anything about marketing performance.");
 L.push("9. **The estimate of input tokens is calibrated on the current contract only** (section 4); the reserve uses the absolute figure for that reason.");
 L.push("10. **The plan's numbers are valid for the committed code.** Regenerate with `npm run eval:plan` after any change.", "");
-writeFileSync("docs/eval/plan-original-vs-current.md", L.join("\n"));
+if (WRITE) writeFileSync("docs/eval/plan-original-vs-current.md", L.join("\n"));
 console.log(`Plan written: ${requests} requests; estimated worst case ${estTotal} µUSD (${usd(estTotal)}); absolute worst case ${absTotal} µUSD (${usd(absTotal)}); ceiling ${CEILING} µUSD; max committed ${maxCommitted} µUSD; budgets ${budgets.original}/${budgets.current}. No network request was made.`);

@@ -1,0 +1,152 @@
+{
+  "startedAt": "2026-10-16T12:49:19.911Z",
+  "budgetMicros": 2000,
+  "reserve": {
+    "inputBytes": 664,
+    "reserveMicros": 145,
+    "fasterTierMicros": 288,
+    "fitsBudget": true,
+    "priceMatchesDocs": true,
+    "why": "within budget"
+  },
+  "httpRequests": 1,
+  "mode": "sent",
+  "parsedOk": true,
+  "adapter": {
+    "serviceTier": "default",
+    "usage": {
+      "inputTokens": 114,
+      "outputTokens": 17
+    },
+    "requestId": "req_9c2ea07d97dc4734b408a7d595daef3c",
+    "estimatedCostMicros": 20,
+    "costStatus": "estimated",
+    "latencyMs": 3169,
+    "attempts": 1
+  },
+  "request": {
+    "method": "POST",
+    "host": "api.openai.com",
+    "path": "/v1/responses",
+    "sent": {
+      "model": "gpt-6-luna",
+      "service_tier": "default",
+      "max_output_tokens": 128,
+      "reasoning": {
+        "effort": "none"
+      }
+    }
+  },
+  "http": {
+    "status": 200,
+    "requestId": "req_9c2ea07d97dc4734b408a7d595daef3c"
+  },
+  "response": {
+    "id": "resp_04956f4190b95819006ad21d5178e087d1a707af27ff792784",
+    "status": "completed",
+    "model": "gpt-6-luna",
+    "service_tier": "default",
+    "usage": {
+      "input_tokens": 114,
+      "output_tokens": 17,
+      "output_tokens_details": {
+        "reasoning_tokens": 0
+      }
+    }
+  },
+  "calculatedCostMicros": 20,
+  "ledger": {
+    "path": "docs/live-verification/ledger-tier-diagnostic.json",
+    "committedBefore": 0,
+    "chargedMicros": 20,
+    "committedAfter": 20
+  },
+  "checks": [
+    {
+      "id": "exactly_one_http_request",
+      "pass": true,
+      "detail": "1 request(s) were made"
+    },
+    {
+      "id": "request_targeted_responses_api",
+      "pass": true,
+      "detail": "POST api.openai.com/v1/responses"
+    },
+    {
+      "id": "request_pinned_model_tier_and_cap",
+      "pass": true,
+      "detail": "model=gpt-6-luna service_tier=default max_output_tokens=128"
+    },
+    {
+      "id": "http_200",
+      "pass": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "id": "request_id_returned",
+      "pass": true,
+      "detail": "header x-request-id=req_9c2ea07d97dc4734b408a7d595daef3c, response id=resp_04956f4190b95819006ad21d5178e087d1a707af27ff792784"
+    },
+    {
+      "id": "response_completed",
+      "pass": true,
+      "detail": "status=completed"
+    },
+    {
+      "id": "returned_tier_is_default",
+      "pass": true,
+      "detail": "response service_tier=\"default\""
+    },
+    {
+      "id": "adapter_reports_same_tier",
+      "pass": true,
+      "detail": "adapter serviceTier=\"default\""
+    },
+    {
+      "id": "model_is_gpt_6_luna",
+      "pass": true,
+      "detail": "response model=gpt-6-luna"
+    },
+    {
+      "id": "output_valid",
+      "pass": true,
+      "detail": "parsed and valid against the schema"
+    },
+    {
+      "id": "usage_present",
+      "pass": true,
+      "detail": "input_tokens=114 output_tokens=17"
+    },
+    {
+      "id": "output_within_cap",
+      "pass": true,
+      "detail": "17 <= 128"
+    },
+    {
+      "id": "adapter_usage_matches_response",
+      "pass": true,
+      "detail": "adapter 114/17 vs response 114/17"
+    },
+    {
+      "id": "cost_calculated_from_usage",
+      "pass": true,
+      "detail": "gateway 20 vs independent 20 micro-USD"
+    },
+    {
+      "id": "cost_within_reserve_and_budget",
+      "pass": true,
+      "detail": "20 <= reserve 145 <= budget 2000"
+    },
+    {
+      "id": "no_retry_or_repair",
+      "pass": true,
+      "detail": "1 attempt(s)"
+    },
+    {
+      "id": "ledger_recorded_within_budget",
+      "pass": true,
+      "detail": "charged 20, committed 20 of 2000"
+    }
+  ],
+  "passed": true
+}

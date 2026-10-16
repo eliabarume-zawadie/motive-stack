@@ -1,0 +1,17 @@
+{
+  "experiment": "tier-diagnostic",
+  "aggregateCeilingMicros": 2000,
+  "maxTotalRequests": 1,
+  "entries": [
+    {
+      "label": "tier-diagnostic",
+      "arm": "diagnostic",
+      "startedAt": "2026-10-16T12:49:19.911Z",
+      "status": "finished",
+      "reservedMicros": 288,
+      "requests": 1,
+      "chargedMicros": 20,
+      "finishedAt": "2026-10-16T12:49:23.082Z"
+    }
+  ]
+}

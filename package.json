@@ -21,7 +21,8 @@
     "local:preflight": "tsx scripts/local-preflight.ts",
     "test:local:ollama": "cross-env LIVE_TESTS=1 LOCAL_TESTS=1 AI_PROVIDER_MODE=local vitest run test/local/ollama.local.test.ts",
     "eval:campaigns": "tsx scripts/eval-campaigns.ts",
-    "eval:plan": "tsx scripts/eval-plan.ts"
+    "eval:plan": "tsx scripts/eval-plan.ts",
+    "live:tier-diagnostic": "tsx scripts/live-tier-diagnostic.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.134.0",

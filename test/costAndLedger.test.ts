@@ -214,7 +214,7 @@ describe("the evaluation command makes no network request unless it is asked to"
     expect(r.stderr).toMatch(/REFUSING TO RUN LIVE: set AI_PROVIDER_MODE=live and ALLOW_LIVE_PROVIDER_CALLS=true/);
   });
   it("the plan generator is also offline under the same blocked network", () => {
-    const out = execFileSync(process.execPath, ["--require", PRELOAD, "--import", "tsx", join(process.cwd(), "scripts", "eval-plan.ts")], { encoding: "utf8", timeout: 90_000 });
+    const out = execFileSync(process.execPath, ["--require", PRELOAD, "--import", "tsx", join(process.cwd(), "scripts", "eval-plan.ts"), "--no-write"], { encoding: "utf8", timeout: 90_000 });
     expect(out).toMatch(/No network request was made\./);
   });
 });
