@@ -243,6 +243,7 @@ export class AiGateway {
       usage: input === undefined && output === undefined ? null : { inputTokens: input, outputTokens: output, source: p.simulated ? "simulated" : "provider" },
       latencyMs: Math.round(performance.now() - t0), requestId: out.requestId,
       estimatedCostMicros: cost, costStatus, attempts,
+      ...(out.serviceTier ? { serviceTier: out.serviceTier } : {}),
     };
     assign(res, value);
     return res;

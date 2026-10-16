@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { AiGateway } from "../src/ai/gateway.js";
@@ -87,35 +88,63 @@ describe("evaluation run stop conditions (fake providers; no network)", () => {
 describe("the committed dry-run plan", () => {
   const plan = JSON.parse(readFileSync("docs/eval/plan-original-vs-current.json", "utf8"));
   const md = readFileSync("docs/eval/plan-original-vs-current.md", "utf8");
+  const script = readFileSync("scripts/eval-plan.ts", "utf8");
 
   it("made no network request and sends nothing", () => {
     expect(plan.networkUsed).toBe(false);
     expect(plan.status).toMatch(/PLAN ONLY/);
-    expect(md).toMatch(/nothing sent/i);
-    const script = readFileSync("scripts/eval-plan.ts", "utf8");
+    expect(md).toMatch(/NOTHING SENT/);
     expect(script).toContain("{ fetch: unknown }).fetch = () => { throw"); // fetch is replaced with a function that throws
-    expect(script).not.toMatch(/verifyModelAccess|api\.openai\.com|api\.anthropic\.com/);
+    expect(script).not.toMatch(/import[^;]*verifyModelAccess/); // the access check is never imported, so never reachable from the plan
+    expect(script).not.toMatch(/\bfetch\(/);
+  });
+  it("records the approved settings exactly", () => {
+    expect(plan.approvedSettings).toMatchObject({ model: "gpt-6-luna", cases: 14, repetitionsPerCasePerArm: 3, plannedGenerations: 84, maxOutputTokens: 2500, maxAggregateSpendMicros: 156000, retries: 0, repairs: 0, externalActions: "prohibited", deployment: "local only" });
+    expect(plan.approvedSettings.arms).toEqual(["original", "current"]);
+    expect(plan.model.id).toBe("gpt-6-luna");
   });
   it("covers the same 14 cases on both arms, and the request count follows from the design", () => {
-    expect(plan.design.cases).toBe(14);
     expect(plan.design.cases).toBe(EVAL_CASES.length);
     expect(plan.perCase.map((x: { id: string }) => x.id)).toEqual(EVAL_CASES.map((x) => x.id));
     expect(plan.design.primaryRequests).toBe(plan.design.cases * plan.design.arms.length * plan.design.repetitionsPerCasePerArm);
+    expect(plan.design.primaryRequests).toBe(84);
     expect(plan.design.retriesAllowed + plan.design.repairAttemptsAllowed).toBe(0);
     expect(plan.design.maxRequestsIncludingRetries).toBe(plan.design.primaryRequests);
   });
-  it("its cost ceiling is above the worst case and equals the sum of the per-invocation budgets", () => {
+  it("the cost bound is internally consistent and the most that can be committed stays within the approved ceiling", () => {
     const k = plan.cost;
-    expect(k.hardCeilingMicros).toBeGreaterThan(k.worstCaseTotalMicros);
-    expect(k.worstCaseTotalMicros).toBe((k.perRepWorstCaseMicros.original + k.perRepWorstCaseMicros.current) * plan.design.repetitionsPerCasePerArm);
-    expect((k.perInvocationBudgetMicros.original + k.perInvocationBudgetMicros.current) * plan.design.repetitionsPerCasePerArm).toBeGreaterThanOrEqual(k.hardCeilingMicros);
-    expect(k.worstCaseTotalMicros / 1e6).toBeLessThan(0.5); // sanity bound for a low-cost model
+    expect(k.hardCeilingMicros).toBe(156000);
+    expect(k.estimatedWorstCase.totalMicros).toBeLessThan(k.hardCeilingMicros);
+    expect(k.estimatedWorstCase.totalMicros).toBe((k.estimatedWorstCase.perRepetitionMicros.original + k.estimatedWorstCase.perRepetitionMicros.current) * 3);
+    expect(k.maxCommittedMicros).toBe(3 * (k.perInvocationBudgetMicros.original + k.perInvocationBudgetMicros.current) + k.maxAccessChecksCharged * k.accessCheckAllowanceMicros);
+    expect(k.maxCommittedMicros).toBeLessThanOrEqual(k.hardCeilingMicros);
+    // each budget leaves room for its arm's whole estimated worst case, so a normal run is never blocked by its own budget
+    expect(k.perInvocationBudgetMicros.original).toBeGreaterThan(k.estimatedWorstCase.perRepetitionMicros.original);
+    expect(k.perInvocationBudgetMicros.current).toBeGreaterThan(k.estimatedWorstCase.perRepetitionMicros.current);
+    expect(k.accessCheckAllowanceMicros).toBeGreaterThan(0); // the access check is never treated as free
   });
-  it("uses the recorded price and says it is provisional", () => {
+  it("the absolute bound is at least the estimate, and the document is honest when it exceeds the ceiling", () => {
+    const k = plan.cost;
+    expect(k.absoluteWorstCase.totalMicros).toBeGreaterThanOrEqual(k.estimatedWorstCase.totalMicros);
+    if (k.absoluteWorstCase.totalMicros > k.hardCeilingMicros) expect(md).toMatch(/cannot prove that all 84 requests fit/);
+    expect(md).toMatch(/spend cannot pass the ceiling/);
+    expect(md).toMatch(/Not all 84 requests are guaranteed to run/);
+  });
+  it("expected spend is derived from billed requests, below the estimate, and labelled an expectation", () => {
+    const e = plan.cost.expectedTotalMicros;
+    expect(e.low).toBeGreaterThan(0);
+    expect(e.high).toBeLessThan(plan.cost.estimatedWorstCase.totalMicros);
+    expect(e.basis).toMatch(/an expectation, not a bound/);
+    expect(plan.calibration.billedCostsMatchPriceTable).toBe(true);
+    expect(plan.calibration.billedToEstimatedInputRatio.max).toBeLessThan(1); // the estimate was above every billed input
+  });
+  it("uses the recorded price, pins the standard tier, and applies the regional uplift to every reserve", () => {
     const pricing = JSON.parse(readFileSync("config/ai-pricing.json", "utf8")).prices.find((p: { model: string }) => p.model === "gpt-6-luna");
     expect(plan.price.inputPerMTokMicros).toBe(pricing.inputPerMTokMicros);
     expect(plan.price.outputPerMTokMicros).toBe(pricing.outputPerMTokMicros);
-    expect(plan.price.status).toMatch(/PROVISIONAL/);
+    expect(plan.price.serviceTier).toBe("default");
+    expect(plan.price.regionalUpliftApplied).toBe(1.1);
+    for (const phrase of [/Fast \(priority\).*Twice the standard rates/, /Regional processing.*10% uplift/, /Long-context pricing/, /Cached input/, /Batch \/ Flex/, /does not say how they are billed/]) expect(md).toMatch(phrase);
   });
   it("names the same prompt, schema and evaluator versions as the code (a stale plan fails)", () => {
     expect(plan.identifiers.promptSha256.current).toBe(currentGenerationIdentity().promptSha256);
@@ -124,7 +153,40 @@ describe("the committed dry-run plan", () => {
     expect(plan.identifiers.schemaSha256.original).toBe(originalGenerationIdentity().schemaSha256);
     expect(plan.identifiers.evaluator).toBe(EVALUATOR_VERSION);
   });
-  it("states the stop conditions, the reconstructed dependencies and how schema validity is kept separate", () => {
-    for (const phrase of [/Budget exhaustion/, /retry or repair/, /Unknown or unmeasurable cost/, /Price record older than 14 days/, /Which results depend on reconstructed historical artifacts/, /Schema validity.*Reported separately and never merged into quality/s, /Decision rule, fixed in advance/, /No result is described as statistically significant/]) expect(md).toMatch(phrase);
+  it("the source fingerprints match the files on disk (the plan was regenerated after the last change)", () => {
+    for (const [file, sha] of Object.entries(plan.identifiers.evaluatorSourceSha256 as Record<string, string>)) {
+      expect(createHash("sha256").update(readFileSync(file, "utf8").replace(/\r\n/g, "\n")).digest("hex"), file).toBe(sha);
+    }
+  });
+  it("documents the access check precisely and never calls it free", () => {
+    expect(md).toMatch(/GET https:\/\/api\.openai\.com\/v1\/models\/gpt-6-luna/);
+    expect(md).toMatch(/not\*\* a generation endpoint/);
+    expect(md).toMatch(/states \*\*nothing\*\* about billing/);
+    expect(md).toMatch(/this plan does not claim it is free/);
+    expect(md).toMatch(/charged to the budget at an allowance of 500/);
+    expect(md).toMatch(/Not run in this task/);
+  });
+  it("states the stop conditions, the reconstructed dependencies, the fixed decision rule and separate scoring layers", () => {
+    for (const phrase of [/Budget would be passed/, /more than 1 attempt/, /cost cannot be determined/, /processing tier other than/, /Aggregate ceiling or request cap/, /earlier invocation halted/, /Price page differs/, /What depends on reconstructed historical artifacts/, /Everything on the original arm inherits that limit/, /Schema validity\*\*, against each arm's own contract/, /Decision rule, fixed before any result exists/, /No result is described as statistically significant/, /Every repetition is its own report/]) expect(md).toMatch(phrase);
+  });
+  it("the invocation list matches the approved settings: 6 invocations, one access check, ledger and limits on each, nothing else", () => {
+    const cmds: string[] = plan.commands;
+    expect(cmds).toHaveLength(6);
+    expect(cmds.filter((c) => c.includes("--check-access"))).toHaveLength(1);
+    for (const c of cmds) {
+      expect(c).toContain("--models openai/gpt-6-luna");
+      expect(c).toContain("--max-output 2500");
+      expect(c).toContain("--repair 0");
+      expect(c).toContain("--retries 0");
+      expect(c).toContain("--aggregate-ceiling-micros 156000");
+      expect(c).toContain("--max-total-requests 84");
+      expect(c).toContain("--ledger docs/eval/ledger-cmp-3-2.json");
+      expect(c).toMatch(/--yes-spend$/);
+      expect(c).not.toMatch(/gpt-5|anthropic|claude/i);
+    }
+    expect(cmds.filter((c) => c.includes("--prompt original"))).toHaveLength(3);
+    expect(cmds.filter((c) => c.includes("--prompt current"))).toHaveLength(3);
+    expect(cmds[0]).toContain("--prompt original"); // alternating order: original 1, current 1, original 2, ...
+    expect(cmds[1]).toContain("--prompt current");
   });
 });

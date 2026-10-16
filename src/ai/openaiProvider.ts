@@ -20,6 +20,11 @@ export interface OpenAIProviderOptions {
   effortByModel?: Record<string, string>;
   /** model id -> sampling temperature (from the registry). 0 is sent as 0. */
   temperatureByModel?: Record<string, number>;
+  /**
+   * Pin the processing tier ("default" = standard pricing). Left unset, the account's project setting decides, and a project
+   * configured for a faster tier would silently cost more. When set, the tier the response reports is returned so it can be checked.
+   */
+  serviceTier?: string;
 }
 
 /** Subset of the Responses API result we read. */
@@ -31,6 +36,7 @@ interface ResponseLike {
   output?: Array<{ type?: string; content?: Array<{ type?: string }> }>;
   output_text?: string;
   usage?: { input_tokens?: number; output_tokens?: number } | null;
+  service_tier?: string | null;
 }
 
 const num = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
@@ -77,6 +83,7 @@ export class OpenAIProvider implements AiProvider {
     this.applyEffort(body, req.model);
     const resp = await this.call(body, req.signal);
     this.rejectIncomplete(resp);
+    const serviceTier = resp.service_tier ?? undefined;
     const text = resp.output_text ?? "";
     let raw: unknown;
     try {
@@ -84,7 +91,7 @@ export class OpenAIProvider implements AiProvider {
     } catch {
       throw new AiError("invalid_output", `${this.label} returned malformed JSON`, { requestId: this.requestId(resp) });
     }
-    return { raw, model: req.model, simulated: false, usage: this.usage(resp), requestId: this.requestId(resp) };
+    return { raw, model: req.model, simulated: false, usage: this.usage(resp), requestId: this.requestId(resp), ...(serviceTier ? { serviceTier } : {}) };
   }
 
   async generateText(req: GenerateTextRequest): Promise<ProviderResult> {
@@ -98,6 +105,7 @@ export class OpenAIProvider implements AiProvider {
   private applyEffort(body: Record<string, unknown>, model: string): void {
     const effort = this.opts.effortByModel?.[model];
     if (effort) body.reasoning = { effort };
+    if (this.opts.serviceTier) body.service_tier = this.opts.serviceTier;
     const temperature = this.opts.temperatureByModel?.[model];
     if (temperature !== undefined) body.temperature = temperature;
   }

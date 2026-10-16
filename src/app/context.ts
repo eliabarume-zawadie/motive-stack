@@ -74,7 +74,7 @@ export function buildContext(o: BuildOptions): AppContext {
   const liveKey = (name: string) => (integrations.liveAi ? env[name] : undefined);
   const providers = o.aiProviders ?? [
     new MockAiProvider(),
-    new OpenAIProvider({ apiKey: liveKey("OPENAI_API_KEY"), models: registry.modelsFor("openai"), effortByModel: registry.effortFor("openai"), baseURL: env.OPENAI_BASE_URL }),
+    new OpenAIProvider({ apiKey: liveKey("OPENAI_API_KEY"), models: registry.modelsFor("openai"), effortByModel: registry.effortFor("openai"), baseURL: env.OPENAI_BASE_URL, serviceTier: env.OPENAI_SERVICE_TIER || undefined }),
     new AnthropicProvider({ apiKey: liveKey("ANTHROPIC_API_KEY"), models: registry.modelsFor("anthropic"), effortByModel: registry.effortFor("anthropic"), baseURL: env.ANTHROPIC_BASE_URL }),
     // Local model server on THIS machine. Eligible only in AI_PROVIDER_MODE=local; needs no key; loopback hosts only.
     new OllamaProvider({ models: registry.modelsFor("ollama"), temperatureByModel: registry.temperatureFor("ollama"), enabled: integrations.localAi, baseURL: env.OLLAMA_BASE_URL, timeoutMs: registry.entries.filter((e) => e.provider === "ollama").reduce((m, e) => Math.max(m, e.timeoutMs ?? 0), 0) || undefined }),

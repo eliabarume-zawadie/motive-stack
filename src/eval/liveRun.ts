@@ -54,6 +54,8 @@ export interface LiveOptions {
   maxOutputTokens: number;
   /** Per-request cost estimate used for the pre-check, in micro-USD. A request is not sent if spent + this would exceed the budget. */
   reserveMicros?: number;
+  /** Per-case reserve; takes precedence over reserveMicros. Used so each request reserves ITS OWN worst case. */
+  reserveForCase?: (c: import("./fixtures.js").EvalCase) => number;
   /**
    * Most attempts one request may take (default 1: no retry and no repair). A request that needed more HALTS the run: more
    * spend than planned happened, so nothing further is sent until a person looks.
@@ -61,6 +63,11 @@ export interface LiveOptions {
   maxAttemptsPerRequest?: number;
   /** Halt when a request's cost cannot be determined (default true): spend is then unmeasured, so the budget cannot be trusted. */
   haltOnUnknownCost?: boolean;
+  /**
+   * The processing tier the cost bound assumes (OpenAI: "default" = standard). When set, a response that reports a different tier,
+   * or none, HALTS the run: the price may differ (a faster tier is priced higher), so the bound no longer holds.
+   */
+  expectedServiceTier?: string;
 }
 
 /**
@@ -75,7 +82,8 @@ export function makeLiveGenerator(o: LiveOptions): { generate: Generator; spent:
   const haltOnUnknownCost = o.haltOnUnknownCost ?? true;
   const generate: Generator = async (c) => {
     if (halted) return { error: halted };
-    if (spent + reserve > o.budgetMicros) return { error: new BudgetExhausted(spent, o.budgetMicros).message };
+    const caseReserve = o.reserveForCase ? o.reserveForCase(c) : reserve;
+    if (spent + caseReserve > o.budgetMicros) return { error: new BudgetExhausted(spent, o.budgetMicros).message };
     const original = o.prompt === "original";
     const { system, prompt } = (original ? buildOriginalPrompt : o.prompt === "legacy" ? buildLegacyPrompt : buildCampaignPrompt)(c.brain);
     const identity = identityOf(o.prompt);
@@ -88,13 +96,14 @@ export function makeLiveGenerator(o: LiveOptions): { generate: Generator; spent:
         model: o.model, maxOutputTokens: o.maxOutputTokens,
       });
       if (r.estimatedCostMicros === null || r.estimatedCostMicros === undefined) {
-        spent += reserve; // unmeasured spend is charged at the worst-case reserve, never counted as free
+        spent += caseReserve; // unmeasured spend is charged at the worst-case reserve, never counted as free
         if (haltOnUnknownCost) halted = "stopped: a request's cost could not be determined (pricing uncertainty), so the budget can no longer be trusted";
       } else spent += r.estimatedCostMicros;
       if (r.attempts.length > maxAttempts) halted = `stopped: a request needed ${r.attempts.length} attempts (limit ${maxAttempts}); retries and repairs are not permitted in this run`;
+      if (o.expectedServiceTier && r.serviceTier !== o.expectedServiceTier) halted = `stopped: the provider reported the processing tier "${r.serviceTier ?? "none"}" instead of "${o.expectedServiceTier}", so the price assumed by the cost bound may not apply`;
       const meta: RunMeta = {
         model: `${r.provider}/${r.model}`, latencyMs: r.latencyMs, inputTokens: r.usage?.inputTokens, outputTokens: r.usage?.outputTokens,
-        costMicros: r.estimatedCostMicros, attempts: r.attempts.length, identity,
+        costMicros: r.estimatedCostMicros, attempts: r.attempts.length, identity, ...(r.serviceTier ? { serviceTier: r.serviceTier } : {}),
       };
       return { raw: r.structuredOutput, meta };
     } catch (e) {
@@ -105,7 +114,7 @@ export function makeLiveGenerator(o: LiveOptions): { generate: Generator; spent:
       let cost = 0;
       let unpriced = 0;
       for (const a of attempts) {
-        if (a.estimatedCostMicros === null || a.estimatedCostMicros === undefined) { unpriced++; cost += reserve; } else cost += a.estimatedCostMicros;
+        if (a.estimatedCostMicros === null || a.estimatedCostMicros === undefined) { unpriced++; cost += caseReserve; } else cost += a.estimatedCostMicros;
       }
       spent += cost;
       if (unpriced > 0 && haltOnUnknownCost) halted = "stopped: a failed request reported no usage, so its cost is only an estimate (pricing uncertainty)";
@@ -114,7 +123,7 @@ export function makeLiveGenerator(o: LiveOptions): { generate: Generator; spent:
       const meta: RunMeta = {
         identity, model: `${o.provider}/${o.model}`, attempts: attempts.length, latencyMs: attempts.reduce((s, a) => s + a.latencyMs, 0),
         inputTokens: sum("inputTokens"), outputTokens: sum("outputTokens"), costMicros: cost,
-        ...(unpriced ? { costNote: `${unpriced} attempt(s) reported no usage and were charged at the worst-case reserve (${reserve} micro-USD) instead of being treated as free` } : {}),
+        ...(unpriced ? { costNote: `${unpriced} attempt(s) reported no usage and were charged at the worst-case reserve (${caseReserve} micro-USD) instead of being treated as free` } : {}),
       };
       const message = `${err.kind ?? "error"}: ${String(err.message).slice(0, 300)}`;
       if (err.rawOutput !== undefined) return { raw: err.rawOutput, schemaError: message, meta };

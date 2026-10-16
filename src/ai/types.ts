@@ -95,6 +95,8 @@ export interface ProviderResult {
   model: string;
   usage?: Usage;
   requestId?: string;
+  /** The processing tier the provider says it used (affects price). Absent when the provider does not report one. */
+  serviceTier?: string;
   simulated: boolean;
 }
 
@@ -150,4 +152,6 @@ export interface GatewayResult<T> {
   estimatedCostMicros: number | null;
   costStatus: CostStatus;
   attempts: AttemptRecord[];
+  /** The processing tier reported by the provider for the final attempt, when it reports one. */
+  serviceTier?: string;
 }

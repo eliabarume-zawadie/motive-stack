@@ -259,3 +259,33 @@ describe("a cut-off response is billed, so its usage travels with the error (reg
     });
   }
 });
+
+describe("the processing tier is pinned on request and read back (it changes the price)", () => {
+  const withTier = (tier: string | undefined) => {
+    const r = openai.ok(JSON.stringify(BRIEF)) as { body: Record<string, unknown> };
+    if (tier) r.body.service_tier = tier;
+    return r as unknown as Reply;
+  };
+  it("sends service_tier when one is configured and returns what the provider reports", async () => {
+    const s = scripted([withTier("default")]);
+    const out = await new OpenAIProvider({ apiKey: KEY, models: ["test-model"], fetch: s.fetch, serviceTier: "default" }).generateObject(req("test-model"));
+    expect(s.captured[0]!.body.service_tier).toBe("default");
+    expect(out.serviceTier).toBe("default");
+  });
+  it("sends nothing about the tier when none is configured (existing behaviour is unchanged)", async () => {
+    const s = scripted([withTier(undefined)]);
+    const out = await new OpenAIProvider({ apiKey: KEY, models: ["test-model"], fetch: s.fetch }).generateObject(req("test-model"));
+    expect("service_tier" in s.captured[0]!.body).toBe(false);
+    expect(out.serviceTier).toBeUndefined();
+  });
+  it("reports a different tier as it came, so a caller can refuse it", async () => {
+    const s = scripted([withTier("priority")]);
+    const out = await new OpenAIProvider({ apiKey: KEY, models: ["test-model"], fetch: s.fetch, serviceTier: "default" }).generateObject(req("test-model"));
+    expect(out.serviceTier).toBe("priority");
+  });
+  it("the Anthropic adapter is unaffected", async () => {
+    const s = scripted([anthropic.ok(JSON.stringify(BRIEF))]);
+    await new AnthropicProvider({ apiKey: KEY, models: ["test-model"], fetch: s.fetch }).generateObject(req("test-model"));
+    expect("service_tier" in s.captured[0]!.body).toBe(false);
+  });
+});

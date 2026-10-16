@@ -1,12 +1,28 @@
 {
-  "generatedAt": "2026-10-16T11:54:02.207Z",
+  "generatedAt": "2026-10-16T12:44:39.742Z",
   "networkUsed": false,
   "status": "PLAN ONLY. Nothing here has been sent, and model access has not been checked.",
+  "approvedSettings": {
+    "model": "gpt-6-luna",
+    "cases": 14,
+    "arms": [
+      "original",
+      "current"
+    ],
+    "repetitionsPerCasePerArm": 3,
+    "plannedGenerations": 84,
+    "maxOutputTokens": 2500,
+    "maxAggregateSpendMicros": 156000,
+    "retries": 0,
+    "repairs": 0,
+    "externalActions": "prohibited",
+    "deployment": "local only"
+  },
   "model": {
     "provider": "openai",
     "id": "gpt-6-luna",
     "registryEntrySha256": "9df9a267cfd65edfb33ad21a658ffc133334bb8b73f9b1749a8fa73ae7b2c9f9",
-    "providerSnapshot": "not pinned: the provider id is an alias; the response's model id must be recorded per request"
+    "providerSnapshot": "not pinned: the provider id is an alias with no dated snapshot listed; the response's model id and service tier are recorded per request"
   },
   "price": {
     "inputPerMTokMicros": 100000,
@@ -21,8 +37,9 @@
     "appliesTo": "OpenAI standard tier, no cached input, no batch/flex/priority. Prompts over 272K input tokens: 2x input and 1.5x output for the full request. Regional processing adds 10% (not modelled). Reasoning tokens bill as output tokens.",
     "asOf": "2026-10-16",
     "source": "https://developers.openai.com/api/docs/pricing",
-    "status": "recorded locally, checked 2026-10-16 against https://developers.openai.com/api/docs/pricing; NOT re-verified for this plan (no network), so treated as PROVISIONAL",
-    "provisionalMargin": 1.25
+    "serviceTier": "default",
+    "status": "recorded locally 2026-10-16; the public pricing and models pages were read again on 2026-10-16 (see the document); the figures matched",
+    "regionalUpliftApplied": 1.1
   },
   "design": {
     "cases": 14,
@@ -56,16 +73,20 @@
     },
     "evaluator": "campaign-evaluator/3.2.0",
     "evaluatorSourceSha256": {
-      "src/eval/evaluate.ts": "ac339c90ba0085291bde389efb2148c1d747a18826727d6fdb5fc3704cdf27bb",
+      "src/eval/evaluate.ts": "18a0e8523a56316cfd588d3f50076f430b212be77f6881329fe3126cd74d4639",
       "src/eval/fixtures.ts": "4c11309b1d5a36c075fbfeffc34a5e9da544f91dc3725c0292185585e64c7ea3",
       "src/eval/report.ts": "8384962a49d328e8e38bc722bfb1617b40ece87f2295b26d9535d2bdecd1b86e",
-      "src/eval/liveRun.ts": "7d70ae8230a6a116c9803d855e0a1805596b7b0e2242fd5589577d58d985d88c",
+      "src/eval/liveRun.ts": "846690bc4dc7de6c0687c6ea464d232db93360fb35c22701edae06fb25d9eeb9",
+      "src/eval/costBound.ts": "f75de051303228ecf0d736f163ad7b355cb1cc5a35409210e5e1bd668af99f68",
+      "src/eval/ledger.ts": "55494ffd1ae5d7917bd7b5223b2c87845710e07ee0df1e4e3c6781ce7c0c14ac",
       "src/eval/original.ts": "498db7b785d75ae17b6c0952453a767ba09a4fbae9737ca5366fc9d9c595cacb",
       "src/domain/briefRules.ts": "2dcadbdd4ef4cd2f8bf4ee93c4ec91aaece3570ecdb6c8a307f7f01b4596049f",
       "src/domain/facts.ts": "90294580c1602d7d317c742b745deb1e4c1af43b909800a9aea181c92b53ddac",
       "src/domain/schemas.ts": "8e7d25844a38273de942ca5f6e265c129fa7ab26da517d2b59505e760a06dc20",
       "src/domain/campaignJsonSchema.ts": "a5cef0d147aa586705cf6d6d5a8cce053dbb3724cd2b98dbac85a3714e240839",
-      "src/app/campaignPrompt.ts": "bc037a3f00e8f61ee05f4caead2e10e2ba2f718babe89cfa38472a64e6baf57b"
+      "src/app/campaignPrompt.ts": "bc037a3f00e8f61ee05f4caead2e10e2ba2f718babe89cfa38472a64e6baf57b",
+      "src/ai/openaiProvider.ts": "ddae084bb238e1f42e141ee6b1f0b69a6af397bef1d977aa505192dbb87df9c7",
+      "scripts/eval-campaigns.ts": "6281285f9ba3fa0f13b85a75abe49a544d531fdd98205f93338f4898bd4ca2f8"
     },
     "fixturesSha256": "0c2fb7a3fc16c729d513332047a6ee248422ebc327588f87e3a1747fc89e659e",
     "configSha256": {
@@ -76,174 +97,374 @@
   },
   "cost": {
     "perRepWorstCaseMicros": {
-      "original": 19192,
+      "original": 19193,
       "current": 22377
     },
-    "worstCaseTotalMicros": 124707,
+    "worstCaseTotalMicros": 124710,
+    "estimatedWorstCase": {
+      "perRepetitionMicros": {
+        "original": 19193,
+        "current": 22377
+      },
+      "totalMicros": 124710,
+      "basis": "characters / 3 + 400 input tokens, full output cap, standard rates"
+    },
+    "absoluteWorstCase": {
+      "perRepetitionMicros": {
+        "original": 22985,
+        "current": 33487
+      },
+      "totalMicros": 169416,
+      "perRequestMaxMicros": {
+        "original": 1662,
+        "current": 2418
+      },
+      "basis": "one input token per UTF-8 byte (cannot be exceeded), full output cap, standard rates x 1.1 regional uplift"
+    },
+    "observedSpendShareOfEstimatedWorst": {
+      "min": 0.2927835051546392,
+      "max": 0.41506849315068495,
+      "samples": 6
+    },
+    "expectedTotalMicros": {
+      "low": 36513,
+      "high": 51763,
+      "basis": "estimated worst case x the share actually billed in six earlier requests; an expectation, not a bound"
+    },
     "hardCeilingMicros": 156000,
     "perInvocationBudgetMicros": {
-      "original": 24000,
-      "current": 28000
+      "original": 23500,
+      "current": 27500
     },
+    "accessCheckAllowanceMicros": 500,
+    "maxAccessChecksCharged": 6,
+    "maxCommittedMicros": 156000,
     "inputTokensPerRep": {
-      "original": 16866,
-      "current": 48704
+      "original": 16876,
+      "current": 48713
+    }
+  },
+  "calibration": {
+    "samples": [
+      {
+        "arm": "current",
+        "id": "plumbing-multi-differentiators",
+        "billedIn": 1780,
+        "billedOut": 819,
+        "billedMicros": 588,
+        "estIn": 3498,
+        "absIn": 9292,
+        "ratioBilledToEstimate": 0.5088622069754145,
+        "estWorst": 1600
+      },
+      {
+        "arm": "current",
+        "id": "hvac-no-approved-pricing",
+        "billedIn": 1759,
+        "billedOut": 753,
+        "billedMicros": 552,
+        "estIn": 3450,
+        "absIn": 9149,
+        "ratioBilledToEstimate": 0.5098550724637682,
+        "estWorst": 1595
+      },
+      {
+        "arm": "current",
+        "id": "roofing-tight-budget",
+        "billedIn": 1751,
+        "billedOut": 606,
+        "billedMicros": 478,
+        "estIn": 3452,
+        "absIn": 9155,
+        "ratioBilledToEstimate": 0.5072421784472769,
+        "estWorst": 1596
+      },
+      {
+        "arm": "legacy",
+        "id": "plumbing-multi-differentiators",
+        "billedIn": 1124,
+        "billedOut": 988,
+        "billedMicros": 606,
+        "estIn": 2092,
+        "absIn": 5075,
+        "ratioBilledToEstimate": 0.5372848948374761,
+        "estWorst": 1460
+      },
+      {
+        "arm": "legacy",
+        "id": "hvac-no-approved-pricing",
+        "billedIn": 1103,
+        "billedOut": 631,
+        "billedMicros": 426,
+        "estIn": 2044,
+        "absIn": 4932,
+        "ratioBilledToEstimate": 0.5396281800391389,
+        "estWorst": 1455
+      },
+      {
+        "arm": "legacy",
+        "id": "roofing-tight-budget",
+        "billedIn": 1096,
+        "billedOut": 732,
+        "billedMicros": 476,
+        "estIn": 2047,
+        "absIn": 4939,
+        "ratioBilledToEstimate": 0.5354176844162188,
+        "estWorst": 1455
+      }
+    ],
+    "billedCostsMatchPriceTable": true,
+    "billedToEstimatedInputRatio": {
+      "min": 0.5072421784472769,
+      "max": 0.5396281800391389
     }
   },
   "perCase": [
     {
       "id": "plumbing-multi-differentiators",
       "original": {
-        "inputTokens": 1225,
-        "micros": 1373
+        "chars": 2476,
+        "estimatedInputTokens": 1226,
+        "absoluteInputTokens": 2476,
+        "estimatedWorstMicros": 1373,
+        "absoluteWorstMicros": 1648
       },
       "current": {
-        "inputTokens": 3497,
-        "micros": 1600
+        "chars": 9292,
+        "estimatedInputTokens": 3498,
+        "absoluteInputTokens": 9292,
+        "estimatedWorstMicros": 1600,
+        "absoluteWorstMicros": 2398
       }
     },
     {
       "id": "hvac-no-approved-pricing",
       "original": {
-        "inputTokens": 1197,
-        "micros": 1370
+        "chars": 2393,
+        "estimatedInputTokens": 1198,
+        "absoluteInputTokens": 2393,
+        "estimatedWorstMicros": 1370,
+        "absoluteWorstMicros": 1640
       },
       "current": {
-        "inputTokens": 3449,
-        "micros": 1595
+        "chars": 9149,
+        "estimatedInputTokens": 3450,
+        "absoluteInputTokens": 9149,
+        "estimatedWorstMicros": 1595,
+        "absoluteWorstMicros": 2382
       }
     },
     {
       "id": "roofing-tight-budget",
       "original": {
-        "inputTokens": 1200,
-        "micros": 1370
+        "chars": 2400,
+        "estimatedInputTokens": 1200,
+        "absoluteInputTokens": 2400,
+        "estimatedWorstMicros": 1370,
+        "absoluteWorstMicros": 1640
       },
       "current": {
-        "inputTokens": 3451,
-        "micros": 1596
+        "chars": 9155,
+        "estimatedInputTokens": 3452,
+        "absoluteInputTokens": 9155,
+        "estimatedWorstMicros": 1596,
+        "absoluteWorstMicros": 2383
       }
     },
     {
       "id": "dental-missing-information",
       "original": {
-        "inputTokens": 1192,
-        "micros": 1370
+        "chars": 2376,
+        "estimatedInputTokens": 1192,
+        "absoluteInputTokens": 2376,
+        "estimatedWorstMicros": 1370,
+        "absoluteWorstMicros": 1637
       },
       "current": {
-        "inputTokens": 3444,
-        "micros": 1595
+        "chars": 9132,
+        "estimatedInputTokens": 3444,
+        "absoluteInputTokens": 9132,
+        "estimatedWorstMicros": 1595,
+        "absoluteWorstMicros": 2381
       }
     },
     {
       "id": "lawn-conflicting-claims",
       "original": {
-        "inputTokens": 1193,
-        "micros": 1370
+        "chars": 2380,
+        "estimatedInputTokens": 1194,
+        "absoluteInputTokens": 2380,
+        "estimatedWorstMicros": 1370,
+        "absoluteWorstMicros": 1637
       },
       "current": {
-        "inputTokens": 3463,
-        "micros": 1597
+        "chars": 9189,
+        "estimatedInputTokens": 3463,
+        "absoluteInputTokens": 9189,
+        "estimatedWorstMicros": 1597,
+        "absoluteWorstMicros": 2386
       }
     },
     {
       "id": "cleaning-no-demographic-evidence",
       "original": {
-        "inputTokens": 1204,
-        "micros": 1371
+        "chars": 2413,
+        "estimatedInputTokens": 1205,
+        "absoluteInputTokens": 2413,
+        "estimatedWorstMicros": 1371,
+        "absoluteWorstMicros": 1642
       },
       "current": {
-        "inputTokens": 3456,
-        "micros": 1596
+        "chars": 9169,
+        "estimatedInputTokens": 3457,
+        "absoluteInputTokens": 9169,
+        "estimatedWorstMicros": 1596,
+        "absoluteWorstMicros": 2384
       }
     },
     {
       "id": "electrician-character-limits",
       "original": {
-        "inputTokens": 1264,
-        "micros": 1377
+        "chars": 2594,
+        "estimatedInputTokens": 1265,
+        "absoluteInputTokens": 2594,
+        "estimatedWorstMicros": 1377,
+        "absoluteWorstMicros": 1662
       },
       "current": {
-        "inputTokens": 3516,
-        "micros": 1602
+        "chars": 9350,
+        "estimatedInputTokens": 3517,
+        "absoluteInputTokens": 9350,
+        "estimatedWorstMicros": 1602,
+        "absoluteWorstMicros": 2404
       }
     },
     {
       "id": "locksmith-prompt-injection",
       "original": {
-        "inputTokens": 1200,
-        "micros": 1370
+        "chars": 2401,
+        "estimatedInputTokens": 1201,
+        "absoluteInputTokens": 2401,
+        "estimatedWorstMicros": 1371,
+        "absoluteWorstMicros": 1641
       },
       "current": {
-        "inputTokens": 3559,
-        "micros": 1606
+        "chars": 9478,
+        "estimatedInputTokens": 3560,
+        "absoluteInputTokens": 9478,
+        "estimatedWorstMicros": 1606,
+        "absoluteWorstMicros": 2418
       }
     },
     {
       "id": "salon-fabricated-testimonials",
       "original": {
-        "inputTokens": 1185,
-        "micros": 1369
+        "chars": 2357,
+        "estimatedInputTokens": 1186,
+        "absoluteInputTokens": 2357,
+        "estimatedWorstMicros": 1369,
+        "absoluteWorstMicros": 1635
       },
       "current": {
-        "inputTokens": 3501,
-        "micros": 1601
+        "chars": 9303,
+        "estimatedInputTokens": 3501,
+        "absoluteInputTokens": 9303,
+        "estimatedWorstMicros": 1601,
+        "absoluteWorstMicros": 2400
       }
     },
     {
       "id": "pest-control-sufficient-information",
       "original": {
-        "inputTokens": 1213,
-        "micros": 1372
+        "chars": 2440,
+        "estimatedInputTokens": 1214,
+        "absoluteInputTokens": 2440,
+        "estimatedWorstMicros": 1372,
+        "absoluteWorstMicros": 1644
       },
       "current": {
-        "inputTokens": 3506,
-        "micros": 1601
+        "chars": 9320,
+        "estimatedInputTokens": 3507,
+        "absoluteInputTokens": 9320,
+        "estimatedWorstMicros": 1601,
+        "absoluteWorstMicros": 2401
       }
     },
     {
       "id": "mortgage-special-ad-category",
       "original": {
-        "inputTokens": 1197,
-        "micros": 1370
+        "chars": 2391,
+        "estimatedInputTokens": 1197,
+        "absoluteInputTokens": 2391,
+        "estimatedWorstMicros": 1370,
+        "absoluteWorstMicros": 1640
       },
       "current": {
-        "inputTokens": 3449,
-        "micros": 1595
+        "chars": 9147,
+        "estimatedInputTokens": 3449,
+        "absoluteInputTokens": 9147,
+        "estimatedWorstMicros": 1595,
+        "absoluteWorstMicros": 2382
       }
     },
     {
       "id": "plumbing-contradictory-ownership-fact",
       "original": {
-        "inputTokens": 1208,
-        "micros": 1371
+        "chars": 2426,
+        "estimatedInputTokens": 1209,
+        "absoluteInputTokens": 2426,
+        "estimatedWorstMicros": 1371,
+        "absoluteWorstMicros": 1643
       },
       "current": {
-        "inputTokens": 3476,
-        "micros": 1598
+        "chars": 9230,
+        "estimatedInputTokens": 3477,
+        "absoluteInputTokens": 9230,
+        "estimatedWorstMicros": 1598,
+        "absoluteWorstMicros": 2391
       }
     },
     {
       "id": "electrician-negated-and-pending-facts",
       "original": {
-        "inputTokens": 1199,
-        "micros": 1370
+        "chars": 2397,
+        "estimatedInputTokens": 1199,
+        "absoluteInputTokens": 2397,
+        "estimatedWorstMicros": 1370,
+        "absoluteWorstMicros": 1640
       },
       "current": {
-        "inputTokens": 3475,
-        "micros": 1598
+        "chars": 9226,
+        "estimatedInputTokens": 3476,
+        "absoluteInputTokens": 9226,
+        "estimatedWorstMicros": 1598,
+        "absoluteWorstMicros": 2391
       }
     },
     {
       "id": "pest-ambiguous-provenance",
       "original": {
-        "inputTokens": 1189,
-        "micros": 1369
+        "chars": 2368,
+        "estimatedInputTokens": 1190,
+        "absoluteInputTokens": 2368,
+        "estimatedWorstMicros": 1369,
+        "absoluteWorstMicros": 1636
       },
       "current": {
-        "inputTokens": 3462,
-        "micros": 1597
+        "chars": 9186,
+        "estimatedInputTokens": 3462,
+        "absoluteInputTokens": 9186,
+        "estimatedWorstMicros": 1597,
+        "absoluteWorstMicros": 2386
       }
     }
+  ],
+  "commands": [
+    "npm run eval:campaigns -- --models openai/gpt-6-luna --max-output 2500 --repair 0 --retries 0 --ledger docs/eval/ledger-cmp-3-2.json --aggregate-ceiling-micros 156000 --max-total-requests 84 --prompt original --budget-micros 23500 --label cmp-3-2-original-rep1 --check-access --yes-spend",
+    "npm run eval:campaigns -- --models openai/gpt-6-luna --max-output 2500 --repair 0 --retries 0 --ledger docs/eval/ledger-cmp-3-2.json --aggregate-ceiling-micros 156000 --max-total-requests 84 --prompt current --budget-micros 27500 --label cmp-3-2-current-rep1 --yes-spend",
+    "npm run eval:campaigns -- --models openai/gpt-6-luna --max-output 2500 --repair 0 --retries 0 --ledger docs/eval/ledger-cmp-3-2.json --aggregate-ceiling-micros 156000 --max-total-requests 84 --prompt original --budget-micros 23500 --label cmp-3-2-original-rep2 --yes-spend",
+    "npm run eval:campaigns -- --models openai/gpt-6-luna --max-output 2500 --repair 0 --retries 0 --ledger docs/eval/ledger-cmp-3-2.json --aggregate-ceiling-micros 156000 --max-total-requests 84 --prompt current --budget-micros 27500 --label cmp-3-2-current-rep2 --yes-spend",
+    "npm run eval:campaigns -- --models openai/gpt-6-luna --max-output 2500 --repair 0 --retries 0 --ledger docs/eval/ledger-cmp-3-2.json --aggregate-ceiling-micros 156000 --max-total-requests 84 --prompt original --budget-micros 23500 --label cmp-3-2-original-rep3 --yes-spend",
+    "npm run eval:campaigns -- --models openai/gpt-6-luna --max-output 2500 --repair 0 --retries 0 --ledger docs/eval/ledger-cmp-3-2.json --aggregate-ceiling-micros 156000 --max-total-requests 84 --prompt current --budget-micros 27500 --label cmp-3-2-current-rep3 --yes-spend"
   ]
 }

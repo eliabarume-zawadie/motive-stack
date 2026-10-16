@@ -104,6 +104,8 @@ export interface RunMeta {
   attempts?: number;
   /** Set when some attempt reported no usage and was charged at the worst-case reserve instead of left unknown. */
   costNote?: string;
+  /** The processing tier the provider reported for this request, when it reported one. */
+  serviceTier?: string;
 }
 
 export interface CaseResult {
