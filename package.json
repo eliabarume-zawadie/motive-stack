@@ -20,7 +20,8 @@
     "test:live:anthropic": "cross-env LIVE_TESTS=1 LIVE_AI_PROVIDER=anthropic vitest run test/live/ai.live.test.ts",
     "local:preflight": "tsx scripts/local-preflight.ts",
     "test:local:ollama": "cross-env LIVE_TESTS=1 LOCAL_TESTS=1 AI_PROVIDER_MODE=local vitest run test/local/ollama.local.test.ts",
-    "eval:campaigns": "tsx scripts/eval-campaigns.ts"
+    "eval:campaigns": "tsx scripts/eval-campaigns.ts",
+    "eval:plan": "tsx scripts/eval-plan.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.134.0",

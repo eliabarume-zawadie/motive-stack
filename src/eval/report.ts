@@ -18,6 +18,7 @@ export function renderMarkdown(r: EvalReport, baseline?: EvalReport): string {
     L.push("## Run", "");
     const id = r.run.identity;
     if (id) L.push(`- Prompt: \`${id.promptVersion}\` (sha256 \`${id.promptSha256.slice(0, 12)}\`)`, `- Output contract: \`${id.schemaVersion}\` (sha256 \`${id.schemaSha256.slice(0, 12)}\`)`);
+    if (r.run.evaluator) L.push(`- Evaluator: \`${r.run.evaluator}\``);
     if (r.run.model) L.push(`- Model: ${r.run.model}`);
     if (r.run.params) L.push(`- Parameters: ${Object.entries(r.run.params).map(([k, v]) => `${k}=${String(v)}`).join(", ")}`);
     if (r.run.note) L.push(`- ${r.run.note}`);

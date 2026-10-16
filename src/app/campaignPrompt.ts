@@ -1,3 +1,4 @@
+import { validityOf } from "../domain/briefRules.js";
 import type { BusinessBrain } from "../domain/schemas.js";
 
 /**
@@ -38,14 +39,27 @@ ASSUMPTIONS
 - List every assumption you made.`;
 
 /** Everything except the untrusted description goes in as structured data; the description is fenced and labelled. */
-export function buildCampaignPrompt(brain: BusinessBrain): { system: string; prompt: string } {
+export function buildCampaignPrompt(brain: BusinessBrain, opts: { asOf?: Date } = {}): { system: string; prompt: string } {
   const { description, facts, ...rest } = brain;
+  const asOf = opts.asOf ?? new Date();
+  // A model can only respect a scope it is shown, so a record's services, conditions and period travel with its text.
+  const withScope = (f: (typeof facts)[number]): string => {
+    const parts = [
+      f.scope.services.length ? `applies only to: ${f.scope.services.join(", ")}` : "",
+      f.scope.conditions.length ? `only under these conditions: ${f.scope.conditions.join("; ")}` : "",
+      f.validFrom ? `valid from ${f.validFrom}` : "",
+      f.validUntil ? `valid until ${f.validUntil}` : "",
+    ].filter(Boolean);
+    return parts.length ? `${f.text} (${parts.join("; ")})` : f.text;
+  };
+  const inForce = (f: (typeof facts)[number]) => f.approvedForMarketing && validityOf(f, asOf).state === "active";
   // The prompt text is unchanged. Records with provenance are projected onto the fields it already names: statements approved
   // for marketing join verifiedFacts; anything not approved joins unverifiedClaims, which the prompt says never to use.
   const structured = {
     ...rest,
-    verifiedFacts: [...rest.verifiedFacts, ...facts.filter((f) => f.approvedForMarketing).map((f) => f.text)],
-    unverifiedClaims: [...rest.unverifiedClaims, ...facts.filter((f) => !f.approvedForMarketing).map((f) => f.text)],
+    verifiedFacts: [...rest.verifiedFacts, ...facts.filter(inForce).map(withScope)],
+    // Not approved, or no longer in force (expired, superseded, not yet valid): never usable in ads.
+    unverifiedClaims: [...rest.unverifiedClaims, ...facts.filter((f) => !inForce(f)).map((f) => (f.approvedForMarketing ? `${f.text} (no longer in force)` : f.text))],
   };
   const parts = [
     "Create the campaign brief for this business.",

@@ -54,16 +54,27 @@ export interface LiveOptions {
   maxOutputTokens: number;
   /** Per-request cost estimate used for the pre-check, in micro-USD. A request is not sent if spent + this would exceed the budget. */
   reserveMicros?: number;
+  /**
+   * Most attempts one request may take (default 1: no retry and no repair). A request that needed more HALTS the run: more
+   * spend than planned happened, so nothing further is sent until a person looks.
+   */
+  maxAttemptsPerRequest?: number;
+  /** Halt when a request's cost cannot be determined (default true): spend is then unmeasured, so the budget cannot be trusted. */
+  haltOnUnknownCost?: boolean;
 }
 
 /**
  * A generator that returns the model's RAW output (structure checked leniently) so the evaluation can show which rules it
  * breaks. Repair is whatever the gateway was configured with: construct the gateway with repairAttempts 0 to measure first-try quality.
  */
-export function makeLiveGenerator(o: LiveOptions): { generate: Generator; spent: () => number } {
+export function makeLiveGenerator(o: LiveOptions): { generate: Generator; spent: () => number; halted: () => string | undefined } {
   let spent = 0;
+  let halted: string | undefined;
   const reserve = o.reserveMicros ?? 0;
+  const maxAttempts = o.maxAttemptsPerRequest ?? 1;
+  const haltOnUnknownCost = o.haltOnUnknownCost ?? true;
   const generate: Generator = async (c) => {
+    if (halted) return { error: halted };
     if (spent + reserve > o.budgetMicros) return { error: new BudgetExhausted(spent, o.budgetMicros).message };
     const original = o.prompt === "original";
     const { system, prompt } = (original ? buildOriginalPrompt : o.prompt === "legacy" ? buildLegacyPrompt : buildCampaignPrompt)(c.brain);
@@ -76,7 +87,11 @@ export function makeLiveGenerator(o: LiveOptions): { generate: Generator; spent:
         context: original ? projectToOriginalBrain(c.brain) : c.brain, schema: original ? OriginalCampaignBriefSchema : CampaignBriefSchema,
         model: o.model, maxOutputTokens: o.maxOutputTokens,
       });
-      spent += r.estimatedCostMicros ?? 0;
+      if (r.estimatedCostMicros === null || r.estimatedCostMicros === undefined) {
+        spent += reserve; // unmeasured spend is charged at the worst-case reserve, never counted as free
+        if (haltOnUnknownCost) halted = "stopped: a request's cost could not be determined (pricing uncertainty), so the budget can no longer be trusted";
+      } else spent += r.estimatedCostMicros;
+      if (r.attempts.length > maxAttempts) halted = `stopped: a request needed ${r.attempts.length} attempts (limit ${maxAttempts}); retries and repairs are not permitted in this run`;
       const meta: RunMeta = {
         model: `${r.provider}/${r.model}`, latencyMs: r.latencyMs, inputTokens: r.usage?.inputTokens, outputTokens: r.usage?.outputTokens,
         costMicros: r.estimatedCostMicros, attempts: r.attempts.length, identity,
@@ -93,6 +108,8 @@ export function makeLiveGenerator(o: LiveOptions): { generate: Generator; spent:
         if (a.estimatedCostMicros === null || a.estimatedCostMicros === undefined) { unpriced++; cost += reserve; } else cost += a.estimatedCostMicros;
       }
       spent += cost;
+      if (unpriced > 0 && haltOnUnknownCost) halted = "stopped: a failed request reported no usage, so its cost is only an estimate (pricing uncertainty)";
+      if (attempts.length > maxAttempts) halted = `stopped: a request needed ${attempts.length} attempts (limit ${maxAttempts}); retries and repairs are not permitted in this run`;
       const sum = (f: "inputTokens" | "outputTokens") => (attempts.length > 0 && attempts.every((a) => a.usage?.[f] !== undefined) ? attempts.reduce((s, a) => s + (a.usage?.[f] ?? 0), 0) : undefined);
       const meta: RunMeta = {
         identity, model: `${o.provider}/${o.model}`, attempts: attempts.length, latencyMs: attempts.reduce((s, a) => s + a.latencyMs, 0),
@@ -104,7 +121,7 @@ export function makeLiveGenerator(o: LiveOptions): { generate: Generator; spent:
       return { error: message, truncated: err.truncated === true, meta };
     }
   };
-  return { generate, spent: () => spent };
+  return { generate, spent: () => spent, halted: () => halted };
 }
 
 /**

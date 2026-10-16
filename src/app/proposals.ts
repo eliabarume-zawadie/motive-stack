@@ -66,7 +66,7 @@ function assertBriefPassesGate(c: AppContext, wsId: string, campaignId: string, 
   const rec = getCampaignRecord(c, wsId, campaignId);
   const stored = getBrain(c, wsId);
   if (!stored) throw conflict("brain_required", "Business Brain is required");
-  const bad = approvalGateViolations(rec.brief, stored.brain);
+  const bad = approvalGateViolations(rec.brief, stored.brain, { asOf: c.now() });
   if (bad.length === 0) return;
   audit(c, wsId, actor, "proposal.blocked", "campaign", campaignId, { reason: "brief_validation_failed", phase, codes: bad.map((v) => v.code) });
   throw new AppError(409, "brief_validation_failed", `This brief cannot be approved yet: ${bad.map((v) => `[${v.code}] ${v.path.join(".")}: ${v.message}`).join(" | ")}`);

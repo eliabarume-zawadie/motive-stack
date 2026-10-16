@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { FactRecordSchema } from "./facts.js";
+import { FactRecordsSchema } from "./facts.js";
 
 /** What the business owner tells MotiveStack about the business. */
 export const BusinessBrainSchema = z
@@ -19,7 +19,7 @@ export const BusinessBrainSchema = z
      * Facts with explicit provenance and approval status. Only records approved for marketing can support a claim. The plain
      * string fields above are read as OWNER-APPROVED (never independently verified); this field is how stronger or weaker evidence is recorded.
      */
-    facts: z.array(FactRecordSchema).max(30).default([]),
+    facts: FactRecordsSchema.default([]),
     /** Price statements approved for use in ads (e.g. "Inspection is free"). Without this, ads must not state prices. */
     approvedPricing: z.string().trim().max(300).optional(),
     /** Things the owner has said but NOT verified (e.g. "voted #1"). Never used in ads; they should prompt a proof request. */

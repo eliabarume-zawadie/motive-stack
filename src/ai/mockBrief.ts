@@ -51,7 +51,7 @@ export function buildMockBrief(brain: BusinessBrain, mode: BadMode = "none"): Re
 
   // ---- one decision per approved differentiator, consistent with what actually fit in the copy
   const differentiatorDecisions = brain.differentiators.map((d) => {
-    if (!usable(d)) return { differentiator: d, used: false, reason: "Held back: another fact in the Business Brain contradicts it or states it only conditionally. The owner must confirm it first." };
+    if (!usable(d)) return { differentiator: d, used: false, reason: "Held back: another fact in the Business Brain contradicts it, limits it to another service, period or condition, or states it only conditionally. The owner must confirm it first." };
     const used = overlap(d, copy) >= 0.6;
     return { differentiator: d, used, reason: used ? "Used in the copy to build trust." : "Did not fit within the character limits without crowding out the offer; it can be rotated into a later variation." };
   });

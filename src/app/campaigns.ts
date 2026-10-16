@@ -79,7 +79,7 @@ export async function generateCampaign(
   const stored = getBrain(c, wsId);
   if (!stored) throw conflict("brain_required", "Save the Business Brain before generating a campaign");
 
-  const { system, prompt } = buildCampaignPrompt(stored.brain);
+  const { system, prompt } = buildCampaignPrompt(stored.brain, { asOf: c.now() });
   const result = await runAiTask(c, wsId, {
     taskType: "campaign_brief",
     system,
@@ -89,7 +89,7 @@ export async function generateCampaign(
     context: stored.brain,
     // Structure PLUS every hard rule (budget ceiling, grounding, targeting, differentiators, questions).
     // A brief that breaks a rule is rejected after one repair attempt and never stored as a campaign.
-    schema: makeGeneratedBriefSchema(stored.brain),
+    schema: makeGeneratedBriefSchema(stored.brain, { asOf: c.now() }),
     override: req,
     signal,
   });

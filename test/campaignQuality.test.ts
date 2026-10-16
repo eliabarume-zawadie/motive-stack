@@ -562,7 +562,7 @@ describe("live evaluation harness (fake providers; no network)", () => {
   it("reports unknown cost as unknown, never zero, when the model has no price", async () => {
     const { p } = fakeProvider((r) => ({ raw: buildMockBrief(BusinessBrainSchema.parse(r.context)), model: "m", simulated: false, usage }));
     const gw = new AiGateway([p], { pricing: PricingTable.empty(), repairAttempts: 0, sleep: async () => {} });
-    const live = makeLiveGenerator({ gateway: gw, provider: "fake", model: "m", prompt: "current", budgetMicros: 1_000_000, maxOutputTokens: 1000 });
+    const live = makeLiveGenerator({ gateway: gw, provider: "fake", model: "m", prompt: "current", budgetMicros: 1_000_000, maxOutputTokens: 1000, haltOnUnknownCost: false }); // this test is about REPORTING unknown cost; halting on it is the new default, tested in evalPlan.test.ts
     const out = await live.generate(byId("hvac-no-approved-pricing"));
     expect(out.meta?.costMicros).toBeNull();
     const md = renderMarkdown(await runEvaluation([byId("hvac-no-approved-pricing")], live.generate, "t", "fake"));

@@ -167,3 +167,60 @@ There are 14 fixtures: the original 11 plus a contradicted ownership fact, a pen
 - "Approved" means the owner said so. Nothing here checks a licence number, a review or an award. Independent verification is only ever recorded by a person, with evidence; the system does not perform it.
 - Imported facts and evidence references are stored, not fetched or validated.
 - Human review of every brief remains the real gate.
+
+## Milestone 3.2: fact scope and the evaluation plan
+
+Offline only. No network request, model call or provider-access check was made. The prompts are unchanged.
+
+### Checkpoint
+
+The Milestone 3.1 state was committed locally as `9675d16` before any 3.2 change (137 files; `.env.local` and the `secret-key` file are git-ignored and not tracked; a scan of the committed files for key, token and private-key patterns found none, and `.env.example` holds configuration only). Two kinds of identifier are in the committed docs and scripts and are not credentials: the Meta sandbox ad-account id and the company contact address used in the privacy page. Check them before this repository is ever pushed to a shared remote. History was not rewritten and nothing was deleted. The reconstructed baseline keeps its limits stated in `src/eval/original.ts` and in the section above.
+
+### Fact scope
+
+Before this change a fact supported any claim of the same kind and key, wherever it was used. "Drain cleaning from $49" would have supported "AC repair from $49". A fact now carries what it covers, and a claim is checked against it.
+
+**On a record (all optional; absent means business-wide, unconditional and undated, which is the old meaning):**
+
+| Field | Meaning |
+|---|---|
+| `scope.services` | the services the fact applies to |
+| `scope.conditions` | terms any claim of it must state ("labor only", "first-time customers") |
+| `validFrom`, `validUntil` | the period it is true for (a date alone holds through that whole day, UTC) |
+| `id`, `supersededBy` | a newer record replaces this one; the replaced record supports nothing |
+
+The set of records is validated on save: ids must be unique, `supersededBy` must name an existing record, a record cannot supersede itself, and `validFrom` cannot follow `validUntil`. A typo therefore cannot leave a stale fact quietly in force.
+
+**For the plain legacy strings** (no scope fields), scope is *inferred conservatively*: a statement that names one of the business's services is limited to it, and a statement containing a condition word (if, when, unless, except, only, excluding, minimum, first-time, new customers, limited to, "terms apply") must have that condition restated in the claim. Legacy strings have no dates, so they are always in force.
+
+**Claim checking.** Each headline or text is one unit. For each claim in a unit the outcome is one of:
+
+- `supported`: an approved, current fact of the same kind and key covers the services the unit names and every condition appears in the unit;
+- `out_of_scope` (`grounding_out_of_scope`): a fact exists but for another service, or for a named service the unit does not mention (a claim that names no service cannot use a service-limited fact);
+- `missing_conditions` (`grounding_missing_conditions`): the fact exists only under conditions the unit does not state;
+- `expired` (`grounding_expired`): the only matching fact is superseded, expired or not yet valid, and the message says which and when;
+- `contradicted`, `ambiguous`, `unsupported`: as in Milestone 3.1.
+
+These are hard failures at generation, in the owner-facing checks, in the approval gate (which re-runs at proposal creation and at approval, using the app clock so a fact that expires after a proposal blocks its approval) and in the evaluation. Validity is judged at a supplied moment (`asOf`), so results are reproducible.
+
+**Denials stay fail-closed, now with scope.** A negative or ambiguous fact blocks the claim unless the unit names other services and none of the fact's, in which case the fact is about something else. A claim that names no service is blocked by a service-limited denial because it cannot be told which service is meant. A business-wide affirmation against a service-limited denial is a conflict; two statements about different services are not. A superseded, expired or not-yet-valid statement asserts nothing, including a denial, so an owner who corrects a fact is not blocked by the old one.
+
+**The model sees the scope.** The prompt data carries each approved record's services, conditions and period with its text, and lists a record no longer in force among the claims never to use. The prompt text itself is unchanged and its fingerprint is still pinned.
+
+**Not independent verification.** Scope and validity are about what the owner approved. They do not change a record's status: an owner-approved scoped fact is still reported as owner-approved, and the schema still refuses a verification record on anything except an independently verified fact.
+
+**No database migration** is needed: the Business Brain is stored as JSON and the new fields are optional with defaults, so existing workspaces load unchanged.
+
+**Limits of the scope check.**
+- Service and condition detection is by words. A service must appear with every word of its name; a differently worded reference ("the furnace job" for "heating repair") is not recognised, so a scoped fact is then treated as out of scope (fail closed). An unusual condition wording that the marker list does not contain is not inferred; put it in `scope.conditions`.
+- A condition is satisfied when most of its words appear in the same text, which is not the same as the text meaning it.
+- Inferred conditions can be over-strict ("Available 24/7 when you need us" would require "need us" to be restated); a record's explicit `scope.conditions` is the precise way to say it.
+- Dated validity exists only on records. Legacy strings cannot expire; an expiry written in their wording is caught only when it contains a hedging word such as "expired".
+- Each claim kind is still matched by a key (an amount, a stem, a concept). "From $49" scoped to drain cleaning supports a drain-cleaning claim of any $49 wording.
+- Nothing here checks that an approved fact is true.
+
+### Evaluation plan (not run)
+
+`npm run eval:plan` writes `docs/eval/plan-original-vs-current.md` and `.json` from local files only (its `fetch` is replaced by a function that throws, and a test checks the script contains no provider address or access check). Summary of the current plan: 14 cases × 2 arms × 3 repetitions = **84 requests**, retries and repairs disabled so 84 is also the maximum, `openai/gpt-6-luna`, 2,500 output tokens, worst case **$0.1247** from the locally recorded (provisional, not re-verified) price, proposed hard ceiling **$0.156**. It lists the prompt, schema, evaluator (`campaign-evaluator/3.2.0` plus source fingerprints) and model identifiers, separates schema validity from factual grounding from the comparable quality dimensions, fixes the decision rule before any result exists, and marks which results depend on the reconstructed original.
+
+The live harness now enforces three of its stop conditions in code: it halts the run when a request needs more than one attempt (a retry or repair), when a request's cost cannot be determined (the unmeasured request is charged at the worst-case reserve, never as zero), and before a request that could pass the budget. Price freshness, cumulative spend across invocations and the early-failure check are procedures to follow, listed in the plan. Both the plan and its numbers must be reviewed and a live run separately approved before anything is sent.

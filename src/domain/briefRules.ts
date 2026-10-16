@@ -141,29 +141,90 @@ function claimMatches(text: string, expandCompound = false): ClaimMatch[] {
   return out;
 }
 
-type Bucket = Map<string, string[]>;
-interface ClaimIndex { affirmed: Map<string, Bucket>; negated: Map<string, Bucket>; ambiguous: Map<string, Bucket> }
-const put = (map: Map<string, Bucket>, kind: string, key: string, evidence: string) => {
-  const b = map.get(kind) ?? new Map<string, string[]>();
-  b.set(key, [...(b.get(key) ?? []), evidence]);
+/** What one fact statement says about a claim, with the subject, conditions and period it holds for. */
+interface Evidence {
+  text: string;
+  /** Services it is limited to; empty = the whole business. */
+  services: string[];
+  /** Terms any claim of it must carry. */
+  conditions: string[];
+  /** Why it is not in force (inactive evidence only). */
+  why?: string;
+}
+type Bucket = Map<string, Evidence[]>;
+interface ClaimIndex { affirmed: Map<string, Bucket>; negated: Map<string, Bucket>; ambiguous: Map<string, Bucket>; inactive: Map<string, Bucket> }
+const put = (map: Map<string, Bucket>, kind: string, key: string, ev: Evidence) => {
+  const b = map.get(kind) ?? new Map<string, Evidence[]>();
+  b.set(key, [...(b.get(key) ?? []), ev]);
   map.set(kind, b);
 };
-const has = (map: Map<string, Bucket>, kind: string, key: string) => map.get(kind)?.has(key) === true;
+const entries = (map: Map<string, Bucket>, kind: string, key: string): Evidence[] => map.get(kind)?.get(key) ?? [];
+
+/** Words of a service name or an ad text, keeping short ones ("AC") that tokens() drops, so "AC repair" is not mistaken for "repair". */
+const words = (s: string): string[] => squash(norm(s)).split(/[^a-z0-9]+/).filter((w) => w.length >= 2 && !STOP.has(w));
+
+/** Does `text` name this service? Every word of the service name must appear. */
+const mentions = (text: string, service: string): boolean => {
+  const need = words(service);
+  if (need.length === 0) return false;
+  const have = new Set(words(text));
+  return need.every((w) => have.has(w));
+};
+
+/** Words that make a statement conditional on something ("if", "only", "except", "first-time customers"...). */
+const CONDITION = /\b(only|if|when|unless|except|excluding|excluded|excludes|minimum|first[- ]time|new customers?|limited to|conditions apply|terms apply|with purchase)\b/i;
+
+/** Conditions written into a statement's own wording. A condition in a later clause ("..., labor excluded") applies to the claims before it. */
+function inferredConditions(clauses: string[]): string[] {
+  const out: string[] = [];
+  for (const clause of clauses) {
+    const m = CONDITION.exec(clause);
+    if (!m) continue;
+    out.push((claimMatches(clause).length > 0 ? clause.slice(m.index) : clause).trim());
+  }
+  return out;
+}
+
+type Validity = { state: "active" } | { state: "inactive"; why: string };
+
+/** Is the statement in force on `asOf`? Superseded, not-yet-valid and expired statements are not. */
+export function validityOf(st: { validFrom?: string; validUntil?: string; supersededBy?: string }, asOf: Date): Validity {
+  if (st.supersededBy) return { state: "inactive", why: `superseded by the record "${st.supersededBy}"` };
+  const t = asOf.getTime();
+  if (st.validFrom && Date.parse(st.validFrom) > t) return { state: "inactive", why: `not valid until ${st.validFrom}` };
+  if (st.validUntil) {
+    const end = Date.parse(st.validUntil) + (st.validUntil.length <= 10 ? 86_399_999 : 0); // a date alone holds through that day
+    if (end < t) return { state: "inactive", why: `expired on ${st.validUntil}` };
+  }
+  return { state: "active" };
+}
 
 /**
- * What the Business Brain affirms, denies and leaves uncertain, by claim kind and key. A statement is read clause by clause:
- * a negative or uncertain clause NEVER feeds the affirmed set, and it is recorded wherever it came from (even from a fact
- * the owner has not approved), because a contradiction is a reason to ask, not a reason to pass.
+ * What the Business Brain affirms, denies and leaves uncertain, by claim kind and key, and for which services, under which
+ * conditions and in which period. A statement is read clause by clause: a negative or uncertain clause NEVER feeds the affirmed
+ * set, and it is recorded wherever it came from (even from a fact the owner has not approved), because a contradiction is a
+ * reason to ask, not a reason to pass. A statement that is superseded, expired or not yet valid on `asOf` is kept apart, so it
+ * can be named as the reason a claim fails but never supports one.
  */
-export function buildClaimIndex(brain: BusinessBrain): ClaimIndex {
-  const idx: ClaimIndex = { affirmed: new Map(), negated: new Map(), ambiguous: new Map() };
+export function buildClaimIndex(brain: BusinessBrain, asOf: Date = new Date()): ClaimIndex {
+  const idx: ClaimIndex = { affirmed: new Map(), negated: new Map(), ambiguous: new Map(), inactive: new Map() };
   for (const st of factStatements(brain)) {
-    for (const clause of clausesOf(st.text)) {
+    const validity = validityOf(st, asOf);
+    const clauses = clausesOf(st.text);
+    // Scope: the services set on the record, otherwise the services the wording names. The business profile itself is business-wide.
+    const services = st.origin === "context" ? [] : st.explicitScope ? st.services : brain.services.filter((s) => mentions(st.text, s));
+    const conditions = st.origin === "context" ? [] : [...st.conditions, ...inferredConditions(clauses)];
+    for (const clause of clauses) {
       const pol = polarityOf(clause);
       for (const m of claimMatches(clause, true)) {
-        if (pol === "negated") put(idx.negated, m.kind, m.key, clause);
-        else if (pol === "ambiguous") put(idx.ambiguous, m.kind, m.key, clause);
-        else if (st.approved && !(m.factsOnly && st.origin === "context")) put(idx.affirmed, m.kind, m.key, clause);
+        const ev: Evidence = { text: clause, services, conditions };
+        if (validity.state === "inactive") {
+          if (pol === "affirmative" && st.approved) put(idx.inactive, m.kind, m.key, { ...ev, why: validity.why });
+          continue; // an inactive statement asserts nothing now, including a denial
+        }
+        if (pol === "negated") put(idx.negated, m.kind, m.key, ev);
+        else if (pol === "ambiguous") put(idx.ambiguous, m.kind, m.key, ev);
+        else if (st.approved && !(m.factsOnly && st.origin === "context")) put(idx.affirmed, m.kind, m.key, ev);
       }
     }
   }
@@ -174,22 +235,49 @@ export interface GroundingIssue {
   code: string;
   text: string;
   label: string;
-  /** unsupported: nothing approved says it. contradicted: a fact says the opposite. ambiguous: a fact is conditional or unclear. */
-  reason: "unsupported" | "contradicted" | "ambiguous";
-  /** The fact statement that contradicts it or makes it unclear. */
+  /**
+   * unsupported      nothing approved says it.
+   * contradicted     a fact says the opposite.
+   * ambiguous        a fact is conditional or unclear.
+   * out_of_scope     an approved fact exists, but for another service (or for a named service the claim does not mention).
+   * missing_conditions  an approved fact exists, but only under conditions the claim does not state.
+   * expired          the only approved fact is superseded, expired or not yet valid.
+   */
+  reason: "unsupported" | "contradicted" | "ambiguous" | "out_of_scope" | "missing_conditions" | "expired";
+  /** The fact statement behind the reason, or the services/conditions/period involved. */
   against?: string;
 }
 
-/** Claims in the ad copy that the owner did not approve or verify, or that an owner statement contradicts or leaves unclear. */
-export function groundingIssues(copy: string[], brain: BusinessBrain): GroundingIssue[] {
-  const idx = buildClaimIndex(brain);
+export interface ValidityOptions {
+  /** The moment "current" means. Defaults to the system clock; pass the app clock so results are reproducible. */
+  asOf?: Date;
+}
+
+/** Claims in the ad copy that the owner did not approve or verify, that an owner statement contradicts, or that exceed a fact's scope. */
+export function groundingIssues(copy: string[], brain: BusinessBrain, opts: ValidityOptions = {}): GroundingIssue[] {
+  const idx = buildClaimIndex(brain, opts.asOf);
   const out: GroundingIssue[] = [];
   for (const text of copy) {
+    const named = brain.services.filter((s) => mentions(text, s));
+    // A denial applies unless the copy names OTHER services and none of the denial's: it cannot be told, so it fails closed.
+    const denial = (list: Evidence[]): Evidence | undefined => list.find((e) => e.services.length === 0 || e.services.some((s) => mentions(text, s)) || named.length === 0);
     for (const c of claimMatches(text)) {
       const base = { code: c.kind, text: c.text, label: c.label };
-      if (has(idx.negated, c.kind, c.key)) out.push({ ...base, reason: "contradicted", against: idx.negated.get(c.kind)?.get(c.key)?.[0] });
-      else if (has(idx.ambiguous, c.kind, c.key)) out.push({ ...base, reason: "ambiguous", against: idx.ambiguous.get(c.kind)?.get(c.key)?.[0] });
-      else if (!has(idx.affirmed, c.kind, c.key)) out.push({ ...base, reason: "unsupported" });
+      const neg = denial(entries(idx.negated, c.kind, c.key));
+      if (neg) { out.push({ ...base, reason: "contradicted", against: neg.text }); continue; }
+      const amb = denial(entries(idx.ambiguous, c.kind, c.key));
+      if (amb) { out.push({ ...base, reason: "ambiguous", against: amb.text }); continue; }
+      const aff = entries(idx.affirmed, c.kind, c.key);
+      if (aff.length === 0) {
+        const old = entries(idx.inactive, c.kind, c.key);
+        out.push(old.length ? { ...base, reason: "expired", against: `"${old[0]?.text}" is ${old[0]?.why}` } : { ...base, reason: "unsupported" });
+        continue;
+      }
+      const inScope = aff.filter((e) => e.services.length === 0 || e.services.some((s) => mentions(text, s)));
+      if (inScope.length === 0) { out.push({ ...base, reason: "out_of_scope", against: `"${aff[0]?.text}" applies only to ${aff[0]?.services.join(" / ")}` }); continue; }
+      if (!inScope.some((e) => e.conditions.every((cond) => overlap(cond, text) >= 0.6))) {
+        out.push({ ...base, reason: "missing_conditions", against: `"${inScope[0]?.text}" holds only ${inScope[0]?.conditions.map((x) => `"${x}"`).join(", ")}` });
+      }
     }
   }
   return out;
@@ -204,20 +292,25 @@ export interface FactIssue {
   against: string[];
 }
 
+const canonService = (s: string): string => words(s).sort().join(" ");
+/** Two statements can only contradict each other if they cover the same ground: either is business-wide, or they share a service. */
+const sameGround = (a: Evidence, b: Evidence): boolean =>
+  a.services.length === 0 || b.services.length === 0 || a.services.some((x) => b.services.some((y) => canonService(x) === canonService(y)));
+
 /**
  * Problems inside the Business Brain itself: one statement affirms a thing and another denies it (conflict), or a statement
  * about a claim kind is conditional or unclear (ambiguous). A conflict blocks launch until the owner resolves it; an
- * ambiguity makes the brief carry a review flag the reviewer must acknowledge.
+ * ambiguity makes the brief carry a review flag the reviewer must acknowledge. Statements that are no longer in force are ignored.
  */
-export function factIssues(brain: BusinessBrain): FactIssue[] {
-  const idx = buildClaimIndex(brain);
+export function factIssues(brain: BusinessBrain, opts: ValidityOptions = {}): FactIssue[] {
+  const idx = buildClaimIndex(brain, opts.asOf);
   const out: FactIssue[] = [];
   for (const [kind, bucket] of idx.negated) for (const [key, against] of bucket) {
-    const aff = idx.affirmed.get(kind)?.get(key);
-    if (aff) out.push({ type: "conflict", kind, affirmed: aff, against });
+    const aff = entries(idx.affirmed, kind, key).filter((a) => against.some((n) => sameGround(a, n)));
+    if (aff.length) out.push({ type: "conflict", kind, affirmed: aff.map((e) => e.text), against: against.map((e) => e.text) });
   }
   for (const [kind, bucket] of idx.ambiguous) for (const [, against] of bucket) {
-    out.push({ type: "ambiguous", kind, affirmed: [], against });
+    out.push({ type: "ambiguous", kind, affirmed: [], against: against.map((e) => e.text) });
   }
   return out;
 }
@@ -243,10 +336,10 @@ export function provenanceSummary(brain: BusinessBrain): { legacyOwnerApproved: 
  * that only apply to model-written structure (variations, differentiator decisions) are not part of this gate, so an
  * older or hand-edited brief is not blocked for lacking fields it never had.
  */
-export function approvalGateViolations(b: CampaignBrief, brain: BusinessBrain): Violation[] {
-  const v = briefRuleViolations(b, brain).filter((x) => /^(grounding_|length_|injection_|budget_over_ceiling|fact_issue_unflagged)/.test(x.code));
+export function approvalGateViolations(b: CampaignBrief, brain: BusinessBrain, opts: ValidityOptions = {}): Violation[] {
+  const v = briefRuleViolations(b, brain, opts).filter((x) => /^(grounding_|length_|injection_|budget_over_ceiling|fact_issue_unflagged)/.test(x.code));
   // A fact that is both affirmed and denied inside the Business Brain cannot be launched on until the owner resolves it.
-  for (const i of factIssues(brain)) {
+  for (const i of factIssues(brain, opts)) {
     if (i.type === "conflict") v.push({ code: "fact_conflict_unresolved", path: ["businessBrain"], message: `the Business Brain both affirms and denies a ${i.kind.replace(/_/g, " ")} claim ("${i.affirmed[0]}" versus "${i.against[0]}"); the owner must correct the facts before launch` });
   }
   return v;
@@ -297,7 +390,7 @@ const STAT_IN_REASONING = /(\d+(\.\d+)?\s?%|conversion rate|\bctr\b|\bcpc\b|\bcp
  * Hard rules. A brief that violates any of them must not be stored as a valid campaign.
  * Messages are written for the model (they drive the repair attempt) and never include the offending text beyond short claim words.
  */
-export function briefRuleViolations(b: CampaignBrief, brain: BusinessBrain): Violation[] {
+export function briefRuleViolations(b: CampaignBrief, brain: BusinessBrain, opts: ValidityOptions = {}): Violation[] {
   const v: Violation[] = [];
   const add = (code: string, path: Array<string | number>, message: string) => v.push({ code, path, message });
   const ceiling = brain.maxDailyBudgetCents;
@@ -336,13 +429,16 @@ export function briefRuleViolations(b: CampaignBrief, brain: BusinessBrain): Vio
 
   // ---- grounding: only approved or verified claims in the ad copy
   const copy = copyOf(b);
-  for (const g of groundingIssues(copy, brain)) {
+  for (const g of groundingIssues(copy, brain, opts)) {
     if (g.reason === "contradicted") add("grounding_contradicted", ["copy"], `uses ${g.label} ("${g.text}") but the Business Brain says the opposite ("${g.against}"). Remove the claim and ask the owner to resolve the conflict`);
+    else if (g.reason === "out_of_scope") add("grounding_out_of_scope", ["copy"], `uses ${g.label} ("${g.text}") beyond what the owner approved: ${g.against}. Name the service the fact covers, or remove the claim`);
+    else if (g.reason === "missing_conditions") add("grounding_missing_conditions", ["copy"], `uses ${g.label} ("${g.text}") without the conditions it was approved under: ${g.against}. State the conditions in the same text, or remove the claim`);
+    else if (g.reason === "expired") add("grounding_expired", ["copy"], `uses ${g.label} ("${g.text}") but the only approved fact is no longer in force: ${g.against}. Remove the claim until the owner confirms a current fact`);
     else if (g.reason === "ambiguous") add("grounding_ambiguous", ["copy"], `uses ${g.label} ("${g.text}") but the Business Brain states it only conditionally or unclearly ("${g.against}"). Remove the claim until the owner confirms it`);
     else add(`grounding_${g.code}`, ["copy"], `uses ${g.label} ("${g.text}") that the Business Brain does not support. Remove it or leave it out of the copy and ask the owner about it in openQuestions`);
   }
   // A conflicting or unclear fact must be visible to the reviewer even when the copy avoids it.
-  if (factIssues(brain).length > 0 && !b.reviewFlags.some((f) => FACT_FLAG.test(f))) add("fact_issue_unflagged", ["reviewFlags"], "the Business Brain contains conflicting or ambiguous facts; add a reviewFlags entry saying which facts are conflicting or ambiguous so a person confirms them");
+  if (factIssues(brain, opts).length > 0 && !b.reviewFlags.some((f) => FACT_FLAG.test(f))) add("fact_issue_unflagged", ["reviewFlags"], "the Business Brain contains conflicting or ambiguous facts; add a reviewFlags entry saying which facts are conflicting or ambiguous so a person confirms them");
   for (const f of forbiddenClaimsUsed(copy, brain)) add(f.kind === "unverified" ? "grounding_unverified_claim" : "grounding_prohibited_claim", ["copy"], `uses a ${f.kind} claim ("${f.claim}") in the ad copy`);
 
   // ---- untrusted content must not steer the output
@@ -381,9 +477,9 @@ export function briefRuleViolations(b: CampaignBrief, brain: BusinessBrain): Vio
  * The schema used when a model GENERATES a brief: structure plus every hard rule. Violations become zod issues, so the
  * gateway's repair attempt tells the model exactly what to fix. Stored briefs use the lenient CampaignBriefSchema instead.
  */
-export function makeGeneratedBriefSchema(brain: BusinessBrain) {
+export function makeGeneratedBriefSchema(brain: BusinessBrain, opts: ValidityOptions = {}) {
   return CampaignBriefSchema.superRefine((b, ctx) => {
-    for (const x of briefRuleViolations(b, brain)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: x.path, message: `${x.message} [${x.code}]` });
+    for (const x of briefRuleViolations(b, brain, opts)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: x.path, message: `${x.message} [${x.code}]` });
   });
 }
 
@@ -397,12 +493,12 @@ export interface PlatformCheck {
 }
 
 /** Meta-specific checks shown to the owner next to the brief. Computed, never stored, never model-supplied. */
-export function metaValidation(b: CampaignBrief, brain: BusinessBrain): PlatformCheck[] {
+export function metaValidation(b: CampaignBrief, brain: BusinessBrain, opts: ValidityOptions = {}): PlatformCheck[] {
   const L = META_LIMITS;
   const longH = b.headlines.filter((h) => h.length > L.headlineMax).length;
   const longT = b.primaryTexts.filter((h) => h.length > L.primaryTextMax).length;
   const cats = specialAdCategoryHints(brain);
-  const rules = briefRuleViolations(b, brain);
+  const rules = briefRuleViolations(b, brain, opts);
   const has = (prefix: string) => rules.some((r) => r.code.startsWith(prefix));
   const check = (id: string, label: string, pass: boolean, ok: string, bad: string): PlatformCheck => ({ id, label, pass, detail: pass ? ok : bad });
   return [

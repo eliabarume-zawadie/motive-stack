@@ -23,7 +23,7 @@ import { buildContext } from "../src/app/context.js";
 import { buildCampaignPrompt } from "../src/app/campaignPrompt.js";
 import { migrate, openDb } from "../src/db/db.js";
 import { BusinessBrainSchema } from "../src/domain/schemas.js";
-import { evaluateBrief, runEvaluation, summarize, DIMENSIONS, DIMENSION_LABELS, type EvalReport, type Generator } from "../src/eval/evaluate.js";
+import { EVALUATOR_VERSION, evaluateBrief, runEvaluation, summarize, DIMENSIONS, DIMENSION_LABELS, type EvalReport, type Generator } from "../src/eval/evaluate.js";
 import { EVAL_CASES } from "../src/eval/fixtures.js";
 import { buildLegacyPrompt, identityOf, makeLiveGenerator, verifyModelAccess, type PromptVariant } from "../src/eval/liveRun.js";
 import { buildOriginalPrompt } from "../src/eval/original.js";
@@ -72,7 +72,7 @@ if (!modelsArg) {
     return { raw: r.raw, meta: { model: "mock/mock-deterministic-1", attempts: 1 } };
   };
   const report = await runEvaluation(EVAL_CASES, mockGenerator, label, "mock provider (deterministic reference; it follows the rules by construction, so a high score here does NOT show a real model does well)", {
-    identity: currentGenerationIdentity(), model: "mock/mock-deterministic-1", params: { providerMode: "mock" },
+    evaluator: EVALUATOR_VERSION, identity: currentGenerationIdentity(), model: "mock/mock-deterministic-1", params: { providerMode: "mock" },
     note: "Plumbing and validator test only: the mock is written to satisfy the rules, so its score shows that the rules, validators and pipeline work, not that any real model writes good or truthful briefs.",
   });
   const rec = RECORDED_OPENAI_SUNRISE;
@@ -138,15 +138,16 @@ if (plans.every((p) => !p.ok)) fail("no model is ready.");
 
 const reports: EvalReport[] = [];
 for (const p of plans.filter((x) => x.ok)) {
-  const { generate, spent } = makeLiveGenerator({ gateway: ctx.ai, provider: p.provider, model: p.model, prompt: variant, budgetMicros: budget, maxOutputTokens: maxOut, reserveMicros: p.worstCasePerCase });
+  const { generate, spent, halted } = makeLiveGenerator({ gateway: ctx.ai, provider: p.provider, model: p.model, prompt: variant, budgetMicros: budget, maxOutputTokens: maxOut, reserveMicros: p.worstCasePerCase });
   const name = `${label}-${p.provider}-${p.model.replace(/[^a-z0-9.]+/gi, "_")}`;
   const report = await runEvaluation(cases, generate, name, `LIVE ${p.provider}/${p.model} | prompt ${variant} | repair ${repair} | synthetic data | ${new Date().toISOString().slice(0, 10)}`, {
-    identity: identityOf(variant), model: `${p.provider}/${p.model}`,
+    evaluator: EVALUATOR_VERSION, identity: identityOf(variant), model: `${p.provider}/${p.model}`,
     params: { maxOutputTokens: maxOut, repairAttempts: Number(repair), maxRetries: Number(arg("retries") ?? 0), budgetMicros: budget, cases: cases.length },
     note: variant === "legacy" ? "DEPRECATED arm: the original prompt text with the CURRENT output contract. Not a faithful baseline." : variant === "original" ? "Faithful baseline: the recovered original prompt, output contract and Business Brain fields. Compare with the comparable view only." : undefined,
   });
   save(name, report, baseline);
   reports.push(report);
+  if (halted()) console.log(`\n  RUN HALTED: ${halted()}`);
   console.log("\n" + renderConsole(report) + `\n  estimated spend: ${spent()} micro-USD ($${(spent() / 1e6).toFixed(6)})`);
 }
 if (reports.length > 1) {

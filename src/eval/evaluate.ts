@@ -303,8 +303,12 @@ export function evaluateBrief(raw: unknown, c: EvalCase, meta?: RunMeta, schemaE
 /** `schemaError`: the output was received but failed validation; its quality is still scored and the failure is recorded as a schema problem. `truncated`: cut off, nothing to score. */
 export type Generator = (c: EvalCase) => Promise<{ raw?: unknown; error?: string; meta?: RunMeta; schemaError?: string; truncated?: boolean }>;
 
+/** Version of the scoring code and fixtures. Bump it whenever a check, a threshold or a fixture changes, so scores from different evaluators are never compared. */
+export const EVALUATOR_VERSION = "campaign-evaluator/3.2.0";
+
 /** What was run and how, so the result can be reproduced or compared like for like. */
 export interface RunInfo {
+  evaluator?: string;
   identity?: { promptVersion: string; promptSha256: string; schemaVersion: string; schemaSha256: string };
   model?: string;
   params?: Record<string, unknown>;

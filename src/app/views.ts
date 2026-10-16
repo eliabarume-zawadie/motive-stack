@@ -44,7 +44,7 @@ export function campaignView(c: AppContext, wsId: string, campaignId: string) {
     // Computed from the stored brief and the CURRENT Business Brain; never stored and never supplied by a model.
     ceilingCents: brain?.maxDailyBudgetCents ?? null,
     specialAdCategories: brain ? specialAdCategoryHints(brain) : [],
-    platformValidation: brain ? metaValidation(rec.brief, brain) : [],
+    platformValidation: brain ? metaValidation(rec.brief, brain, { asOf: c.now() }) : [],
     applicableTargetingNote: APPLICABLE_TARGETING_NOTE,
   };
 }
