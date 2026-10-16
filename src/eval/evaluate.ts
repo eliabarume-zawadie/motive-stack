@@ -92,7 +92,32 @@ function comparableOf(checks: CheckResult[], generated: boolean): ComparableView
   return { scores, overall: mean(vals), hardFail, passed: generated && !hardFail && vals.length > 0 && vals.every((v) => v >= DIMENSION_PASS) };
 }
 
+/**
+ * What the provider returned about ONE request, sanitised: identifiers, tier, status, usage and cost, never any response text.
+ * `null` always means the provider did not return it; a returned value is never inferred from the request. The requested model and
+ * tier are kept in their own fields, so asked-for and returned can be told apart. `missing` lists the null fields by name.
+ */
+export interface ProviderEvidence {
+  requestedModel: string | null;
+  returnedModel: string | null;
+  /** The provider's id for the response object. */
+  responseId: string | null;
+  /** The server-generated request id (x-request-id), for reconciling with the provider's usage page. */
+  requestId: string | null;
+  requestedServiceTier: string | null;
+  returnedServiceTier: string | null;
+  responseStatus: string | null;
+  httpStatus: number | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  costStatus: string | null;
+  estimatedCostMicros: number | null;
+  missing: string[];
+}
+
 export interface RunMeta {
+  /** Sanitised provider evidence for this request (final attempt). Absent only for requests that were never sent. */
+  provider?: ProviderEvidence;
   /** Prompt and output-contract versions and fingerprints that produced this output. */
   identity?: { promptVersion: string; promptSha256: string; schemaVersion: string; schemaSha256: string };
   model?: string;

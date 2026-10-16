@@ -117,7 +117,10 @@ describe("OllamaProvider wire behavior (real SDK, mocked HTTP)", () => {
     const r = await make(s.fetch).generateObject(req("llama3.1:latest"));
     expect(s.calls[0]).toMatchObject({ url: "http://127.0.0.1:11434/v1/responses", auth: "Bearer ollama" });
     expect(s.calls[0]!.body.text.format).toMatchObject({ type: "json_schema", strict: true });
-    expect(r).toMatchObject({ raw: BRIEF_OK, simulated: false, requestId: "resp_385873", usage: { inputTokens: 189, outputTokens: 247, source: "provider" } });
+    // A local server sends no x-request-id header, so there is NO server request id; the response id is kept as the response id and is not passed off as one.
+    expect(r).toMatchObject({ raw: BRIEF_OK, simulated: false, usage: { inputTokens: 189, outputTokens: 247, source: "provider" } });
+    expect(r.requestId).toBeUndefined();
+    expect(r.meta).toMatchObject({ responseId: "resp_385873", requestId: null });
   });
   it("is unavailable and sends nothing unless local mode is on", async () => {
     const s = ollamaFetch([okResponse("{}")]);

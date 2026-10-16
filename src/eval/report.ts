@@ -32,6 +32,19 @@ export function renderMarkdown(r: EvalReport, baseline?: EvalReport): string {
   }
   L.push(`| **mean** | ${DIMENSIONS.map((d) => mark(a.meanByDimension[d])).join(" | ")} | ${pct(a.meanOverall)} | ${a.passed}/${a.total} |`, "");
 
+  if (r.cases.some((c) => c.meta?.provider)) {
+    const u = (v: string | number | null | undefined) => (v === null || v === undefined ? "unknown" : String(v));
+    L.push("## Provider evidence per request", "");
+    L.push("Sanitised: identifiers, tier, status, usage and cost, never any response text. \"unknown\" means the provider did not return it; it is never filled in from what was requested. Use the request id to reconcile with the provider's usage page.", "");
+    L.push("| Case | Request id | Response id | Model (requested / returned) | Tier (requested / returned) | Status | In | Out | Cost µUSD | Not returned |", "|---|---|---|---|---|---|---|---|---|---|");
+    for (const c of r.cases) {
+      const p = c.meta?.provider;
+      if (!p) { L.push(`| ${c.caseId} | not sent | | | | | | | | |`); continue; }
+      L.push(`| ${c.caseId} | ${u(p.requestId)} | ${u(p.responseId)} | ${u(p.requestedModel)} / ${u(p.returnedModel)} | ${u(p.requestedServiceTier)} / ${u(p.returnedServiceTier)} | ${u(p.responseStatus)} | ${u(p.inputTokens)} | ${u(p.outputTokens)} | ${u(p.estimatedCostMicros)} | ${p.missing.length ? p.missing.join(", ") : "none"} |`);
+    }
+    L.push("");
+  }
+
   if (r.cases.every((c) => c.comparable)) {
     const cd = DIMENSIONS.filter((d) => d !== "schemaValidity");
     L.push("## Comparable view (checks both the original and current brief contracts can express)", "");

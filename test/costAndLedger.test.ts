@@ -131,7 +131,9 @@ describe("live run safeguards that protect the cost bound (fake providers)", () 
     const p: AiProvider = {
       id: "fake", label: "f", models: ["m"], simulated: false, isAvailable: () => true,
       generateText: async () => ({ text: "x", model: "m", simulated: false }),
-      generateObject: async <T,>(r: GenerateObjectRequest<T>): Promise<ProviderResult> => { calls++; return { raw: buildMockBrief(BusinessBrainSchema.parse(r.context)), model: "m", simulated: false, usage: { inputTokens: 100, outputTokens: 100, source: "provider" }, ...(tier ? { serviceTier: tier } : {}) }; },
+      generateObject: async <T,>(r: GenerateObjectRequest<T>): Promise<ProviderResult> => { calls++; return { raw: buildMockBrief(BusinessBrainSchema.parse(r.context)), model: "m", simulated: false, usage: { inputTokens: 100, outputTokens: 100, source: "provider" }, ...(tier ? { serviceTier: tier } : {}),
+        // what a real adapter reports about the response; a field the provider did not send is null, never the requested value
+        meta: { requestedModel: "m", requestedServiceTier: expected ?? null, returnedModel: "m", responseId: "resp_1", requestId: "req_1", returnedServiceTier: tier ?? null, responseStatus: "completed", httpStatus: null } }; },
     };
     const gw = new AiGateway([p], { pricing: price, repairAttempts: 0, maxRetries: 0, sleep: async () => {} });
     return { live: makeLiveGenerator({ gateway: gw, provider: "fake", model: "m", prompt: "current", budgetMicros: 1_000_000, maxOutputTokens: 1000, reserveMicros: 1_000, expectedServiceTier: expected }), calls: () => calls };

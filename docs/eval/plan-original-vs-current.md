@@ -1,6 +1,6 @@
 # Evaluation plan and preflight: recovered original vs current candidate (NOTHING SENT)
 
-Generated 2026-10-16T13:42:54.428Z by `npm run eval:plan`. **This script made no network request** (it replaces `fetch` with a function that throws) and no model call or provider-access check. The only network use in preparing this document was reading the provider's public documentation pages on 2026-10-16. The live comparison has not been started and needs your final authorization.
+Generated 2026-10-16T14:08:16.364Z by `npm run eval:plan`. **This script made no network request** (it replaces `fetch` with a function that throws) and no model call or provider-access check. The only network use in preparing this document was reading the provider's public documentation pages on 2026-10-16. The live comparison has not been started and needs your final authorization.
 
 ## 0. Approved settings
 
@@ -208,7 +208,7 @@ The repository had no Git history. The original implementation was rebuilt by re
 | A retry or repair is requested for a registered experiment | Refuse to start | Code (CLI) |
 | A request needed more than 1 attempt (a retry or a repair) | Halt immediately | Code (`maxAttemptsPerRequest` = 1; retries 0 and repair 0 also set) |
 | A request's cost cannot be determined | Halt; charged at the reserve, never as zero | Code (`haltOnUnknownCost`) |
-| The response reports a processing tier other than `default`, or none | Halt: the price assumed may not apply | Code (`expectedServiceTier`) |
+| The response reports a processing tier other than `default`, or none, or a model that is not `gpt-6-luna` | Halt: the price assumed may not apply. Checked on the response metadata BEFORE its content is parsed or validated, so a malformed, invalid or cut-off answer cannot bypass it; the request's usage and cost are still recorded | Code (`responseGuard` in the gateway; `expectedServiceTier`) |
 | The model has no recorded price | Refuse to plan or run | Code (CLI) |
 | Price page differs from `config/ai-pricing.json`, or the recorded price is older than 14 days | Do not start; re-verify | Procedure, before the run |
 | More than 4 of the first 14 requests of an invocation produce nothing scorable | Stop and review before the next invocation | Procedure, after the first invocation |

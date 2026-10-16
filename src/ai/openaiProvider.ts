@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import { mapSdkError } from "./sdkErrors.js";
-import { AiError, type AiProvider, type GenerateObjectRequest, type GenerateTextRequest, type ProviderResult, type Usage } from "./types.js";
+import { AiError, type AiProvider, type GenerateObjectRequest, type GenerateTextRequest, type ProviderResult, type ResponseMeta, type Usage } from "./types.js";
 
 export interface OpenAIProviderOptions {
   /** Server-side only. Leave undefined to make the provider unavailable. */
@@ -43,6 +43,7 @@ interface ResponseLike {
   output_text?: string;
   usage?: { input_tokens?: number; output_tokens?: number } | null;
   service_tier?: string | null;
+  model?: string | null;
 }
 
 const num = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
@@ -88,24 +89,44 @@ export class OpenAIProvider implements AiProvider {
     };
     this.applyEffort(body, req.model);
     const resp = await this.call(body, req.signal);
-    this.rejectIncomplete(resp);
-    const serviceTier = resp.service_tier ?? undefined;
+    // Captured FIRST, before anything about the content is examined, so a cut-off, malformed or invalid answer still carries it.
+    const meta = this.metaOf(resp, req.model);
+    const usage = this.usage(resp);
+    this.rejectIncomplete(resp, true, meta, usage);
+    const serviceTier = meta.returnedServiceTier ?? undefined;
     const text = resp.output_text ?? "";
     let raw: unknown;
     try {
       raw = JSON.parse(text);
     } catch {
-      throw new AiError("invalid_output", `${this.label} returned malformed JSON`, { requestId: this.requestId(resp) });
+      throw new AiError("invalid_output", `${this.label} returned malformed JSON`, { requestId: meta.requestId ?? undefined, usage, meta });
     }
-    return { raw, model: req.model, simulated: false, usage: this.usage(resp), requestId: this.requestId(resp), ...(serviceTier ? { serviceTier } : {}) };
+    return { raw, model: req.model, simulated: false, usage, requestId: meta.requestId ?? undefined, meta, ...(serviceTier ? { serviceTier } : {}) };
   }
 
   async generateText(req: GenerateTextRequest): Promise<ProviderResult> {
     const body: Record<string, unknown> = { model: req.model, instructions: req.system, input: req.prompt, max_output_tokens: req.maxOutputTokens ?? 1000 };
     this.applyEffort(body, req.model);
     const resp = await this.call(body, req.signal);
-    this.rejectIncomplete(resp, false);
-    return { text: resp.output_text ?? "", model: req.model, simulated: false, usage: this.usage(resp), requestId: this.requestId(resp) };
+    const meta = this.metaOf(resp, req.model);
+    const usage = this.usage(resp);
+    this.rejectIncomplete(resp, false, meta, usage);
+    return { text: resp.output_text ?? "", model: req.model, simulated: false, usage, requestId: meta.requestId ?? undefined, meta, ...(meta.returnedServiceTier ? { serviceTier: meta.returnedServiceTier } : {}) };
+  }
+
+  /** What the response itself says. A field the provider did not send is null: it is never taken from the request. */
+  private metaOf(r: ResponseLike, requestedModel: string): ResponseMeta {
+    const str = (v: unknown): string | null => (typeof v === "string" && v.length > 0 ? v : null);
+    return {
+      requestedModel,
+      requestedServiceTier: this.opts.serviceTier ?? null,
+      returnedModel: str(r.model),
+      responseId: str(r.id),
+      requestId: str(r._request_id),
+      returnedServiceTier: str(r.service_tier),
+      responseStatus: str(r.status),
+      httpStatus: null,
+    };
   }
 
   private applyEffort(body: Record<string, unknown>, model: string): void {
@@ -138,10 +159,10 @@ export class OpenAIProvider implements AiProvider {
     }
   }
 
-  private rejectIncomplete(r: ResponseLike, structured = true): void {
-    const id = this.requestId(r);
-    if (r.status === "incomplete") throw new AiError("invalid_output", `${this.label} output was cut off (${r.incomplete_details?.reason ?? "incomplete"})`, { requestId: id, usage: this.usage(r), truncated: true });
-    if (structured && r.output?.some((o) => o.content?.some((c) => c.type === "refusal"))) throw new AiError("invalid_output", `${this.label} declined to produce the requested output`, { requestId: id, usage: this.usage(r) });
+  private rejectIncomplete(r: ResponseLike, structured: boolean, meta: ResponseMeta, usage: Usage | undefined): void {
+    const requestId = meta.requestId ?? undefined;
+    if (r.status === "incomplete") throw new AiError("invalid_output", `${this.label} output was cut off (${r.incomplete_details?.reason ?? "incomplete"})`, { requestId, usage, truncated: true, meta });
+    if (structured && r.output?.some((o) => o.content?.some((c) => c.type === "refusal"))) throw new AiError("invalid_output", `${this.label} declined to produce the requested output`, { requestId, usage, meta });
   }
 
   private usage(r: ResponseLike): Usage | undefined {
@@ -150,7 +171,4 @@ export class OpenAIProvider implements AiProvider {
     return input === undefined && output === undefined ? undefined : { inputTokens: input, outputTokens: output, source: "provider" };
   }
 
-  private requestId(r: ResponseLike): string | undefined {
-    return r._request_id ?? r.id ?? undefined;
-  }
 }

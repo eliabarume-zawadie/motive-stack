@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-16T13:42:54.428Z",
+  "generatedAt": "2026-10-16T14:08:16.364Z",
   "networkUsed": false,
   "status": "PLAN ONLY. Nothing here has been sent, and model access has not been checked.",
   "approvedSettings": {
@@ -75,10 +75,10 @@
     },
     "evaluator": "campaign-evaluator/3.2.0",
     "evaluatorSourceSha256": {
-      "src/eval/evaluate.ts": "18a0e8523a56316cfd588d3f50076f430b212be77f6881329fe3126cd74d4639",
+      "src/eval/evaluate.ts": "947d88edc3d116748bc476b56fb2e779f99dbe3347a21768d3e8ac43b0cecd8c",
       "src/eval/fixtures.ts": "4c11309b1d5a36c075fbfeffc34a5e9da544f91dc3725c0292185585e64c7ea3",
-      "src/eval/report.ts": "8384962a49d328e8e38bc722bfb1617b40ece87f2295b26d9535d2bdecd1b86e",
-      "src/eval/liveRun.ts": "fc3396a47d18f46b884e2b50197bbed62c3807833381348379a2d565f8d75232",
+      "src/eval/report.ts": "1f4d050b9e40520b1f19428b2ec87185a057aabe1aee98c3eac32ba54defd5bb",
+      "src/eval/liveRun.ts": "78f2fd454726f376a2e38487aa1f483561a8ef424cd87ca4a01c653bca6b1286",
       "src/eval/costBound.ts": "00d685c390783b19b01a98881ee40fd93f7e27a71e9fbe5f1a20bfbcebf5f7cd",
       "src/eval/ledger.ts": "4a27583a04cf814c0971a604a54d0749a9017551635599c476a021cabf32c033",
       "src/eval/original.ts": "498db7b785d75ae17b6c0952453a767ba09a4fbae9737ca5366fc9d9c595cacb",
@@ -87,7 +87,7 @@
       "src/domain/schemas.ts": "8e7d25844a38273de942ca5f6e265c129fa7ab26da517d2b59505e760a06dc20",
       "src/domain/campaignJsonSchema.ts": "a5cef0d147aa586705cf6d6d5a8cce053dbb3724cd2b98dbac85a3714e240839",
       "src/app/campaignPrompt.ts": "bc037a3f00e8f61ee05f4caead2e10e2ba2f718babe89cfa38472a64e6baf57b",
-      "src/ai/openaiProvider.ts": "7f729d8f05c35c068388d6976b9cb0ad9e4aaf7f9eae35e529695e206396a0d4",
+      "src/ai/openaiProvider.ts": "aa59df2dc33623168f1362ca9901dce8a2845de11bbf0645e6b63e84b32f0011",
       "src/ai/stack.ts": "8c97f374765aa4436c1980b171d64c65a4fccfd1404fe7cad43e8f447ae3afd1",
       "src/eval/evalPolicy.ts": "d53224bf6eb4b476ff7a1d2b5c7b334503dde6e97fdd4a7bbaeec5ff598b2dcc",
       "src/eval/tierDiagnostic.ts": "3217933bf223eec2affb13813eaad747aad250c6d0e3cf3c7a80c658b039a6ea",

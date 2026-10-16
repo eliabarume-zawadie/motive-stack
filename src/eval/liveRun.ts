@@ -2,9 +2,9 @@ import type { AiGateway } from "../ai/gateway.js";
 import { CampaignBriefSchema, type BusinessBrain } from "../domain/schemas.js";
 import { CAMPAIGN_BRIEF_HINT, CAMPAIGN_BRIEF_JSON_SCHEMA } from "../domain/campaignJsonSchema.js";
 import { buildCampaignPrompt } from "../app/campaignPrompt.js";
-import { AiError } from "../ai/types.js";
+import { AiError, type AttemptRecord, type ResponseMeta } from "../ai/types.js";
 import { currentGenerationIdentity } from "../app/versions.js";
-import type { Generator, RunMeta } from "./evaluate.js";
+import type { Generator, ProviderEvidence, RunMeta } from "./evaluate.js";
 import { buildOriginalPrompt, ORIGINAL_HINT, ORIGINAL_JSON_SCHEMA, OriginalCampaignBriefSchema, originalGenerationIdentity, projectToOriginalBrain } from "./original.js";
 
 /**
@@ -36,6 +36,32 @@ export function buildLegacyPrompt(brain: BusinessBrain): { system: string; promp
       "If a fact you would need is missing, leave it out of the ad copy and list it in openQuestions; record any assumption in assumptions.",
     prompt: `Create a lead-generation campaign brief for this business. dailyBudgetCents must not exceed maxDailyBudgetCents.\nBusiness Brain:\n${JSON.stringify(brain)}`,
   };
+}
+
+/**
+ * The sanitised record of what the provider returned for one request. Built only from what was returned (the response metadata the
+ * adapter captured on arrival, and the attempt's usage and cost): an absent value stays null and is listed in `missing`.
+ */
+export function evidenceOf(meta: ResponseMeta | undefined, attempt: AttemptRecord | undefined, requested: { model: string; tier: string | null }, httpStatus?: number): ProviderEvidence {
+  const e: ProviderEvidence = {
+    requestedModel: meta?.requestedModel ?? requested.model,
+    returnedModel: meta?.returnedModel ?? null,
+    responseId: meta?.responseId ?? null,
+    requestId: meta?.requestId ?? attempt?.requestId ?? null,
+    requestedServiceTier: meta?.requestedServiceTier ?? requested.tier,
+    returnedServiceTier: meta?.returnedServiceTier ?? null,
+    responseStatus: meta?.responseStatus ?? null,
+    httpStatus: httpStatus ?? meta?.httpStatus ?? null,
+    inputTokens: attempt?.usage?.inputTokens ?? null,
+    outputTokens: attempt?.usage?.outputTokens ?? null,
+    costStatus: attempt?.costStatus ?? null,
+    estimatedCostMicros: attempt?.estimatedCostMicros ?? null,
+    missing: [],
+  };
+  // httpStatus is not exposed by the SDK for a successful response, so only its absence on a FAILED request is reported as missing.
+  const watched: Array<keyof ProviderEvidence> = ["returnedModel", "responseId", "requestId", "returnedServiceTier", "responseStatus", "inputTokens", "outputTokens", ...(httpStatus === undefined && !meta ? (["httpStatus"] as const) : [])];
+  e.missing = watched.filter((k) => e[k] === null);
+  return e;
 }
 
 export class BudgetExhausted extends Error {
@@ -81,6 +107,14 @@ export function makeLiveGenerator(o: LiveOptions): { generate: Generator; spent:
   const reserve = o.reserveMicros ?? 0;
   const maxAttempts = o.maxAttemptsPerRequest ?? 1;
   const haltOnUnknownCost = o.haltOnUnknownCost ?? true;
+  /** Verified before a response's content is parsed or validated, so a malformed or invalid answer cannot bypass it. */
+  const guard = (m: ResponseMeta | undefined): string | undefined => {
+    if (!o.expectedServiceTier) return undefined;
+    if (!m) return "stopped: the provider returned no response metadata, so the processing tier cannot be verified";
+    if (m.returnedServiceTier !== o.expectedServiceTier) return `stopped: the provider reported the processing tier "${m.returnedServiceTier ?? "none"}" instead of "${o.expectedServiceTier}", so the price assumed by the cost bound may not apply`;
+    if (m.returnedModel === null || !m.returnedModel.startsWith(o.model)) return `stopped: the provider reported the model "${m.returnedModel ?? "none"}" instead of "${o.model}", so the price and behaviour assumed may not apply`;
+    return undefined;
+  };
   const generate: Generator = async (c) => {
     if (halted) return { error: halted };
     const caseReserve = o.reserveForCase ? o.reserveForCase(c) : reserve;
@@ -93,6 +127,7 @@ export function makeLiveGenerator(o: LiveOptions): { generate: Generator; spent:
     const original = o.prompt === "original";
     const { system, prompt } = (original ? buildOriginalPrompt : o.prompt === "legacy" ? buildLegacyPrompt : buildCampaignPrompt)(c.brain);
     const identity = identityOf(o.prompt);
+    const requested = { model: o.model, tier: o.expectedServiceTier ?? null };
     try {
       const r = await o.gateway.generate(o.provider, {
         task: "campaign_brief", system, prompt, schemaHint: original ? ORIGINAL_HINT : CAMPAIGN_BRIEF_HINT,
@@ -100,7 +135,7 @@ export function makeLiveGenerator(o: LiveOptions): { generate: Generator; spent:
         // The original system could only hold, and was only ever given, the original Business Brain fields.
         context: original ? projectToOriginalBrain(c.brain) : c.brain, schema: original ? OriginalCampaignBriefSchema : CampaignBriefSchema,
         model: o.model, maxOutputTokens: o.maxOutputTokens,
-      });
+      }, { responseGuard: guard });
       consecutiveProviderErrors = 0;
       if (r.estimatedCostMicros === null || r.estimatedCostMicros === undefined) {
         spent += caseReserve; // unmeasured spend is charged at the worst-case reserve, never counted as free
@@ -109,10 +144,10 @@ export function makeLiveGenerator(o: LiveOptions): { generate: Generator; spent:
       if (r.attempts.length > maxAttempts) halted = `stopped: a request needed ${r.attempts.length} attempts (limit ${maxAttempts}); retries and repairs are not permitted in this run`;
       // The reserve is the worst case the recorded price and the pinned tier allow. A request that cost MORE means one of those assumptions is wrong.
       if (typeof r.estimatedCostMicros === "number" && r.estimatedCostMicros > caseReserve && caseReserve > 0) halted = `stopped: a request cost ${r.estimatedCostMicros} micro-USD, more than its worst-case reserve of ${caseReserve}; the price or tier assumed by the cost bound is wrong`;
-      if (o.expectedServiceTier && r.serviceTier !== o.expectedServiceTier) halted = `stopped: the provider reported the processing tier "${r.serviceTier ?? "none"}" instead of "${o.expectedServiceTier}", so the price assumed by the cost bound may not apply`;
       const meta: RunMeta = {
         model: `${r.provider}/${r.model}`, latencyMs: r.latencyMs, inputTokens: r.usage?.inputTokens, outputTokens: r.usage?.outputTokens,
         costMicros: r.estimatedCostMicros, attempts: r.attempts.length, identity, ...(r.serviceTier ? { serviceTier: r.serviceTier } : {}),
+        provider: evidenceOf(r.meta, r.attempts[r.attempts.length - 1], requested),
       };
       return { raw: r.structuredOutput, meta };
     } catch (e) {
@@ -129,12 +164,16 @@ export function makeLiveGenerator(o: LiveOptions): { generate: Generator; spent:
       if (unpriced > 0 && haltOnUnknownCost) halted = "stopped: a failed request reported no usage, so its cost is only an estimate (pricing uncertainty)";
       if (attempts.length > maxAttempts) halted = `stopped: a request needed ${attempts.length} attempts (limit ${maxAttempts}); retries and repairs are not permitted in this run`;
       const sum = (f: "inputTokens" | "outputTokens") => (attempts.length > 0 && attempts.every((a) => a.usage?.[f] !== undefined) ? attempts.reduce((s, a) => s + (a.usage?.[f] ?? 0), 0) : undefined);
+      const prov = evidenceOf(err.meta ?? attempts[attempts.length - 1]?.meta, attempts[attempts.length - 1], requested, err.httpStatus);
       const meta: RunMeta = {
         identity, model: `${o.provider}/${o.model}`, attempts: attempts.length, latencyMs: attempts.reduce((s, a) => s + a.latencyMs, 0),
         inputTokens: sum("inputTokens"), outputTokens: sum("outputTokens"), costMicros: cost,
+        provider: prov, ...(prov.returnedServiceTier ? { serviceTier: prov.returnedServiceTier } : {}),
         ...(unpriced ? { costNote: `${unpriced} attempt(s) reported no usage and were charged at the worst-case reserve (${caseReserve} micro-USD) instead of being treated as free` } : {}),
       };
       const message = `${err.kind ?? "error"}: ${String(err.message).slice(0, 300)}`;
+      // The response's own metadata broke what this run requires (tier, model). Its content was never validated or scored.
+      if (err.kind === "response_rejected") halted = err.message;
       // A request the provider REJECTS (4xx other than rate limiting) will be rejected again: sending the rest would only repeat the error.
       if (err.httpStatus !== undefined && err.httpStatus >= 400 && err.httpStatus < 500 && err.httpStatus !== 429) {
         halted = `stopped: the provider rejected a request (HTTP ${err.httpStatus}, ${err.kind}); the request itself needs fixing before anything more is sent`;

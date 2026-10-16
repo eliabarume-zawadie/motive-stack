@@ -9,6 +9,7 @@ import {
   type GenerateObjectRequest,
   type GenerateTextRequest,
   type ProviderResult,
+  type ResponseMeta,
   type Usage,
 } from "./types.js";
 
@@ -39,6 +40,13 @@ export interface CallOptions {
   timeoutMs?: number;
   /** Called after EVERY provider attempt (success or failure) so callers can record usage. */
   observer?: (a: AttemptRecord) => void;
+  /**
+   * Checks what the provider said about a response (processing tier, model) BEFORE its content is parsed or validated, and returns
+   * a reason to reject it, or undefined to accept. Receives undefined when the provider returned no metadata. A rejection is a
+   * "response_rejected" error that is never retried or repaired; usage and cost of the rejected attempt are still recorded.
+   * Because it runs first, a malformed or invalid answer cannot slip past it.
+   */
+  responseGuard?: (meta: ResponseMeta | undefined) => string | undefined;
 }
 
 const defaultSleep = (ms: number, signal?: AbortSignal) =>
@@ -142,17 +150,19 @@ export class AiGateway {
     let note: string | undefined;
     let lastRaw: unknown;
     let lastTruncated = false;
+    let lastMeta: ResponseMeta | undefined;
 
     const finish = (err: AiError): never => {
       err.attempts = attempts;
       throw err;
     };
-    const record = (start: number, outcome: AttemptRecord["outcome"], usage: Usage | undefined, requestId: string | undefined, msg?: string): AttemptRecord => {
+    const record = (start: number, outcome: AttemptRecord["outcome"], usage: Usage | undefined, requestId: string | undefined, msg?: string, meta?: ResponseMeta): AttemptRecord => {
       const cost = p.local ? { micros: null, status: "local_no_charge" as CostStatus } : this.pricing.estimate(p.id, model, usage, p.simulated);
       const rec: AttemptRecord = {
         attemptNo: attempts.length + 1, kind, provider: p.id, model, simulated: p.simulated, outcome,
         latencyMs: Math.round(performance.now() - start), usage, requestId,
         estimatedCostMicros: cost.micros, costStatus: cost.status, errorMessage: msg,
+        ...(meta ? { meta } : {}),
       };
       attempts.push(rec);
       call.observer?.(rec);
@@ -170,9 +180,14 @@ export class AiGateway {
       let res: ProviderResult | undefined;
       try {
         lastRaw = undefined;
+        lastMeta = undefined;
         res = await h.invoke(note, signal);
         lastRaw = res.raw;
+        lastMeta = res.meta;
         lastTruncated = false;
+        // The response's own metadata is checked BEFORE its content is looked at, so nothing malformed can bypass it.
+        const rejected = call.responseGuard?.(res.meta);
+        if (rejected) throw new AiError("response_rejected", rejected, { usage: res.usage, requestId: res.meta?.requestId ?? res.requestId, meta: res.meta });
         verdict = h.interpret(res);
       } catch (e) {
         let err = e instanceof AiError ? e : new AiError("provider_unavailable", "Unexpected provider failure");
@@ -180,12 +195,18 @@ export class AiGateway {
         if (call.signal?.aborted) err = new AiError("cancelled", "Request was cancelled");
         else if (timeoutSignal.aborted && err.kind === "cancelled") err = new AiError("timeout", `Request timed out after ${attemptTimeout}ms`, { retryable: true });
 
+        // An answer the adapter itself rejected (cut off, refused, malformed JSON) still arrived with metadata: check that too.
+        if (err.kind === "invalid_output" && err.meta) {
+          const rejected = call.responseGuard?.(err.meta);
+          if (rejected) err = new AiError("response_rejected", rejected, { usage: err.usage, requestId: err.requestId, meta: err.meta });
+        }
+        lastMeta = err.meta;
         if (err.kind === "invalid_output") {
-          record(start, "invalid_output", err.usage, err.requestId, err.message);
+          record(start, "invalid_output", err.usage, err.requestId, err.message, err.meta);
           verdict = { ok: false, issues: err.message };
           lastTruncated = err.truncated === true;
         } else {
-          record(start, err.kind, undefined, err.requestId, err.message);
+          record(start, err.kind, err.usage, err.requestId, err.message, err.meta);
           if (err.retryable && retriesLeft > 0) {
             retriesLeft--;
             try {
@@ -203,19 +224,19 @@ export class AiGateway {
 
       if (verdict.ok) {
         const out = res as ProviderResult;
-        record(start, "ok", out.usage, out.requestId);
+        record(start, "ok", out.usage, out.requestId, undefined, out.meta);
         return this.build(p, model, out, verdict.value, attempts, t0, h.assign);
       }
 
       // Invalid output (failed validation, malformed, cut off). Record it if we have not already (validation case).
-      if (res) record(start, "invalid_output", res.usage, res.requestId, verdict.issues);
+      if (res) record(start, "invalid_output", res.usage, res.requestId, verdict.issues, res.meta);
       if (repairsLeft > 0 && (verdict.issues.length > 0)) {
         repairsLeft--;
         kind = "repair";
         note = `Your previous output was rejected by validation: ${verdict.issues}.${verdict.previous ? `\nPrevious output:\n${verdict.previous}` : ""}\nReturn a corrected JSON object only. Do not invent facts you were not given; list missing facts in openQuestions.`;
         continue;
       }
-      const failure = new AiError("invalid_output", `Model output failed validation: ${verdict.issues}`, { truncated: lastTruncated });
+      const failure = new AiError("invalid_output", `Model output failed validation: ${verdict.issues}`, { truncated: lastTruncated, usage: attempts[attempts.length - 1]?.usage, requestId: lastMeta?.requestId ?? undefined, meta: lastMeta });
       if (lastRaw !== undefined) failure.rawOutput = lastRaw;
       return finish(failure);
     }
@@ -243,7 +264,8 @@ export class AiGateway {
       usage: input === undefined && output === undefined ? null : { inputTokens: input, outputTokens: output, source: p.simulated ? "simulated" : "provider" },
       latencyMs: Math.round(performance.now() - t0), requestId: out.requestId,
       estimatedCostMicros: cost, costStatus, attempts,
-      ...(out.serviceTier ? { serviceTier: out.serviceTier } : {}),
+      ...(out.serviceTier || out.meta?.returnedServiceTier ? { serviceTier: out.serviceTier ?? out.meta?.returnedServiceTier ?? undefined } : {}),
+      ...(out.meta ? { meta: out.meta } : {}),
     };
     assign(res, value);
     return res;

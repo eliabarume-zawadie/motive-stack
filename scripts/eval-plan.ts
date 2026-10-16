@@ -297,7 +297,7 @@ row("More HTTP requests than the invocation planned (a retry, a repair, a bug)",
 row("A retry or repair is requested for a registered experiment", "Refuse to start", "Code (CLI)");
 row("A request needed more than 1 attempt (a retry or a repair)", "Halt immediately", "Code (`maxAttemptsPerRequest` = 1; retries 0 and repair 0 also set)");
 row("A request's cost cannot be determined", "Halt; charged at the reserve, never as zero", "Code (`haltOnUnknownCost`)");
-row("The response reports a processing tier other than `" + SERVICE_TIER + "`, or none", "Halt: the price assumed may not apply", "Code (`expectedServiceTier`)");
+row("The response reports a processing tier other than `" + SERVICE_TIER + "`, or none, or a model that is not `" + MODEL + "`", "Halt: the price assumed may not apply. Checked on the response metadata BEFORE its content is parsed or validated, so a malformed, invalid or cut-off answer cannot bypass it; the request's usage and cost are still recorded", "Code (`responseGuard` in the gateway; `expectedServiceTier`)");
 row("The model has no recorded price", "Refuse to plan or run", "Code (CLI)");
 row("Price page differs from `config/ai-pricing.json`, or the recorded price is older than 14 days", "Do not start; re-verify", "Procedure, before the run");
 row("More than 4 of the first 14 requests of an invocation produce nothing scorable", "Stop and review before the next invocation", "Procedure, after the first invocation");

@@ -15,12 +15,34 @@ export type AiErrorKind =
   | "timeout"
   | "invalid_request"
   | "invalid_output" // output failed validation or was cut off / refused
+  | "response_rejected" // the response's own metadata (processing tier, model) broke what the caller required; its content was never validated
   | "budget_exhausted" // our own configured usage limit
   | "budget_unverifiable" // a cost limit is set but the cost of this model is unknown
   | "live_disabled"
   | "cancelled";
 
 export const FALLBACK_ELIGIBLE: ReadonlySet<AiErrorKind> = new Set(["rate_limit", "timeout", "provider_unavailable"]);
+
+/**
+ * What the provider said about ONE response, captured the moment it arrives and before its content is parsed or validated.
+ * `null` always means "the provider did not return this". It is never filled from what was requested: the requested values are
+ * kept in their own fields, so a reader can tell asked-for from returned.
+ */
+export interface ResponseMeta {
+  requestedModel: string;
+  requestedServiceTier: string | null;
+  /** The model id the response itself reports (may include a dated snapshot). */
+  returnedModel: string | null;
+  /** The provider's id for the response object (resp_...). */
+  responseId: string | null;
+  /** The server-generated request id from the x-request-id header. Distinct from responseId. */
+  requestId: string | null;
+  returnedServiceTier: string | null;
+  /** completed | incomplete | ... as reported by the response object. */
+  responseStatus: string | null;
+  /** The HTTP status when the SDK exposes it for this outcome (it does not for successful responses). */
+  httpStatus: number | null;
+}
 
 export class AiError extends Error {
   readonly retryable: boolean;
@@ -31,6 +53,8 @@ export class AiError extends Error {
   readonly usage?: Usage;
   /** True when the output was cut off at the token limit (nothing parseable exists). */
   readonly truncated?: boolean;
+  /** What the provider said about the response that produced this error, when a response was received at all. */
+  readonly meta?: ResponseMeta;
   /** The model's last output when it was received but failed validation. Model output, never a secret. */
   rawOutput?: unknown;
   /** Attempts made before this error surfaced (filled in by the gateway). */
@@ -39,7 +63,7 @@ export class AiError extends Error {
   constructor(
     readonly kind: AiErrorKind,
     message: string,
-    opts: { retryable?: boolean; requestId?: string; retryAfterMs?: number; httpStatus?: number; usage?: Usage; truncated?: boolean } = {},
+    opts: { retryable?: boolean; requestId?: string; retryAfterMs?: number; httpStatus?: number; usage?: Usage; truncated?: boolean; meta?: ResponseMeta } = {},
   ) {
     super(message);
     this.name = "AiError";
@@ -49,6 +73,7 @@ export class AiError extends Error {
     this.httpStatus = opts.httpStatus;
     this.usage = opts.usage;
     this.truncated = opts.truncated;
+    this.meta = opts.meta;
   }
 }
 
@@ -97,6 +122,8 @@ export interface ProviderResult {
   requestId?: string;
   /** The processing tier the provider says it used (affects price). Absent when the provider does not report one. */
   serviceTier?: string;
+  /** Everything the provider returned about this response, captured before the content was parsed. */
+  meta?: ResponseMeta;
   simulated: boolean;
 }
 
@@ -132,6 +159,8 @@ export interface AttemptRecord {
   latencyMs: number;
   usage?: Usage;
   requestId?: string;
+  /** What the provider returned about this attempt's response, when it returned one. */
+  meta?: ResponseMeta;
   /** Integer micro-units of the pricing currency. null = unknown. */
   estimatedCostMicros: number | null;
   costStatus: CostStatus;
@@ -154,4 +183,6 @@ export interface GatewayResult<T> {
   attempts: AttemptRecord[];
   /** The processing tier reported by the provider for the final attempt, when it reports one. */
   serviceTier?: string;
+  /** What the provider returned about the final attempt's response. */
+  meta?: ResponseMeta;
 }
