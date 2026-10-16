@@ -31,3 +31,9 @@ export function worstCaseMicros(inputTokens: number, maxOutputTokens: number, pr
 
 /** Cost of what a request actually used, from provider-reported usage. */
 export const actualMicros = (inputTokens: number, outputTokens: number, price: PriceLike): number => worstCaseMicros(inputTokens, outputTokens, price);
+
+/** The provider documents a 10% uplift for regional processing on some models; it cannot be ruled out for this account, so every reserve carries it. */
+export const REGIONAL_UPLIFT = 1.1;
+
+/** The amount reserved before a request is sent: the absolute worst case times the regional uplift, rounded up. The CLI and the plan both use THIS function. */
+export const reserveWithUplift = (inputTokens: number, maxOutputTokens: number, price: PriceLike): number => Math.ceil(worstCaseMicros(inputTokens, maxOutputTokens, price) * REGIONAL_UPLIFT);

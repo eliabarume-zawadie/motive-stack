@@ -99,7 +99,7 @@ describe("the committed dry-run plan", () => {
     expect(script).not.toMatch(/\bfetch\(/);
   });
   it("records the approved settings exactly", () => {
-    expect(plan.approvedSettings).toMatchObject({ model: "gpt-6-luna", cases: 14, repetitionsPerCasePerArm: 3, plannedGenerations: 84, maxOutputTokens: 2500, maxAggregateSpendMicros: 156000, retries: 0, repairs: 0, externalActions: "prohibited", deployment: "local only" });
+    expect(plan.approvedSettings).toMatchObject({ model: "gpt-6-luna", cases: 14, repetitionsPerCasePerArm: 2, plannedGenerations: 56, maxOutputTokens: 2500, maxAggregateSpendMicros: 156000, retries: 0, repairs: 0, externalActions: "prohibited", deployment: "local only", serviceTier: "default", responseStorage: "disabled (store:false)" });
     expect(plan.approvedSettings.arms).toEqual(["original", "current"]);
     expect(plan.model.id).toBe("gpt-6-luna");
   });
@@ -107,7 +107,7 @@ describe("the committed dry-run plan", () => {
     expect(plan.design.cases).toBe(EVAL_CASES.length);
     expect(plan.perCase.map((x: { id: string }) => x.id)).toEqual(EVAL_CASES.map((x) => x.id));
     expect(plan.design.primaryRequests).toBe(plan.design.cases * plan.design.arms.length * plan.design.repetitionsPerCasePerArm);
-    expect(plan.design.primaryRequests).toBe(84);
+    expect(plan.design.primaryRequests).toBe(56);
     expect(plan.design.retriesAllowed + plan.design.repairAttemptsAllowed).toBe(0);
     expect(plan.design.maxRequestsIncludingRetries).toBe(plan.design.primaryRequests);
   });
@@ -115,20 +115,26 @@ describe("the committed dry-run plan", () => {
     const k = plan.cost;
     expect(k.hardCeilingMicros).toBe(156000);
     expect(k.estimatedWorstCase.totalMicros).toBeLessThan(k.hardCeilingMicros);
-    expect(k.estimatedWorstCase.totalMicros).toBe((k.estimatedWorstCase.perRepetitionMicros.original + k.estimatedWorstCase.perRepetitionMicros.current) * 3);
-    expect(k.maxCommittedMicros).toBe(3 * (k.perInvocationBudgetMicros.original + k.perInvocationBudgetMicros.current) + k.maxAccessChecksCharged * k.accessCheckAllowanceMicros);
+    expect(k.estimatedWorstCase.totalMicros).toBe((k.estimatedWorstCase.perRepetitionMicros.original + k.estimatedWorstCase.perRepetitionMicros.current) * plan.design.repetitionsPerCasePerArm);
+    expect(k.maxCommittedMicros).toBe(plan.design.repetitionsPerCasePerArm * (k.perInvocationBudgetMicros.original + k.perInvocationBudgetMicros.current) + k.maxAccessChecksCharged * k.accessCheckAllowanceMicros);
     expect(k.maxCommittedMicros).toBeLessThanOrEqual(k.hardCeilingMicros);
     // each budget leaves room for its arm's whole estimated worst case, so a normal run is never blocked by its own budget
     expect(k.perInvocationBudgetMicros.original).toBeGreaterThan(k.estimatedWorstCase.perRepetitionMicros.original);
     expect(k.perInvocationBudgetMicros.current).toBeGreaterThan(k.estimatedWorstCase.perRepetitionMicros.current);
-    expect(k.accessCheckAllowanceMicros).toBeGreaterThan(0); // the access check is never treated as free
+    expect(k.accessCheckAllowanceMicros).toBeGreaterThan(0); // an access check, if one were ever used, is never treated as free
+    expect(k.maxAccessChecksCharged).toBe(0); // and this plan uses none
+    // the budgets cover each arm's ABSOLUTE worst case, so a budget can never block a request
+    expect(k.budgetsCoverAbsoluteWorstCase).toBe(true);
+    expect(k.perInvocationBudgetMicros.original).toBeGreaterThanOrEqual(k.absoluteWorstCase.perRepetitionMicros.original);
+    expect(k.perInvocationBudgetMicros.current).toBeGreaterThanOrEqual(k.absoluteWorstCase.perRepetitionMicros.current);
   });
   it("the absolute bound is at least the estimate, and the document is honest when it exceeds the ceiling", () => {
     const k = plan.cost;
     expect(k.absoluteWorstCase.totalMicros).toBeGreaterThanOrEqual(k.estimatedWorstCase.totalMicros);
-    if (k.absoluteWorstCase.totalMicros > k.hardCeilingMicros) expect(md).toMatch(/cannot prove that all 84 requests fit/);
-    expect(md).toMatch(/spend cannot pass the ceiling/);
-    expect(md).toMatch(/Not all 84 requests are guaranteed to run/);
+    // 56 requests fit the ceiling even at the absolute maximum, which is the property this revision was made to have
+    expect(k.absoluteWorstCase.totalMicros).toBeLessThanOrEqual(k.hardCeilingMicros);
+    expect(md).toMatch(/no request can be blocked by the budget in any circumstance/);
+    expect(md).toMatch(/All 56 requests can run even at their absolute maximum cost/);
   });
   it("expected spend is derived from billed requests, below the estimate, and labelled an expectation", () => {
     const e = plan.cost.expectedTotalMicros;
@@ -163,29 +169,30 @@ describe("the committed dry-run plan", () => {
     expect(md).toMatch(/not\*\* a generation endpoint/);
     expect(md).toMatch(/states \*\*nothing\*\* about billing/);
     expect(md).toMatch(/this plan does not claim it is free/);
-    expect(md).toMatch(/charged to the budget at an allowance of 500/);
-    expect(md).toMatch(/Not run in this task/);
+    expect(md).toMatch(/NOT used in this plan/);
+    expect(md).toMatch(/charged to the budget at 500/);
+    expect(md).toMatch(/not part of the commands below/);
   });
   it("states the stop conditions, the reconstructed dependencies, the fixed decision rule and separate scoring layers", () => {
-    for (const phrase of [/Budget would be passed/, /more than 1 attempt/, /cost cannot be determined/, /processing tier other than/, /Aggregate ceiling or request cap/, /earlier invocation halted/, /Price page differs/, /What depends on reconstructed historical artifacts/, /Everything on the original arm inherits that limit/, /Schema validity\*\*, against each arm's own contract/, /Decision rule, fixed before any result exists/, /No result is described as statistically significant/, /Every repetition is its own report/]) expect(md).toMatch(phrase);
+    for (const phrase of [/Budget would be passed/, /more than 1 attempt/, /cost cannot be determined/, /processing tier other than/, /Aggregate ceiling or request cap/, /earlier invocation halted/, /Price page differs/, /reconciles it with a recorded note/, /HTTP 4xx other than 429/, /capRequests/, /What depends on reconstructed historical artifacts/, /Everything on the original arm inherits that limit/, /Schema validity\*\*, against each arm's own contract/, /Decision rule, fixed before any result exists/, /No result is described as statistically significant/, /Every repetition is its own report/]) expect(md).toMatch(phrase);
   });
-  it("the invocation list matches the approved settings: 6 invocations, one access check, ledger and limits on each, nothing else", () => {
+  it("the invocation list matches the approved settings: 4 invocations, no access check, ledger and limits on each, nothing else", () => {
     const cmds: string[] = plan.commands;
-    expect(cmds).toHaveLength(6);
-    expect(cmds.filter((c) => c.includes("--check-access"))).toHaveLength(1);
+    expect(cmds).toHaveLength(4);
+    expect(cmds.filter((c) => c.includes("--check-access"))).toHaveLength(0); // the live diagnostic already showed the key and model work
     for (const c of cmds) {
       expect(c).toContain("--models openai/gpt-6-luna");
       expect(c).toContain("--max-output 2500");
       expect(c).toContain("--repair 0");
       expect(c).toContain("--retries 0");
       expect(c).toContain("--aggregate-ceiling-micros 156000");
-      expect(c).toContain("--max-total-requests 84");
+      expect(c).toContain("--max-total-requests 56");
       expect(c).toContain("--ledger docs/eval/ledger-cmp-3-2.json");
       expect(c).toMatch(/--yes-spend$/);
       expect(c).not.toMatch(/gpt-5|anthropic|claude/i);
     }
-    expect(cmds.filter((c) => c.includes("--prompt original"))).toHaveLength(3);
-    expect(cmds.filter((c) => c.includes("--prompt current"))).toHaveLength(3);
+    expect(cmds.filter((c) => c.includes("--prompt original"))).toHaveLength(2);
+    expect(cmds.filter((c) => c.includes("--prompt current"))).toHaveLength(2);
     expect(cmds[0]).toContain("--prompt original"); // alternating order: original 1, current 1, original 2, ...
     expect(cmds[1]).toContain("--prompt current");
   });

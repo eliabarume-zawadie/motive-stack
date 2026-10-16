@@ -12,7 +12,7 @@ import { CAMPAIGN_BRIEF_HINT, CAMPAIGN_BRIEF_JSON_SCHEMA } from "../src/domain/c
 import { BusinessBrainSchema } from "../src/domain/schemas.js";
 import { absoluteInputTokens, actualMicros, estimatedInputTokens, requestText, worstCaseMicros } from "../src/eval/costBound.js";
 import { EVAL_CASES } from "../src/eval/fixtures.js";
-import { canStart, committedMicros, committedRequests, loadLedger, saveLedger, type Ledger } from "../src/eval/ledger.js";
+import { canStart, committedMicros, committedRequests, loadLedger, reconcile, saveLedger, type Ledger } from "../src/eval/ledger.js";
 import { buildLegacyPrompt, makeLiveGenerator } from "../src/eval/liveRun.js";
 
 const luna = { inputPerMTokMicros: 100_000, outputPerMTokMicros: 500_000, longContext: { aboveInputTokens: 272_000, inputPerMTokMicros: 200_000, outputPerMTokMicros: 750_000 } };
@@ -83,7 +83,9 @@ describe("the aggregate ledger", () => {
     const l: Ledger = { ...init, entries: [entry("crashed", { status: "started", chargedMicros: undefined, reservedMicros: 28_000 })] };
     expect(committedMicros(l)).toBe(28_000);
     expect(canStart(l, { reservedMicros: 1, requests: 1 })).toMatchObject({ ok: false, reason: expect.stringMatching(/never finished/) });
-    expect(canStart(l, { reservedMicros: 1, requests: 1 }, true).ok).toBe(true); // only after a person acknowledges
+    reconcile(l, "Reviewed the crash: no request was sent, safe to continue.", "2026-10-16T00:00:00Z");
+    expect(canStart(l, { reservedMicros: 1, requests: 1 }).ok).toBe(true); // only after a person reconciles it
+    expect(committedMicros(l)).toBe(28_000); // and the unfinished entry is STILL counted at its full reserve
   });
   it("refuses an invocation that could pass the ceiling or the request cap", () => {
     const l: Ledger = { ...init, entries: [entry("a", { chargedMicros: 150_000, requests: 70 })] };
@@ -91,10 +93,11 @@ describe("the aggregate ledger", () => {
     expect(canStart(l, { reservedMicros: 6_001, requests: 14 })).toMatchObject({ ok: false, reason: expect.stringMatching(/aggregate ceiling of 156000/) });
     expect(canStart(l, { reservedMicros: 100, requests: 15 })).toMatchObject({ ok: false, reason: expect.stringMatching(/cap of 84/) });
   });
-  it("an earlier halt blocks the next invocation until a person acknowledges it", () => {
+  it("an earlier halt blocks the next invocation until a person reconciles it", () => {
     const l: Ledger = { ...init, entries: [entry("h", { halted: "stopped: a request needed 2 attempts" })] };
     expect(canStart(l, { reservedMicros: 1, requests: 1 })).toMatchObject({ ok: false, reason: expect.stringMatching(/halted: stopped: a request needed 2 attempts/) });
-    expect(canStart(l, { reservedMicros: 1, requests: 1 }, true).ok).toBe(true);
+    reconcile(l, "Reviewed the halt: the retry was a test fault, not spend.", "2026-10-16T00:00:00Z");
+    expect(canStart(l, { reservedMicros: 1, requests: 1 }).ok).toBe(true);
   });
   it("limits cannot be loosened on an existing ledger", () => {
     const dir = tmp();
@@ -104,18 +107,18 @@ describe("the aggregate ledger", () => {
     expect(() => loadLedger(path, { ...init, maxTotalRequests: 500 })).toThrow(/Limits cannot be changed/);
     rmSync(dir, { recursive: true });
   });
-  it("the planned six invocations fit the ceiling even if every one spent its entire budget and made an access check; a seventh would not", () => {
+  it("the planned invocations fit the ceiling even if every one spent its entire budget; one more would not", () => {
     const plan = JSON.parse(readFileSync("docs/eval/plan-original-vs-current.json", "utf8"));
     const b = plan.cost.perInvocationBudgetMicros as { original: number; current: number };
-    const allow = plan.cost.accessCheckAllowanceMicros as number;
-    const l: Ledger = { ...init, entries: [] };
-    for (let rep = 1; rep <= 3; rep++) for (const arm of ["original", "current"] as const) {
+    const allow = plan.cost.maxAccessChecksCharged > 0 ? (plan.cost.accessCheckAllowanceMicros as number) : 0;
+    const l: Ledger = { ...init, maxTotalRequests: plan.design.primaryRequests, entries: [] };
+    for (let rep = 1; rep <= plan.design.repetitionsPerCasePerArm; rep++) for (const arm of ["original", "current"] as const) {
       const reserve = b[arm] + allow;
       expect(canStart(l, { reservedMicros: reserve, requests: 14 }), `${arm} ${rep}`).toMatchObject({ ok: true });
       l.entries.push(entry(`${arm}-${rep}`, { arm, reservedMicros: reserve, chargedMicros: reserve, requests: 14 })); // worst case: the whole budget plus the allowance
     }
     expect(committedMicros(l)).toBeLessThanOrEqual(156_000);
-    expect(committedRequests(l)).toBe(84);
+    expect(committedRequests(l)).toBe(plan.design.primaryRequests);
     expect(canStart(l, { reservedMicros: 1, requests: 1 }).ok).toBe(false);
   });
 });
@@ -131,7 +134,7 @@ describe("live run safeguards that protect the cost bound (fake providers)", () 
       generateObject: async <T,>(r: GenerateObjectRequest<T>): Promise<ProviderResult> => { calls++; return { raw: buildMockBrief(BusinessBrainSchema.parse(r.context)), model: "m", simulated: false, usage: { inputTokens: 100, outputTokens: 100, source: "provider" }, ...(tier ? { serviceTier: tier } : {}) }; },
     };
     const gw = new AiGateway([p], { pricing: price, repairAttempts: 0, maxRetries: 0, sleep: async () => {} });
-    return { live: makeLiveGenerator({ gateway: gw, provider: "fake", model: "m", prompt: "current", budgetMicros: 1_000_000, maxOutputTokens: 1000, reserveMicros: 10, expectedServiceTier: expected }), calls: () => calls };
+    return { live: makeLiveGenerator({ gateway: gw, provider: "fake", model: "m", prompt: "current", budgetMicros: 1_000_000, maxOutputTokens: 1000, reserveMicros: 1_000, expectedServiceTier: expected }), calls: () => calls };
   };
 
   it("a response in the expected tier is accepted, and the tier is recorded", async () => {

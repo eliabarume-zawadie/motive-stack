@@ -9,7 +9,7 @@
  *   npm run eval:plan -- --reps 3 --max-output 2500 --ceiling 156000
  */
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 
 (globalThis as { fetch: unknown }).fetch = () => { throw new Error("eval-plan is offline: a network call was attempted"); };
 
@@ -17,18 +17,18 @@ import { PricingTable } from "../src/ai/pricing.js";
 import { buildCampaignPrompt } from "../src/app/campaignPrompt.js";
 import { CAMPAIGN_SCHEMA_VERSION, currentGenerationIdentity } from "../src/app/versions.js";
 import { CAMPAIGN_BRIEF_HINT, CAMPAIGN_BRIEF_JSON_SCHEMA } from "../src/domain/campaignJsonSchema.js";
-import { absoluteInputTokens, actualMicros, estimatedInputTokens, requestText, worstCaseMicros } from "../src/eval/costBound.js";
+import { REGIONAL_UPLIFT, absoluteInputTokens, actualMicros, estimatedInputTokens, requestText, reserveWithUplift, worstCaseMicros } from "../src/eval/costBound.js";
 import { DIMENSION_LABELS, DIMENSION_PASS, DIMENSIONS, EVALUATOR_VERSION } from "../src/eval/evaluate.js";
 import { EVAL_CASES } from "../src/eval/fixtures.js";
 import { buildLegacyPrompt } from "../src/eval/liveRun.js";
 import { ORIGINAL_HINT, ORIGINAL_JSON_SCHEMA, buildOriginalPrompt, originalGenerationIdentity } from "../src/eval/original.js";
 
 const arg = (n: string, d: string) => { const i = process.argv.indexOf(`--${n}`); return i >= 0 ? (process.argv[i + 1] ?? d) : d; };
-const REPS = Number(arg("reps", "3"));
+const REPS = Number(arg("reps", "2"));
 const MAX_OUT = Number(arg("max-output", "2500"));
 const CEILING = Number(arg("ceiling", "156000")); // the approved maximum aggregate spend, in micro-USD
 const ALLOWANCE = Number(arg("access-allowance", "500")); // charged to the budget per access check, because the provider documents no billing for it
-const UPLIFT = 1.1; // the documented regional-processing uplift; applied to every reserve because it cannot be ruled out for this account
+const UPLIFT = REGIONAL_UPLIFT; // the documented regional-processing uplift; applied to every reserve because it cannot be ruled out for this account
 const PROVIDER = "openai";
 const MODEL = "gpt-6-luna";
 const SERVICE_TIER = "default";
@@ -59,7 +59,7 @@ const perCase = EVAL_CASES.map((c) => {
     const est = estimatedInputTokens(text);
     const abs = absoluteInputTokens(text);
     if (abs > longThreshold) throw new Error(`${c.id}/${arm}: even the estimate exceeds the long-context threshold; the cost model would be wrong`);
-    row[arm] = { chars: text.length, estimatedInputTokens: est, absoluteInputTokens: abs, estimatedWorstMicros: worstCaseMicros(est, MAX_OUT, price), absoluteWorstMicros: Math.ceil(worstCaseMicros(abs, MAX_OUT, price) * UPLIFT) };
+    row[arm] = { chars: text.length, estimatedInputTokens: est, absoluteInputTokens: abs, estimatedWorstMicros: worstCaseMicros(est, MAX_OUT, price), absoluteWorstMicros: reserveWithUplift(abs, MAX_OUT, price) };
   }
   return row as { id: string } & Record<Arm, { chars: number; estimatedInputTokens: number; absoluteInputTokens: number; estimatedWorstMicros: number; absoluteWorstMicros: number }>;
 });
@@ -72,11 +72,13 @@ const estTotal = (estPerRep.original + estPerRep.current) * REPS;
 const absTotal = (absPerRep.original + absPerRep.current) * REPS;
 
 // Budgets: what is left after the access-check allowance, split between the arms in proportion to their estimated cost, rounded down to 500.
-const checksAllowed = ARMS.length * REPS; // one check per invocation at most
+const checksAllowed = Number(arg("access-checks", "0")); // this plan uses none: the live diagnostic already showed the key and the model work
 const perRepBudget = Math.floor((CEILING - checksAllowed * ALLOWANCE) / REPS / 500) * 500;
-const originalBudget = Math.floor((perRepBudget * estPerRep.original) / (estPerRep.original + estPerRep.current) / 500) * 500;
+// Split in proportion to the ABSOLUTE worst case, so each budget covers its arm's whole absolute worst case whenever the ceiling allows it.
+const originalBudget = Math.floor((perRepBudget * absPerRep.original) / (absPerRep.original + absPerRep.current) / 500) * 500;
 const budgets = { original: originalBudget, current: perRepBudget - originalBudget };
 const maxCommitted = REPS * (budgets.original + budgets.current) + checksAllowed * ALLOWANCE;
+const budgetsCoverAbsolute = budgets.original >= absPerRep.original && budgets.current >= absPerRep.current;
 
 /* ---- calibration: the estimate against requests that were actually billed (committed evidence, no new request) ---- */
 interface Calib { arm: string; id: string; billedIn: number; billedOut: number; billedMicros: number; estIn: number; absIn: number; ratioBilledToEstimate: number; estWorst: number }
@@ -98,7 +100,15 @@ const recomputedOk = calib.every((c) => Math.abs(actualMicros(c.billedIn, c.bill
 const expectedLow = Math.round(estTotal * Math.min(...spendShare));
 const expectedHigh = Math.round(estTotal * Math.max(...spendShare));
 
-const sources = ["src/eval/evaluate.ts", "src/eval/fixtures.ts", "src/eval/report.ts", "src/eval/liveRun.ts", "src/eval/costBound.ts", "src/eval/ledger.ts", "src/eval/original.ts", "src/domain/briefRules.ts", "src/domain/facts.ts", "src/domain/schemas.ts", "src/domain/campaignJsonSchema.ts", "src/app/campaignPrompt.ts", "src/ai/openaiProvider.ts", "scripts/eval-campaigns.ts"];
+/* ---- the live diagnostic's recorded result (committed evidence; read, not re-run) ---- */
+interface DiagSummary { date: string; maxOut: number; http: number; requestId: string; tier: string; model: string; input: number; output: number; reasoning: number; cost: number; passed: number; total: number; file: string }
+const diagFile = existsSync("docs/live-verification") ? readdirSync("docs/live-verification").filter((f) => f.startsWith("openai-tier-diagnostic-")).sort().pop() : undefined;
+const diag: DiagSummary | undefined = diagFile ? (() => {
+  const d = JSON.parse(readFileSync("docs/live-verification/" + diagFile, "utf8")) as Record<string, any>;
+  return { date: String(d.startedAt).slice(0, 10), maxOut: d.request.sent.max_output_tokens, http: d.http.status, requestId: d.http.requestId, tier: d.response.service_tier, model: d.response.model, input: d.response.usage.input_tokens, output: d.response.usage.output_tokens, reasoning: d.response.usage.output_tokens_details?.reasoning_tokens ?? 0, cost: d.calculatedCostMicros, passed: d.checks.filter((c: any) => c.pass).length, total: d.checks.length, file: "docs/live-verification/" + diagFile };
+})() : undefined;
+
+const sources = ["src/eval/evaluate.ts", "src/eval/fixtures.ts", "src/eval/report.ts", "src/eval/liveRun.ts", "src/eval/costBound.ts", "src/eval/ledger.ts", "src/eval/original.ts", "src/domain/briefRules.ts", "src/domain/facts.ts", "src/domain/schemas.ts", "src/domain/campaignJsonSchema.ts", "src/app/campaignPrompt.ts", "src/ai/openaiProvider.ts", "src/ai/stack.ts", "src/eval/evalPolicy.ts", "src/eval/tierDiagnostic.ts", "scripts/eval-campaigns.ts"];
 const fingerprints = Object.fromEntries(sources.map((s) => [s, fileSha(s)]));
 const fixturesSha = sha(JSON.stringify(EVAL_CASES.map((c) => ({ id: c.id, brain: c.brain, expect: String(c.expect.mustNotContain ?? "") }))));
 const cur = currentGenerationIdentity();
@@ -106,13 +116,13 @@ const orig = originalGenerationIdentity();
 
 const commands: string[] = [];
 const common = `--models ${PROVIDER}/${MODEL} --max-output ${MAX_OUT} --repair 0 --retries 0 --ledger docs/eval/ledger-cmp-3-2.json --aggregate-ceiling-micros ${CEILING} --max-total-requests ${requests}`;
-for (let r = 1; r <= REPS; r++) for (const arm of ARMS) commands.push(`npm run eval:campaigns -- ${common} --prompt ${arm} --budget-micros ${budgets[arm]} --label cmp-3-2-${arm}-rep${r}${r === 1 && arm === "original" ? " --check-access" : ""} --yes-spend`);
+for (let r = 1; r <= REPS; r++) for (const arm of ARMS) commands.push(`npm run eval:campaigns -- ${common} --prompt ${arm} --budget-micros ${budgets[arm]} --label cmp-3-2-${arm}-rep${r}${r === 1 && arm === "original" && checksAllowed > 0 ? " --check-access" : ""} --yes-spend`);
 
 const plan = {
   generatedAt: new Date().toISOString(),
   networkUsed: false,
   status: "PLAN ONLY. Nothing here has been sent, and model access has not been checked.",
-  approvedSettings: { model: MODEL, cases: EVAL_CASES.length, arms: ARMS, repetitionsPerCasePerArm: REPS, plannedGenerations: requests, maxOutputTokens: MAX_OUT, maxAggregateSpendMicros: CEILING, retries: 0, repairs: 0, externalActions: "prohibited", deployment: "local only" },
+  approvedSettings: { model: MODEL, cases: EVAL_CASES.length, arms: ARMS, repetitionsPerCasePerArm: REPS, plannedGenerations: requests, maxOutputTokens: MAX_OUT, maxAggregateSpendMicros: CEILING, retries: 0, repairs: 0, externalActions: "prohibited", deployment: "local only", serviceTier: SERVICE_TIER, responseStorage: "disabled (store:false)" },
   model: { provider: PROVIDER, id: MODEL, registryEntrySha256: sha(JSON.stringify(entry ?? null)), providerSnapshot: "not pinned: the provider id is an alias with no dated snapshot listed; the response's model id and service tier are recorded per request" },
   price: { ...price, serviceTier: SERVICE_TIER, status: `recorded locally ${price.asOf}; the public pricing and models pages were read again on ${DOCS_READ_ON} (see the document); the figures matched`, regionalUpliftApplied: UPLIFT },
   design: { cases: EVAL_CASES.length, arms: ARMS, repetitionsPerCasePerArm: REPS, primaryRequests: requests, retriesAllowed: 0, repairAttemptsAllowed: 0, maxOutputTokens: MAX_OUT, maxRequestsIncludingRetries: requests },
@@ -127,7 +137,7 @@ const plan = {
     hardCeilingMicros: CEILING,
     perInvocationBudgetMicros: budgets,
     accessCheckAllowanceMicros: ALLOWANCE, maxAccessChecksCharged: checksAllowed,
-    maxCommittedMicros: maxCommitted,
+    maxCommittedMicros: maxCommitted, budgetsCoverAbsoluteWorstCase: budgetsCoverAbsolute,
     inputTokensPerRep: { original: perCase.reduce((s, r) => s + r.original.estimatedInputTokens, 0), current: perCase.reduce((s, r) => s + r.current.estimatedInputTokens, 0) },
   },
   calibration: { samples: calib, billedCostsMatchPriceTable: recomputedOk, billedToEstimatedInputRatio: { min: Math.min(...ratios), max: Math.max(...ratios) } },
@@ -148,7 +158,8 @@ L.push("## 0. Approved settings", "");
 row("Setting", "Value"); row("---", "---");
 row("Model", `\`${MODEL}\` (provider \`${PROVIDER}\`)`); row("Cases", `${EVAL_CASES.length} synthetic business scenarios`); row("Arms", "reconstructed original implementation; current candidate");
 row("Repetitions", `${REPS} per case per arm`); row("Planned generations", `${requests}`); row("Max output tokens per generation", `${MAX_OUT.toLocaleString("en-US")}`);
-row("Maximum aggregate experimental spend", `${usd(CEILING)} (${CEILING} micro-USD), including any access check`); row("Automatic retries / repairs", "disabled / disabled"); row("External advertising and CRM actions", "prohibited"); row("Deployment", "local only");
+row("Maximum aggregate experimental spend", `${usd(CEILING)} (${CEILING} micro-USD)`); row("Automatic retries / repairs", "disabled / disabled"); row("External advertising and CRM actions", "prohibited"); row("Deployment", "local only");
+row("Service tier", `explicitly \`${SERVICE_TIER}\` (standard), read back from every response`); row("Response storage", "explicitly disabled (`store: false`)");
 L.push("");
 
 L.push("## 1. What is compared", "");
@@ -181,6 +192,14 @@ row("Responses API / structured outputs", "The models page does not list per-mod
 row("Ultrafast", "`gpt-6-luna` is not listed.", "Not applicable.");
 L.push("", `**Conclusion on rates.** For these requests the applicable rate is the standard short-context rate ($0.10 / $0.50 per 1M), provided the standard tier is used. That is a consequence of pinning the tier and of the inputs being far below 272K tokens, not an assumption. The one rate that could still differ is the regional uplift, which is covered by the ${UPLIFT} factor. **The rates themselves are the provider's published prices; this plan cannot confirm what the account is actually billed.** The earlier six billed requests matched the price table to the micro-USD against the provider-reported token counts (${recomputedOk ? "re-checked here: yes" : "RE-CHECK FAILED"}), which confirms the arithmetic and not the invoice.`, "");
 
+L.push("### Live service-tier diagnostic (already run, one request)", "");
+if (diag) {
+  L.push("One generation was made on " + diag.date + " to test the tier before any evaluation: `gpt-6-luna`, `service_tier: \"default\"`, " + diag.maxOut + " output tokens, synthetic input, no retries.", "");
+  row("Observation", "Result"); row("---", "---");
+  row("HTTP / request id", "HTTP " + diag.http + " / `" + diag.requestId + "`"); row("Returned service tier", "`" + diag.tier + "`"); row("Model returned", "`" + diag.model + "`");
+  row("Usage", diag.input + " input, " + diag.output + " output (" + diag.reasoning + " reasoning) tokens"); row("Cost (price table)", diag.cost + " µUSD ($" + (diag.cost / 1e6).toFixed(6) + ")"); row("Checks passed", diag.passed + " of " + diag.total);
+  L.push("", "Evidence: `" + diag.file + "`. This shows the endpoint accepts and reports the tier. It does not show the account's billing, and it did not send `store: false` (the adapter did not support it then).", "");
+}
 L.push("## 4. Request count and cost bound", "");
 L.push(`- Primary requests: ${EVAL_CASES.length} cases × ${ARMS.length} arms × ${REPS} repetitions = **${requests}**. Retries and repairs are disabled, so the **maximum is also ${requests}**; a request that needs a second attempt halts the run.`);
 L.push(`- Input tokens cannot be counted exactly offline, so three figures are kept apart: an **expectation** (from what was billed before), an **estimated worst case** (characters / 3 + ${400} tokens of headroom, full output cap) and an **absolute worst case** (one token per UTF-8 byte, which no tokenizer can exceed, full output cap, ×${UPLIFT}).`, "");
@@ -190,8 +209,9 @@ row("Estimated worst case", `${estPerRep.original} µUSD`, `${estPerRep.current}
 row("Absolute worst case (bytes, ×" + UPLIFT + ")", `${absPerRep.original} µUSD`, `${absPerRep.current} µUSD`, `${absTotal} µUSD (${usd(absTotal)})`);
 L.push("", `- **Approved ceiling:** ${CEILING} µUSD (${usd(CEILING)}). It is ${(CEILING / estTotal).toFixed(2)}× the estimated worst case. The absolute worst case, if every one of the ${requests} requests hit it, is ${absFits ? "within" : "**above**"} the ceiling (${absTotal} vs ${CEILING}).`);
 if (!absFits) L.push(`- **What that means.** Static arithmetic alone cannot prove that all ${requests} requests fit if every input and output sat at its absolute maximum. What is guaranteed instead is that **spend cannot pass the ceiling**: before each request the run reserves that request's own absolute worst case on top of the spend measured so far, and refuses to send if the sum would pass its budget. In the impossible-in-practice absolute-worst world the run would stop early and record the remaining cases as not run. In the realistic world (the six billed requests used ${(Math.min(...spendShare) * 100).toFixed(0)}% to ${(Math.max(...spendShare) * 100).toFixed(0)}% of the estimated worst case) every request runs.`);
-L.push(`- **Budgets.** After a ${ALLOWANCE} µUSD allowance for each possible access check (up to ${checksAllowed}), the remainder is split between the arms in proportion to estimated cost: original **${budgets.original}** µUSD and current **${budgets.current}** µUSD per invocation. The most that can ever be committed is ${REPS} × (${budgets.original} + ${budgets.current}) + ${checksAllowed} × ${ALLOWANCE} = **${maxCommitted} µUSD**, which is ${maxCommitted <= CEILING ? "within" : "ABOVE"} the ceiling. Each budget is above that arm's estimated worst case (${estPerRep.original} and ${estPerRep.current}), so no request is blocked unless cost really approaches the absolute worst case.`);
-L.push(`- **Aggregate limit across invocations.** A ledger file (\`docs/eval/ledger-cmp-3-2.json\`) records every invocation before it sends anything. The command refuses to start if the committed total plus its own reserve would pass ${CEILING} µUSD or ${requests} requests, if an earlier invocation halted or never finished, or if asked to change the limits of an existing ledger.`);
+if (absFits) L.push(`- **What that means.** Even if every one of the ${requests} requests used its absolute maximum input and the full output cap, the total (${absTotal} µUSD) stays within the ceiling, so **no request can be blocked by the budget in any circumstance**, and the aggregate cannot pass the ceiling.`);
+L.push(`- **Budgets.** ${checksAllowed === 0 ? "No access check is planned, so the whole ceiling is available." : `After a ${ALLOWANCE} µUSD allowance for each possible access check (up to ${checksAllowed}), the remainder is split.`} The ceiling is split between the invocations in proportion to each arm's absolute worst case: original **${budgets.original}** µUSD and current **${budgets.current}** µUSD per invocation. The most that can ever be committed is ${REPS} × (${budgets.original} + ${budgets.current})${checksAllowed ? ` + ${checksAllowed} × ${ALLOWANCE}` : ""} = **${maxCommitted} µUSD**, which is ${maxCommitted <= CEILING ? "within" : "ABOVE"} the ceiling. Each budget is ${budgetsCoverAbsolute ? "above" : "BELOW"} that arm's absolute worst case for one repetition (${absPerRep.original} and ${absPerRep.current})${budgetsCoverAbsolute ? ", so a budget can never block a request" : ""}.`);
+L.push(`- **Aggregate limit across invocations.** A ledger file (\`docs/eval/ledger-cmp-3-2.json\`) records every invocation before it sends anything. The command refuses to start if the committed total plus its own reserve would pass ${CEILING} µUSD or ${requests} requests, if an earlier invocation halted or never finished and has not been explicitly reconciled by a person (\`--reconcile\` with a written note, which is recorded), or if asked to change the limits of an existing ledger.`);
 L.push("- **If anything charges more than its reserve** (the provider bills a rate not recorded here), the first such request is seen after the fact, the run halts, and the ledger refuses to continue. The worst consequence is therefore bounded by one request's overshoot, not the whole run.", "");
 
 L.push("### Calibration of the input estimate against billed requests", "");
@@ -204,12 +224,12 @@ row("Case", "Original est. / absolute", "Current est. / absolute"); row("---", "
 for (const r of perCase) row(`\`${r.id}\``, `${r.original.estimatedWorstMicros} / ${r.original.absoluteWorstMicros}`, `${r.current.estimatedWorstMicros} / ${r.current.absoluteWorstMicros}`);
 L.push("", "</details>", "");
 
-L.push("## 5. The provider access check (Part D)", "");
+L.push("## 5. The provider access check (documented; NOT used in this plan)", "");
 L.push("- **Operation:** `GET https://api.openai.com/v1/models/gpt-6-luna` with the bearer key, issued by `verifyModelAccess` in `src/eval/liveRun.ts`. It is **not** a generation endpoint and sends no prompt or business data. Its only inputs are the key and the model id.");
 L.push("- **What it tests:** that the key is accepted (HTTP 401/403 otherwise) and that the account can see that exact model id (HTTP 404 otherwise). It does not test that a generation will succeed, that the account has quota or billing enabled, or what tier a request would use.");
 L.push("- **Billing:** the official reference page for this endpoint states **nothing** about billing, cost, token usage or rate limits, and the models page says nothing about billing for the Models API. It is a metadata request with no tokens, so a charge is not expected, but **the documentation does not say so and this plan does not claim it is free**. Each access check is therefore charged to the budget at an allowance of " + ALLOWANCE + " µUSD ($" + (ALLOWANCE / 1e6).toFixed(4) + "), recorded in the ledger. That is a deliberately generous placeholder for an operation that carries no tokens, not a measured price.");
-L.push("- **When it runs:** only when `--check-access` is given. Without that flag the command makes no network request until it generates. The proposed procedure runs it once, in the first invocation. If you prefer, skip it: a missing model or a bad key then fails the first generation with a 401/404 and nothing is billed for it.");
-L.push("- **Not run in this task**, because it needs the network.", "");
+L.push("- **Status in this plan:** not used. The live service-tier diagnostic made a real generation with this key and model, which is stronger evidence than a metadata request, so the 84-to-56 request plan has no access check and no allowance for one. The `--check-access` option remains available; if it were ever used its cost would be charged to the budget at " + ALLOWANCE + " µUSD and the ledger would record it.");
+L.push("- It was not run in this task and is not part of the commands below.", "");
 
 L.push("## 6. Scoring methodology", "");
 L.push("Each output is scored on separate layers; none stands in for another.", "");
@@ -217,7 +237,7 @@ L.push("1. **Schema validity**, against each arm's own contract (length limits a
 L.push("2. **Factual grounding** (hard checks), judged against the full fixture Business Brain for both arms: unsupported, contradicted, ambiguous, out-of-scope, missing-condition and expired claims; injected instructions; unverified or prohibited claims. A hard failure is reported as such in either arm.");
 L.push(`3. **Comparable quality dimensions**, using only checks both contracts can express: ${DIMENSIONS.filter((d) => d !== "schemaValidity").map((d) => DIMENSION_LABELS[d]).join(", ")} (restricted to the comparable checks in \`src/eval/evaluate.ts\`). Pass line ${Math.round(DIMENSION_PASS * 100)}% per dimension, a working threshold and not a standard.`);
 L.push("4. **Current-only dimensions** (reasoning fields, differentiator decisions, variations, review flags, question impact) are reported for the current arm alone and never used to rank the arms.", "");
-L.push("**Repetitions.** Every repetition is its own report (`cmp-3-2-<arm>-rep<N>`), listed individually. Per case and arm the aggregate shows all three values, the mean, the minimum and how many repetitions passed. The arms are compared case by case (paired), then counted: cases where current is higher, equal, lower on the comparable overall. Hard failures are counted per arm and per repetition.", "");
+L.push("**Repetitions.** Every repetition is its own report (`cmp-3-2-<arm>-rep<N>`), listed individually. Per case and arm the aggregate shows both values, the mean, the minimum and how many repetitions passed. The arms are compared case by case (paired), then counted: cases where current is higher, equal, lower on the comparable overall. Hard failures are counted per arm and per repetition.", "");
 L.push("**Decision rule, fixed before any result exists.** The result is called an *indication of improvement* only if all hold: current's comparable overall is higher or equal in at least 10 of the 14 case means; current has no more hard failures than original; and there is no case where current hard-fails in every repetition while original never does. Otherwise it is reported as *mixed* or *no demonstrated improvement*. No result is described as statistically significant, and a favourable result is not evidence of marketing performance. The rule, the pass line and the evaluator version are recorded here and in the code; they cannot be changed after results are seen without a new evaluator version.", "");
 L.push("**Run order.** Invocations alternate by repetition (original 1, current 1, original 2, ...), so provider drift over the session affects both arms alike. The reported model id, service tier and request id are recorded for every request.", "");
 
@@ -232,7 +252,7 @@ row("The evaluator and the 14 fixtures", "No, but new", "Written after the origi
 row("Earlier live reports (m3-live, m3-live2)", "Not used", "Different prompt revision and, for the old arm, the current contract. Used here only for the cost calibration above.");
 L.push("");
 
-L.push("## 8. Preparation checks (Part E)", "");
+L.push("## 8. Preparation checks", "");
 row("Check", "Result", "Where verified"); row("---", "---", "---");
 row("Arms use their intended prompt and schema versions", "Yes: the original arm sends the original prompt, JSON schema, hint and 9-field brain; the current arm the candidate. Versions and fingerprints are recorded in every report.", "`test/versionsAndBaseline.test.ts`, `config/prompt-versions.json`");
 row("Reconstruction limits disclosed", "Yes: section 7, `src/eval/original.ts`, `docs/campaign-evaluation.md`", "documents");
@@ -249,7 +269,11 @@ L.push("## 9. Stop conditions", "");
 row("Condition", "Action", "Enforced by"); row("---", "---", "---");
 row("Budget would be passed by the next request's own reserve", "Do not send it; later cases recorded as not run", "Code (`BudgetExhausted`)");
 row("Aggregate ceiling or request cap would be passed, or limits changed", "Do not start the invocation", "Code (ledger)");
-row("An earlier invocation halted or never finished", "Do not start the next until reviewed (`--acknowledge-halt`)", "Code (ledger)");
+row("An earlier invocation halted or never finished", "Do not start the next until a person reconciles it with a recorded note", "Code (ledger; `--reconcile`)");
+row("The provider rejects a request (HTTP 4xx other than 429)", "Halt: the same request would be rejected again", "Code (`liveRun`)");
+row("3 consecutive requests fail at the provider (outage, timeout, rate limit)", "Halt", "Code (`liveRun`)");
+row("More HTTP requests than the invocation planned (a retry, a repair, a bug)", "The extra request is refused before it leaves the process", "Code (`capRequests` on the transport)");
+row("A retry or repair is requested for a registered experiment", "Refuse to start", "Code (CLI)");
 row("A request needed more than 1 attempt (a retry or a repair)", "Halt immediately", "Code (`maxAttemptsPerRequest` = 1; retries 0 and repair 0 also set)");
 row("A request's cost cannot be determined", "Halt; charged at the reserve, never as zero", "Code (`haltOnUnknownCost`)");
 row("The response reports a processing tier other than `" + SERVICE_TIER + "`, or none", "Halt: the price assumed may not apply", "Code (`expectedServiceTier`)");
@@ -260,7 +284,7 @@ row("Any sign that real customer data is in an input", "Stop", "Procedure; the f
 L.push("");
 
 L.push("## 10. Exact invocation (not run)", "");
-L.push("Prerequisites, set in your shell or `.env.local` (never pasted into chat): `AI_PROVIDER_MODE=live`, `ALLOW_LIVE_PROVIDER_CALLS=true`, `OPENAI_API_KEY`. The service tier is pinned to `default` by the command. First run each invocation **without** `--yes-spend` to see its plan (no network request, no spend); the first one with `--check-access` also performs the one access check.", "", "```");
+L.push("Prerequisites, set in your shell or `.env.local` (never pasted into chat): `AI_PROVIDER_MODE=live`, `ALLOW_LIVE_PROVIDER_CALLS=true`, `OPENAI_API_KEY`. The command itself sets the service tier to `default` and response storage to disabled, and refuses to start if the environment says otherwise. Run each invocation first **without** `--yes-spend` to see its plan (no network request, no spend). If an invocation halts or is interrupted, the next one is refused until a person reconciles the ledger: `npm run eval:campaigns -- --reconcile \"<what you reviewed and why it is safe to continue>\" --ledger docs/eval/ledger-cmp-3-2.json --aggregate-ceiling-micros " + CEILING + " --max-total-requests " + requests + "`.", "", "```");
 for (const c of commands) L.push(c);
 L.push("```", "", "Then, offline and free, per repetition:", "", "```");
 for (let r = 1; r <= REPS; r++) L.push(`npm run eval:campaigns -- --compare docs/eval/cmp-3-2-original-rep${r}-openai-gpt_6_luna.json docs/eval/cmp-3-2-current-rep${r}-openai-gpt_6_luna.json --names original,current --label cmp-3-2-rep${r}`);
@@ -270,9 +294,9 @@ L.push("## 11. Remaining uncertainties for final authorization", "");
 L.push("1. **Prices are the provider's published figures.** The plan cannot see what the account is billed. A per-request check after the first invocation (compare the account's usage page with the ledger) is recommended before the next.");
 L.push("2. **The regional uplift** may or may not apply to this model; it is covered by a ×" + UPLIFT + " factor, not confirmed.");
 L.push("3. **Reasoning-token billing** is not stated on the pricing page; it is bounded by the output cap, and the run halts if a request ever costs more than its reserve.");
-L.push("4. **The access check's billing is undocumented.** It is charged to the budget at " + ALLOWANCE + " µUSD and is optional.");
-L.push("5. **Not all " + requests + " requests are guaranteed to run** in a world where every input and output is at its absolute maximum (section 4); the guarantee is that spend cannot pass the ceiling. The realistic expectation is that all run, at roughly " + usd(expectedLow) + " to " + usd(expectedHigh) + ".");
-L.push("6. **The service-tier read-back is unproven for this endpoint.** The request pins the tier and the run halts if the response does not report `" + SERVICE_TIER + "`. If the Responses API response omits the field, the first request would halt the run (safe, but it wastes an invocation); the first invocation is therefore the test of this, and the ledger would show one request spent.");
+L.push("4. **`store: false` has not been exercised against the live API.** The provider documents the parameter and the adapter now sends it, but the diagnostic ran before it existed. If the API rejects it, the first request fails with an HTTP 4xx, is not billed, the run halts, and the ledger shows one request. `store: false` asks the API not to keep the response for later retrieval; it does not by itself guarantee zero retention in the provider's logging or abuse-monitoring systems.");
+L.push(absFits ? "5. **All " + requests + " requests can run even at their absolute maximum cost** (section 4), so the budget cannot stop the run; the expectation is " + usd(expectedLow) + " to " + usd(expectedHigh) + "." : "5. **Not all " + requests + " requests are guaranteed to run** in a world where every input and output is at its absolute maximum (section 4); the guarantee is that spend cannot pass the ceiling. The realistic expectation is that all run, at roughly " + usd(expectedLow) + " to " + usd(expectedHigh) + ".");
+L.push("6. **The service-tier read-back was verified live, once.** A single diagnostic generation (" + (diag ? diag.requestId : "no record found") + ") returned `service_tier: \"default\"` and the run now halts on any other value. It is one observation, not a guarantee for every later request; the halt is the protection.");
 L.push("7. **The model id is an alias** with no dated snapshot; behaviour could change between repetitions. Reported ids and request ids are recorded.");
 L.push("8. **The original arm is a reconstruction** (section 7), the fixtures are 14 synthetic cases, and the evaluator is heuristic. A result is an indication, not proof of anything about marketing performance.");
 L.push("9. **The estimate of input tokens is calibrated on the current contract only** (section 4); the reserve uses the absolute figure for that reason.");

@@ -77,6 +77,7 @@ export interface LiveOptions {
 export function makeLiveGenerator(o: LiveOptions): { generate: Generator; spent: () => number; halted: () => string | undefined } {
   let spent = 0;
   let halted: string | undefined;
+  let consecutiveProviderErrors = 0;
   const reserve = o.reserveMicros ?? 0;
   const maxAttempts = o.maxAttemptsPerRequest ?? 1;
   const haltOnUnknownCost = o.haltOnUnknownCost ?? true;
@@ -95,11 +96,14 @@ export function makeLiveGenerator(o: LiveOptions): { generate: Generator; spent:
         context: original ? projectToOriginalBrain(c.brain) : c.brain, schema: original ? OriginalCampaignBriefSchema : CampaignBriefSchema,
         model: o.model, maxOutputTokens: o.maxOutputTokens,
       });
+      consecutiveProviderErrors = 0;
       if (r.estimatedCostMicros === null || r.estimatedCostMicros === undefined) {
         spent += caseReserve; // unmeasured spend is charged at the worst-case reserve, never counted as free
         if (haltOnUnknownCost) halted = "stopped: a request's cost could not be determined (pricing uncertainty), so the budget can no longer be trusted";
       } else spent += r.estimatedCostMicros;
       if (r.attempts.length > maxAttempts) halted = `stopped: a request needed ${r.attempts.length} attempts (limit ${maxAttempts}); retries and repairs are not permitted in this run`;
+      // The reserve is the worst case the recorded price and the pinned tier allow. A request that cost MORE means one of those assumptions is wrong.
+      if (typeof r.estimatedCostMicros === "number" && r.estimatedCostMicros > caseReserve && caseReserve > 0) halted = `stopped: a request cost ${r.estimatedCostMicros} micro-USD, more than its worst-case reserve of ${caseReserve}; the price or tier assumed by the cost bound is wrong`;
       if (o.expectedServiceTier && r.serviceTier !== o.expectedServiceTier) halted = `stopped: the provider reported the processing tier "${r.serviceTier ?? "none"}" instead of "${o.expectedServiceTier}", so the price assumed by the cost bound may not apply`;
       const meta: RunMeta = {
         model: `${r.provider}/${r.model}`, latencyMs: r.latencyMs, inputTokens: r.usage?.inputTokens, outputTokens: r.usage?.outputTokens,
@@ -126,6 +130,12 @@ export function makeLiveGenerator(o: LiveOptions): { generate: Generator; spent:
         ...(unpriced ? { costNote: `${unpriced} attempt(s) reported no usage and were charged at the worst-case reserve (${caseReserve} micro-USD) instead of being treated as free` } : {}),
       };
       const message = `${err.kind ?? "error"}: ${String(err.message).slice(0, 300)}`;
+      // A request the provider REJECTS (4xx other than rate limiting) will be rejected again: sending the rest would only repeat the error.
+      if (err.httpStatus !== undefined && err.httpStatus >= 400 && err.httpStatus < 500 && err.httpStatus !== 429) {
+        halted = `stopped: the provider rejected a request (HTTP ${err.httpStatus}, ${err.kind}); the request itself needs fixing before anything more is sent`;
+      }
+      // Repeated failures that are not a bad answer (outages, timeouts, rate limits) mean the run is not working; do not keep sending.
+      if (err.kind !== "invalid_output" && ++consecutiveProviderErrors >= 3) halted ??= "stopped: 3 consecutive requests failed at the provider; the run is not working and nothing more will be sent";
       if (err.rawOutput !== undefined) return { raw: err.rawOutput, schemaError: message, meta };
       return { error: message, truncated: err.truncated === true, meta };
     }
@@ -154,4 +164,18 @@ export async function verifyModelAccess(
   } catch {
     return { ok: false, detail: "could not reach the provider" };
   }
+}
+
+/**
+ * A transport-level cap: the (max+1)th HTTP request is refused before it leaves the process. Retries and repairs are already off in
+ * the gateway and the SDK; this makes it physically impossible for either, or any bug, to send more requests than planned.
+ */
+export function capRequests(inner: typeof fetch, max: number): { fetch: typeof fetch; sent: () => number } {
+  let sent = 0;
+  const capped = (async (...args: Parameters<typeof fetch>) => {
+    if (sent >= max) throw new Error(`refused: the planned limit of ${max} HTTP request(s) for this invocation has been reached`);
+    sent++;
+    return inner(...args);
+  }) as typeof fetch;
+  return { fetch: capped, sent: () => sent };
 }

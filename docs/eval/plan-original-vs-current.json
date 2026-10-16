@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-16T12:44:39.742Z",
+  "generatedAt": "2026-10-16T13:18:42.278Z",
   "networkUsed": false,
   "status": "PLAN ONLY. Nothing here has been sent, and model access has not been checked.",
   "approvedSettings": {
@@ -9,14 +9,16 @@
       "original",
       "current"
     ],
-    "repetitionsPerCasePerArm": 3,
-    "plannedGenerations": 84,
+    "repetitionsPerCasePerArm": 2,
+    "plannedGenerations": 56,
     "maxOutputTokens": 2500,
     "maxAggregateSpendMicros": 156000,
     "retries": 0,
     "repairs": 0,
     "externalActions": "prohibited",
-    "deployment": "local only"
+    "deployment": "local only",
+    "serviceTier": "default",
+    "responseStorage": "disabled (store:false)"
   },
   "model": {
     "provider": "openai",
@@ -47,12 +49,12 @@
       "original",
       "current"
     ],
-    "repetitionsPerCasePerArm": 3,
-    "primaryRequests": 84,
+    "repetitionsPerCasePerArm": 2,
+    "primaryRequests": 56,
     "retriesAllowed": 0,
     "repairAttemptsAllowed": 0,
     "maxOutputTokens": 2500,
-    "maxRequestsIncludingRetries": 84
+    "maxRequestsIncludingRetries": 56
   },
   "identifiers": {
     "prompts": {
@@ -76,17 +78,20 @@
       "src/eval/evaluate.ts": "18a0e8523a56316cfd588d3f50076f430b212be77f6881329fe3126cd74d4639",
       "src/eval/fixtures.ts": "4c11309b1d5a36c075fbfeffc34a5e9da544f91dc3725c0292185585e64c7ea3",
       "src/eval/report.ts": "8384962a49d328e8e38bc722bfb1617b40ece87f2295b26d9535d2bdecd1b86e",
-      "src/eval/liveRun.ts": "846690bc4dc7de6c0687c6ea464d232db93360fb35c22701edae06fb25d9eeb9",
-      "src/eval/costBound.ts": "f75de051303228ecf0d736f163ad7b355cb1cc5a35409210e5e1bd668af99f68",
-      "src/eval/ledger.ts": "55494ffd1ae5d7917bd7b5223b2c87845710e07ee0df1e4e3c6781ce7c0c14ac",
+      "src/eval/liveRun.ts": "f1440e9a22024c5c4337a8ccd27c02a1e9333c89f893e9ea741c6f301b346b18",
+      "src/eval/costBound.ts": "00d685c390783b19b01a98881ee40fd93f7e27a71e9fbe5f1a20bfbcebf5f7cd",
+      "src/eval/ledger.ts": "49b2a9973ae607a4818e286b08d3b63a662ef59490d697e3a34f43d76f911cea",
       "src/eval/original.ts": "498db7b785d75ae17b6c0952453a767ba09a4fbae9737ca5366fc9d9c595cacb",
       "src/domain/briefRules.ts": "2dcadbdd4ef4cd2f8bf4ee93c4ec91aaece3570ecdb6c8a307f7f01b4596049f",
       "src/domain/facts.ts": "90294580c1602d7d317c742b745deb1e4c1af43b909800a9aea181c92b53ddac",
       "src/domain/schemas.ts": "8e7d25844a38273de942ca5f6e265c129fa7ab26da517d2b59505e760a06dc20",
       "src/domain/campaignJsonSchema.ts": "a5cef0d147aa586705cf6d6d5a8cce053dbb3724cd2b98dbac85a3714e240839",
       "src/app/campaignPrompt.ts": "bc037a3f00e8f61ee05f4caead2e10e2ba2f718babe89cfa38472a64e6baf57b",
-      "src/ai/openaiProvider.ts": "ddae084bb238e1f42e141ee6b1f0b69a6af397bef1d977aa505192dbb87df9c7",
-      "scripts/eval-campaigns.ts": "6281285f9ba3fa0f13b85a75abe49a544d531fdd98205f93338f4898bd4ca2f8"
+      "src/ai/openaiProvider.ts": "7f729d8f05c35c068388d6976b9cb0ad9e4aaf7f9eae35e529695e206396a0d4",
+      "src/ai/stack.ts": "8c97f374765aa4436c1980b171d64c65a4fccfd1404fe7cad43e8f447ae3afd1",
+      "src/eval/evalPolicy.ts": "743df52c95621f938515b81c0a50dcdd53ecc5721e2c4e7f79836ebd13a544a1",
+      "src/eval/tierDiagnostic.ts": "7297d25b4991678becae12584a4c843c05ad163fe6953eb75997872a165cd2e3",
+      "scripts/eval-campaigns.ts": "f013ee7f4a747a777d2b44bd0b2bdfe25f1a880a1eb7b7b24d42a7b23a9c0a69"
     },
     "fixturesSha256": "0c2fb7a3fc16c729d513332047a6ee248422ebc327588f87e3a1747fc89e659e",
     "configSha256": {
@@ -100,13 +105,13 @@
       "original": 19193,
       "current": 22377
     },
-    "worstCaseTotalMicros": 124710,
+    "worstCaseTotalMicros": 83140,
     "estimatedWorstCase": {
       "perRepetitionMicros": {
         "original": 19193,
         "current": 22377
       },
-      "totalMicros": 124710,
+      "totalMicros": 83140,
       "basis": "characters / 3 + 400 input tokens, full output cap, standard rates"
     },
     "absoluteWorstCase": {
@@ -114,7 +119,7 @@
         "original": 22985,
         "current": 33487
       },
-      "totalMicros": 169416,
+      "totalMicros": 112944,
       "perRequestMaxMicros": {
         "original": 1662,
         "current": 2418
@@ -127,18 +132,19 @@
       "samples": 6
     },
     "expectedTotalMicros": {
-      "low": 36513,
-      "high": 51763,
+      "low": 24342,
+      "high": 34509,
       "basis": "estimated worst case x the share actually billed in six earlier requests; an expectation, not a bound"
     },
     "hardCeilingMicros": 156000,
     "perInvocationBudgetMicros": {
-      "original": 23500,
-      "current": 27500
+      "original": 31500,
+      "current": 46500
     },
     "accessCheckAllowanceMicros": 500,
-    "maxAccessChecksCharged": 6,
+    "maxAccessChecksCharged": 0,
     "maxCommittedMicros": 156000,
+    "budgetsCoverAbsoluteWorstCase": true,
     "inputTokensPerRep": {
       "original": 16876,
       "current": 48713
@@ -460,11 +466,9 @@
     }
   ],
   "commands": [
-    "npm run eval:campaigns -- --models openai/gpt-6-luna --max-output 2500 --repair 0 --retries 0 --ledger docs/eval/ledger-cmp-3-2.json --aggregate-ceiling-micros 156000 --max-total-requests 84 --prompt original --budget-micros 23500 --label cmp-3-2-original-rep1 --check-access --yes-spend",
-    "npm run eval:campaigns -- --models openai/gpt-6-luna --max-output 2500 --repair 0 --retries 0 --ledger docs/eval/ledger-cmp-3-2.json --aggregate-ceiling-micros 156000 --max-total-requests 84 --prompt current --budget-micros 27500 --label cmp-3-2-current-rep1 --yes-spend",
-    "npm run eval:campaigns -- --models openai/gpt-6-luna --max-output 2500 --repair 0 --retries 0 --ledger docs/eval/ledger-cmp-3-2.json --aggregate-ceiling-micros 156000 --max-total-requests 84 --prompt original --budget-micros 23500 --label cmp-3-2-original-rep2 --yes-spend",
-    "npm run eval:campaigns -- --models openai/gpt-6-luna --max-output 2500 --repair 0 --retries 0 --ledger docs/eval/ledger-cmp-3-2.json --aggregate-ceiling-micros 156000 --max-total-requests 84 --prompt current --budget-micros 27500 --label cmp-3-2-current-rep2 --yes-spend",
-    "npm run eval:campaigns -- --models openai/gpt-6-luna --max-output 2500 --repair 0 --retries 0 --ledger docs/eval/ledger-cmp-3-2.json --aggregate-ceiling-micros 156000 --max-total-requests 84 --prompt original --budget-micros 23500 --label cmp-3-2-original-rep3 --yes-spend",
-    "npm run eval:campaigns -- --models openai/gpt-6-luna --max-output 2500 --repair 0 --retries 0 --ledger docs/eval/ledger-cmp-3-2.json --aggregate-ceiling-micros 156000 --max-total-requests 84 --prompt current --budget-micros 27500 --label cmp-3-2-current-rep3 --yes-spend"
+    "npm run eval:campaigns -- --models openai/gpt-6-luna --max-output 2500 --repair 0 --retries 0 --ledger docs/eval/ledger-cmp-3-2.json --aggregate-ceiling-micros 156000 --max-total-requests 56 --prompt original --budget-micros 31500 --label cmp-3-2-original-rep1 --yes-spend",
+    "npm run eval:campaigns -- --models openai/gpt-6-luna --max-output 2500 --repair 0 --retries 0 --ledger docs/eval/ledger-cmp-3-2.json --aggregate-ceiling-micros 156000 --max-total-requests 56 --prompt current --budget-micros 46500 --label cmp-3-2-current-rep1 --yes-spend",
+    "npm run eval:campaigns -- --models openai/gpt-6-luna --max-output 2500 --repair 0 --retries 0 --ledger docs/eval/ledger-cmp-3-2.json --aggregate-ceiling-micros 156000 --max-total-requests 56 --prompt original --budget-micros 31500 --label cmp-3-2-original-rep2 --yes-spend",
+    "npm run eval:campaigns -- --models openai/gpt-6-luna --max-output 2500 --repair 0 --retries 0 --ledger docs/eval/ledger-cmp-3-2.json --aggregate-ceiling-micros 156000 --max-total-requests 56 --prompt current --budget-micros 46500 --label cmp-3-2-current-rep2 --yes-spend"
   ]
 }

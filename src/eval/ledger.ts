@@ -20,6 +20,12 @@ export interface LedgerEntry {
   accessCheckChargedMicros?: number;
   halted?: string;
   finishedAt?: string;
+  /**
+   * A person has looked at a halted or unfinished invocation and decided it may be passed. Without this, such an entry blocks
+   * every later invocation. The note says why; chargedMicros, if given, replaces the pessimistic charge (an unfinished entry is
+   * otherwise counted at its full reserve, a halted one at what it recorded).
+   */
+  reconciled?: { note: string; at: string; chargedMicros?: number };
 }
 
 export interface Ledger {
@@ -44,15 +50,19 @@ export function saveLedger(path: string, l: Ledger): void {
   writeFileSync(path, JSON.stringify(l, null, 2) + "\n");
 }
 
-export const committedMicros = (l: Ledger): number => l.entries.reduce((s, e) => s + (e.status === "finished" ? (e.chargedMicros ?? 0) + 0 : e.reservedMicros), 0);
+const entryCharge = (e: LedgerEntry): number => e.reconciled?.chargedMicros ?? (e.status === "finished" ? (e.chargedMicros ?? 0) : e.reservedMicros);
+export const committedMicros = (l: Ledger): number => l.entries.reduce((s, e) => s + entryCharge(e), 0);
 export const committedRequests = (l: Ledger): number => l.entries.reduce((s, e) => s + e.requests, 0);
 
-/** May another invocation start? It may not if it could pass the aggregate ceiling or the request cap, or if an earlier one halted unacknowledged. */
-export function canStart(l: Ledger, next: { reservedMicros: number; requests: number }, acknowledgeHalt = false): { ok: true } | { ok: false; reason: string } {
-  const halted = l.entries.find((e) => e.halted);
-  if (halted && !acknowledgeHalt) return { ok: false, reason: `an earlier invocation ("${halted.label}") halted: ${halted.halted}. Review it, then pass --acknowledge-halt to continue.` };
-  const unfinished = l.entries.find((e) => e.status === "started");
-  if (unfinished && !acknowledgeHalt) return { ok: false, reason: `an earlier invocation ("${unfinished.label}") never finished (a crash or an interrupt), so what it spent is unknown and is counted at its full reserve. Review it, then pass --acknowledge-halt to continue.` };
+/** Entries that stop everything until a person reconciles them: a halt, or an invocation that never finished. */
+export const blockingEntries = (l: Ledger): LedgerEntry[] => l.entries.filter((e) => (e.halted || e.status === "started") && !e.reconciled);
+
+/** May another invocation start? Not if it could pass the aggregate ceiling or the request cap, or if an earlier one halted or crashed and has not been reconciled. */
+export function canStart(l: Ledger, next: { reservedMicros: number; requests: number }): { ok: true } | { ok: false; reason: string } {
+  const halted = blockingEntries(l).find((e) => e.halted);
+  if (halted) return { ok: false, reason: `an earlier invocation ("${halted.label}") halted: ${halted.halted}. A person must review it and reconcile the ledger (--reconcile "<what you found>") before anything else is sent.` };
+  const unfinished = blockingEntries(l).find((e) => e.status === "started");
+  if (unfinished) return { ok: false, reason: `an earlier invocation ("${unfinished.label}") never finished (a crash or an interrupt), so what it spent is unknown and is counted at its full reserve. A person must review it and reconcile the ledger (--reconcile "<what you found>") before anything else is sent.` };
   if (committedMicros(l) + next.reservedMicros > l.aggregateCeilingMicros) {
     return { ok: false, reason: `committed ${committedMicros(l)} + this invocation's reserve ${next.reservedMicros} would pass the aggregate ceiling of ${l.aggregateCeilingMicros} micro-USD` };
   }
@@ -60,4 +70,18 @@ export function canStart(l: Ledger, next: { reservedMicros: number; requests: nu
     return { ok: false, reason: `${committedRequests(l)} requests recorded + ${next.requests} planned would pass the cap of ${l.maxTotalRequests}` };
   }
   return { ok: true };
+}
+
+/**
+ * Record that a person has reviewed the halted or unfinished invocation(s) and cleared them to be passed. A real explanation is
+ * required (not a bare flag). Spend is never reduced implicitly: an unfinished entry keeps its full reserve unless chargedMicros is
+ * given, and that is only accepted when exactly one entry is being reconciled.
+ */
+export function reconcile(l: Ledger, note: string, at: string, chargedMicros?: number): string[] {
+  if (note.trim().length < 15) throw new Error("a reconciliation needs a real explanation of at least 15 characters (what was reviewed and why it is safe to continue)");
+  const open = blockingEntries(l);
+  if (open.length === 0) throw new Error("nothing to reconcile: no invocation is halted or unfinished");
+  if (chargedMicros !== undefined && (open.length !== 1 || !Number.isFinite(chargedMicros) || chargedMicros < 0)) throw new Error("--charged-micros needs exactly one entry to reconcile and a non-negative number");
+  for (const e of open) e.reconciled = { note: note.trim(), at, ...(chargedMicros !== undefined ? { chargedMicros } : {}) };
+  return open.map((e) => e.label);
 }

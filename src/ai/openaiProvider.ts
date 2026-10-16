@@ -25,6 +25,12 @@ export interface OpenAIProviderOptions {
    * configured for a faster tier would silently cost more. When set, the tier the response reports is returned so it can be checked.
    */
   serviceTier?: string;
+  /**
+   * The Responses API `store` parameter. `false` asks the API not to store the generated response for later retrieval. Left unset,
+   * nothing is sent and the provider's default applies. This is application-level storage control only: it does not by itself
+   * guarantee zero retention in the provider's logging or abuse-monitoring systems.
+   */
+  store?: boolean;
 }
 
 /** Subset of the Responses API result we read. */
@@ -106,6 +112,7 @@ export class OpenAIProvider implements AiProvider {
     const effort = this.opts.effortByModel?.[model];
     if (effort) body.reasoning = { effort };
     if (this.opts.serviceTier) body.service_tier = this.opts.serviceTier;
+    if (this.opts.store !== undefined) body.store = this.opts.store;
     const temperature = this.opts.temperatureByModel?.[model];
     if (temperature !== undefined) body.temperature = temperature;
   }

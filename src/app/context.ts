@@ -1,11 +1,7 @@
-import { fileURLToPath } from "node:url";
-import { AiGateway, type GatewayOptions } from "../ai/gateway.js";
-import { AnthropicProvider } from "../ai/anthropicProvider.js";
-import { MockAiProvider } from "../ai/mockProvider.js";
-import { OllamaProvider } from "../ai/ollamaProvider.js";
-import { OpenAIProvider } from "../ai/openaiProvider.js";
-import { PricingTable } from "../ai/pricing.js";
-import { ModelRegistry } from "../ai/registry.js";
+import type { AiGateway, GatewayOptions } from "../ai/gateway.js";
+import type { PricingTable } from "../ai/pricing.js";
+import type { ModelRegistry } from "../ai/registry.js";
+import { buildAiStack, intEnv } from "../ai/stack.js";
 import type { AiProvider } from "../ai/types.js";
 import { loadConfig } from "../config.js";
 import type { AdPlatformConnector } from "../connector/AdPlatformConnector.js";
@@ -52,13 +48,6 @@ export interface BuildOptions {
   backoffMs?: (attempt: number) => number;
 }
 
-const DEFAULT_MODELS = fileURLToPath(new URL("../../config/ai-models.json", import.meta.url));
-const DEFAULT_PRICING = fileURLToPath(new URL("../../config/ai-pricing.json", import.meta.url));
-
-const intEnv = (v: string | undefined, d: number): number => {
-  const n = Number(v);
-  return v !== undefined && Number.isInteger(n) && n >= 0 ? n : d;
-};
 
 export function buildContext(o: BuildOptions): AppContext {
   const env = o.env ?? {};
@@ -66,28 +55,9 @@ export function buildContext(o: BuildOptions): AppContext {
   const integrations = loadIntegrationConfig(env);
   const faults = { meta: {} as MetaFaults, crm: {} as CrmFaults };
 
-  const registry = o.registry ?? ModelRegistry.fromFile(env.AI_MODELS_FILE ?? DEFAULT_MODELS);
-  const pricing = o.pricing ?? PricingTable.fromFile(env.AI_PRICING_FILE ?? DEFAULT_PRICING);
-
-  // Real provider keys are read ONLY when live AI is explicitly enabled. Keys that merely exist in the
-  // environment are ignored in mock mode, so a real provider can never be selected by accident.
-  const liveKey = (name: string) => (integrations.liveAi ? env[name] : undefined);
-  const providers = o.aiProviders ?? [
-    new MockAiProvider(),
-    new OpenAIProvider({ apiKey: liveKey("OPENAI_API_KEY"), models: registry.modelsFor("openai"), effortByModel: registry.effortFor("openai"), baseURL: env.OPENAI_BASE_URL, serviceTier: env.OPENAI_SERVICE_TIER || undefined }),
-    new AnthropicProvider({ apiKey: liveKey("ANTHROPIC_API_KEY"), models: registry.modelsFor("anthropic"), effortByModel: registry.effortFor("anthropic"), baseURL: env.ANTHROPIC_BASE_URL }),
-    // Local model server on THIS machine. Eligible only in AI_PROVIDER_MODE=local; needs no key; loopback hosts only.
-    new OllamaProvider({ models: registry.modelsFor("ollama"), temperatureByModel: registry.temperatureFor("ollama"), enabled: integrations.localAi, baseURL: env.OLLAMA_BASE_URL, timeoutMs: registry.entries.filter((e) => e.provider === "ollama").reduce((m, e) => Math.max(m, e.timeoutMs ?? 0), 0) || undefined }),
-  ];
-
-  const repair = intEnv(env.AI_REPAIR_ATTEMPTS, 1) > 0 ? 1 : 0;
-  const ai = new AiGateway(providers, {
-    maxRetries: Math.min(intEnv(env.AI_MAX_RETRIES, 2), 5),
-    timeoutMs: intEnv(env.AI_TIMEOUT_MS, 60_000) || 60_000,
-    repairAttempts: repair,
-    pricing,
-    ...o.gateway,
-  });
+  // The AI half (providers, registry, prices, gateway) is built by the shared stack, which the evaluation commands also use.
+  const stack = buildAiStack({ env, providers: o.aiProviders, registry: o.registry, pricing: o.pricing, gateway: o.gateway });
+  const { gateway: ai, registry } = stack;
 
   const ctx: AppContext = {
     db: o.db,

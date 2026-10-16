@@ -21,17 +21,16 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { config as loadEnv } from "dotenv";
 import { MockAiProvider } from "../src/ai/mockProvider.js";
-import { PricingTable } from "../src/ai/pricing.js";
 import { CAMPAIGN_BRIEF_HINT, CAMPAIGN_BRIEF_JSON_SCHEMA } from "../src/domain/campaignJsonSchema.js";
-import { absoluteInputTokens, estimatedInputTokens, requestText, worstCaseMicros } from "../src/eval/costBound.js";
-import { canStart, committedMicros, committedRequests, loadLedger, saveLedger, type Ledger, type LedgerEntry } from "../src/eval/ledger.js";
-import { buildContext } from "../src/app/context.js";
+import { absoluteInputTokens, estimatedInputTokens, requestText, reserveWithUplift, worstCaseMicros } from "../src/eval/costBound.js";
+import { canStart, committedMicros, committedRequests, loadLedger, reconcile, saveLedger, type Ledger, type LedgerEntry } from "../src/eval/ledger.js";
+import { buildAiStack } from "../src/ai/stack.js";
+import { EVAL_SERVICE_TIER, evaluationEnv } from "../src/eval/evalPolicy.js";
 import { buildCampaignPrompt } from "../src/app/campaignPrompt.js";
-import { migrate, openDb } from "../src/db/db.js";
 import { BusinessBrainSchema } from "../src/domain/schemas.js";
 import { EVALUATOR_VERSION, evaluateBrief, runEvaluation, summarize, DIMENSIONS, DIMENSION_LABELS, type EvalReport, type Generator } from "../src/eval/evaluate.js";
 import { EVAL_CASES } from "../src/eval/fixtures.js";
-import { buildLegacyPrompt, identityOf, makeLiveGenerator, verifyModelAccess, type PromptVariant } from "../src/eval/liveRun.js";
+import { buildLegacyPrompt, capRequests, identityOf, makeLiveGenerator, verifyModelAccess, type PromptVariant } from "../src/eval/liveRun.js";
 import { ORIGINAL_HINT, ORIGINAL_JSON_SCHEMA, buildOriginalPrompt } from "../src/eval/original.js";
 import { currentGenerationIdentity } from "../src/app/versions.js";
 import { RECORDED_OPENAI_SUNRISE } from "../src/eval/recorded.js";
@@ -55,6 +54,20 @@ const save = (name: string, report: EvalReport, base?: EvalReport) => {
   writeFileSync(`docs/eval/${name}.json`, JSON.stringify(report, null, 2) + "\n");
   writeFileSync(`docs/eval/${name}.md`, renderMarkdown(report, base));
 };
+
+/* ------------------------------------------------------------------------------------------------ reconcile */
+if (flag("reconcile") || arg("reconcile") !== undefined) {
+  const path = arg("ledger");
+  const note = arg("reconcile") ?? "";
+  if (!path || !arg("aggregate-ceiling-micros") || !arg("max-total-requests")) { console.error("--reconcile needs --ledger, --aggregate-ceiling-micros and --max-total-requests (the same ones the experiment uses)"); process.exit(1); }
+  const l = loadLedger(path, { experiment: label.replace(/-(original|current)-rep\d+$/, ""), aggregateCeilingMicros: Number(arg("aggregate-ceiling-micros")), maxTotalRequests: Number(arg("max-total-requests")) });
+  try {
+    const cleared = reconcile(l, note, new Date().toISOString(), arg("charged-micros") === undefined ? undefined : Number(arg("charged-micros")));
+    saveLedger(path, l);
+    console.log(`Reconciled: ${cleared.join(", ")}. Note recorded: "${note.trim()}". Committed now ${committedMicros(l)} of ${l.aggregateCeilingMicros} micro-USD. Nothing was sent.`);
+    process.exit(0);
+  } catch (e) { console.error((e as Error).message); process.exit(1); }
+}
 
 /* ----------------------------------------------------------------------------------------------- compare */
 if (flag("compare")) {
@@ -113,12 +126,15 @@ const ledgerPath = arg("ledger");
 const ceilingArg = arg("aggregate-ceiling-micros");
 const maxTotalArg = arg("max-total-requests");
 if (ledgerPath && (!ceilingArg || !maxTotalArg)) fail("--ledger needs --aggregate-ceiling-micros and --max-total-requests");
-const serviceTier = process.env.OPENAI_SERVICE_TIER || "default"; // pinned so the price assumed by the cost bound is the price charged
+const serviceTier = EVAL_SERVICE_TIER; // pinned so the price assumed by the cost bound is the price charged
 
-const db = openDb(":memory:");
-migrate(db);
-const ctx = buildContext({ db, env: { ...process.env, OPENAI_SERVICE_TIER: serviceTier, AI_REPAIR_ATTEMPTS: repair, AI_MAX_RETRIES: String(retries), AI_MAX_OUTPUT_TOKENS: String(maxOut) } as Record<string, string | undefined> });
-const pricing = PricingTable.fromFile(process.env.AI_PRICING_FILE ?? "config/ai-pricing.json");
+// A registered experiment (one with a ledger) has a fixed request count: a retry or a repair would change it, so neither is allowed.
+if (ledgerPath && (repair !== "0" || retries !== 0)) fail("an experiment with a ledger runs with --repair 0 and --retries 0: a retry or a repair would change the planned request count");
+// Only the AI stack is built: providers, model registry, prices and the gateway. There is no database, ad-platform connector or CRM in this process.
+const specs = modelsArg.split(",").map((m) => m.trim());
+const transport = capRequests(fetch, cases.length * specs.length); // the (N+1)th HTTP request is refused before it leaves the process
+const stack = buildAiStack({ env: evaluationEnv(process.env, { repair: Number(repair), retries, maxOutputTokens: maxOut }), fetch: transport.fetch });
+const pricing = stack.pricing;
 const KEY: Record<string, string> = { openai: "OPENAI_API_KEY", anthropic: "ANTHROPIC_API_KEY" };
 
 const promptFor = (c: (typeof EVAL_CASES)[number]) => (variant === "legacy" ? buildLegacyPrompt(c.brain) : variant === "original" ? buildOriginalPrompt(c.brain) : buildCampaignPrompt(c.brain, { asOf: new Date() }));
@@ -131,7 +147,7 @@ for (const spec of modelsArg.split(",").map((s) => s.trim())) {
   const model = rest.join("/");
   if (provider !== "openai" && provider !== "anthropic") fail(`"${spec}": live evaluation supports openai/<model> and anthropic/<model>`);
   const p = provider as "openai" | "anthropic";
-  const entry = ctx.registry.find(p, model);
+  const entry = stack.registry.find(p, model);
   const key = process.env[KEY[p] as string];
   const price = pricing.entry(p, model);
   let ok = true;
@@ -143,8 +159,8 @@ for (const spec of modelsArg.split(",").map((s) => s.trim())) {
     const access = await verifyModelAccess(p, model, key);
     if (!access.ok) { ok = false; why = access.detail; } else why = "access verified by a model-retrieve request (not a generation)";
   }
-  // Reserve each request's ABSOLUTE worst case: input counted as one token per UTF-8 byte (a token is never shorter), output at the cap.
-  const reserveFor = (c: (typeof EVAL_CASES)[number]) => (price ? worstCaseMicros(absoluteInputTokens(requestText(promptFor(c), contractText)), maxOut, price) : 0);
+  // Reserve each request's ABSOLUTE worst case: input counted as one token per UTF-8 byte (a token is never shorter), output at the cap, times the regional uplift.
+  const reserveFor = (c: (typeof EVAL_CASES)[number]) => (price ? reserveWithUplift(absoluteInputTokens(requestText(promptFor(c), contractText)), maxOut, price) : 0);
   const maxReserve = Math.max(...cases.map(reserveFor));
   const estimatedWorst = price ? Math.max(...cases.map((c) => worstCaseMicros(estimatedInputTokens(requestText(promptFor(c), contractText)), maxOut, price))) : 0;
   if (ok && maxReserve > budget) { ok = false; why = `worst-case cost of ONE request (${maxReserve} micro-USD) exceeds the budget (${budget}); raise --budget-micros deliberately or lower --max-output`; }
@@ -156,10 +172,10 @@ if (ledgerPath) {
   ledger = loadLedger(ledgerPath, { experiment: label.replace(/-(original|current)-rep\d+$/, ""), aggregateCeilingMicros: Number(ceilingArg), maxTotalRequests: Number(maxTotalArg) });
 }
 const reservedForThis = budget + (checkAccess ? accessAllowance : 0);
-const startCheck = ledger ? canStart(ledger, { reservedMicros: reservedForThis, requests: cases.length }, flag("acknowledge-halt")) : ({ ok: true } as const);
+const startCheck = ledger ? canStart(ledger, { reservedMicros: reservedForThis, requests: cases.length }) : ({ ok: true } as const);
 
-console.log(`LIVE evaluation plan: ${cases.length} case(s), prompt=${variant}, repair=${repair}, retries=${retries}, max output ${maxOut} tokens, service tier "${serviceTier}", budget ${budget} micro-USD ($${(budget / 1e6).toFixed(4)}) for this invocation`);
-for (const p of plans) console.log(`  ${p.ok ? "READY" : "BLOCKED"}  ${p.provider}/${p.model}  per-request reserve up to ${p.maxReserve} micro-USD (absolute bound; the estimated worst case is ${p.estimatedWorst})  (${p.why})`);
+console.log(`LIVE evaluation plan: ${cases.length} case(s), prompt=${variant}, repair=${repair}, retries=${retries}, max output ${maxOut} tokens, service tier "${serviceTier}", response storage disabled (store:false), budget ${budget} micro-USD ($${(budget / 1e6).toFixed(4)}) for this invocation`);
+for (const p of plans) console.log(`  ${p.ok ? "READY" : "BLOCKED"}  ${p.provider}/${p.model}  per-request reserve up to ${p.maxReserve} micro-USD (absolute bound incl. the 1.10 regional uplift; the estimated worst case is ${p.estimatedWorst})  (${p.why})`);
 if (ledger) console.log(`  ledger ${ledgerPath}: committed ${committedMicros(ledger)} of ${ledger.aggregateCeilingMicros} micro-USD, ${committedRequests(ledger)} of ${ledger.maxTotalRequests} requests; this invocation reserves ${reservedForThis} micro-USD and ${cases.length} requests -> ${startCheck.ok ? "may start" : "REFUSED: " + startCheck.reason}`);
 if (!flag("yes-spend")) { console.log("\nNothing was sent." + (checkAccess ? " (One model-retrieve request was made for the access check.)" : " No network request was made.") + " Add --yes-spend to run the READY models (billable, capped by the budget above)."); process.exit(plans.every((p) => p.ok) && startCheck.ok ? 0 : 1); }
 if (plans.every((p) => !p.ok)) fail("no model is ready.");
@@ -174,7 +190,7 @@ for (const p of plans.filter((x) => x.ok)) {
     saveLedger(ledgerPath, ledger); // written BEFORE anything is sent: a crash leaves a pessimistic entry, not none
   }
   const { generate, spent, halted } = makeLiveGenerator({
-    gateway: ctx.ai, provider: p.provider, model: p.model, prompt: variant, budgetMicros: budget, maxOutputTokens: maxOut,
+    gateway: stack.gateway, provider: p.provider, model: p.model, prompt: variant, budgetMicros: budget, maxOutputTokens: maxOut,
     reserveForCase: p.reserveFor, maxAttemptsPerRequest: 1, haltOnUnknownCost: true, expectedServiceTier: p.provider === "openai" ? serviceTier : undefined,
   });
   const name = `${label}-${p.provider}-${p.model.replace(/[^a-z0-9.]+/gi, "_")}`;
@@ -182,7 +198,7 @@ for (const p of plans.filter((x) => x.ok)) {
   try {
     report = await runEvaluation(cases, generate, name, `LIVE ${p.provider}/${p.model} | prompt ${variant} | repair ${repair} | synthetic data | ${new Date().toISOString().slice(0, 10)}`, {
       evaluator: EVALUATOR_VERSION, identity: identityOf(variant), model: `${p.provider}/${p.model}`,
-      params: { maxOutputTokens: maxOut, repairAttempts: Number(repair), maxRetries: retries, serviceTier, budgetMicros: budget, cases: cases.length },
+      params: { maxOutputTokens: maxOut, repairAttempts: Number(repair), maxRetries: retries, serviceTier, store: false, budgetMicros: budget, cases: cases.length },
       note: variant === "legacy" ? "DEPRECATED arm: the original prompt text with the CURRENT output contract. Not a faithful baseline." : variant === "original" ? "Faithful baseline: the recovered original prompt, output contract and Business Brain fields. Compare with the comparable view only." : undefined,
     });
   } finally {
@@ -194,6 +210,7 @@ for (const p of plans.filter((x) => x.ok)) {
   }
   save(name, report, baseline);
   reports.push(report);
+  console.log(`\n  HTTP requests sent in this invocation: ${transport.sent()} (planned at most ${cases.length * specs.length})`);
   if (halted()) console.log(`\n  RUN HALTED: ${halted()}`);
   console.log("\n" + renderConsole(report) + `\n  estimated spend: ${spent()} micro-USD ($${(spent() / 1e6).toFixed(6)})`);
   if (ledger) console.log(`  ledger: committed ${committedMicros(ledger)} of ${ledger.aggregateCeilingMicros} micro-USD, ${committedRequests(ledger)} of ${ledger.maxTotalRequests} requests`);
