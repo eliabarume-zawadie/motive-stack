@@ -5,6 +5,7 @@ import type { PricingTable } from "../ai/pricing.js";
 import { ModelRegistry } from "../ai/registry.js";
 import { AiError } from "../ai/types.js";
 import { absoluteInputTokens, actualMicros, requestText, worstCaseMicros, type PriceLike } from "./costBound.js";
+import { VERIFIED_RATES } from "./evalPolicy.js";
 import { canStart, committedMicros, loadLedger, saveLedger, type Ledger, type LedgerEntry } from "./ledger.js";
 
 /**
@@ -30,7 +31,7 @@ export const DIAG = {
   /** If the tier were NOT honoured and a faster one served the request, the published price is twice standard. Still has to fit. */
   fasterTierFactor: 2,
   /** The standard short-context rates read from the provider's pricing page on the date below. The recorded price must equal them. */
-  verifiedRates: { inputPerMTokMicros: 100_000, outputPerMTokMicros: 500_000, readOn: "2026-10-16", source: "https://developers.openai.com/api/docs/pricing" },
+  verifiedRates: VERIFIED_RATES["openai/gpt-6-luna"]!,
   system: "You are a connectivity probe. Reply with one small JSON object and nothing else.",
   prompt: 'This is a synthetic test with no business data. Return the JSON object {"ok": true, "word": "pong"}.',
 } as const;

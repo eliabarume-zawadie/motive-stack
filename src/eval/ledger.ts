@@ -85,3 +85,37 @@ export function reconcile(l: Ledger, note: string, at: string, chargedMicros?: n
   for (const e of open) e.reconciled = { note: note.trim(), at, ...(chargedMicros !== undefined ? { chargedMicros } : {}) };
   return open.map((e) => e.label);
 }
+
+/** What an invocation reports when it ends, however it ended. */
+export interface Outcome {
+  /** Measured spend for this invocation (requests whose cost was seen). */
+  spentMicros: number;
+  /** Access-check allowance charged, if one was made. */
+  accessChargedMicros: number;
+  /** HTTP requests that actually left the process (counted at the transport, not inferred from results). */
+  requestsSent: number;
+  /** The run's own halt reason, if it stopped itself (budget reached, retry, tier, unknown cost, rejected request...). */
+  halted?: string;
+  /** A thrown error, if the invocation did not end normally. */
+  error?: string;
+  /** The largest single-request reserve: an in-flight request when an error struck is charged at this, never ignored. */
+  inFlightReserveMicros: number;
+  finishedAt: string;
+}
+
+/**
+ * Close an invocation's ledger entry. It never silently passes: any halt, any error, or a charge above what was reserved leaves the
+ * entry blocking until a person reconciles it. After an error an in-flight request may have been billed without being seen, so one
+ * worst-case reserve is added to what was charged.
+ */
+export function closeEntry(e: LedgerEntry, o: Outcome): void {
+  const charged = o.spentMicros + o.accessChargedMicros + (o.error ? o.inFlightReserveMicros : 0);
+  const reasons: string[] = [];
+  if (o.halted) reasons.push(o.halted);
+  if (o.error) reasons.push(`the invocation ended with an error (${o.error}); a request may have been in flight, so one worst-case reserve of ${o.inFlightReserveMicros} micro-USD was added to the charge`);
+  if (charged > e.reservedMicros) reasons.push(`charged ${charged} micro-USD, more than the ${e.reservedMicros} micro-USD reserved for this invocation`);
+  Object.assign(e, {
+    status: "finished", requests: o.requestsSent, chargedMicros: charged, accessCheckChargedMicros: o.accessChargedMicros,
+    halted: reasons.length ? reasons.join("; ") : undefined, finishedAt: o.finishedAt,
+  });
+}

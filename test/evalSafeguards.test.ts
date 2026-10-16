@@ -390,3 +390,189 @@ describe("the reserve the command enforces is the reserve the plan promises", ()
     expect(reserveWithUplift(1000, 2500, price)).toBeGreaterThan(worstCaseMicros(1000, 2500, price));
   });
 });
+
+/* ===================================================================== budget reconciliation (the $0.1129 vs $0.1142 question) */
+describe("the aggregate reservation, recomputed independently of the plan", () => {
+  const plan = JSON.parse(readFileSync("docs/eval/plan-original-vs-current.json", "utf8"));
+  const price = PricingTable.fromFile("config/ai-pricing.json").entry("openai", "gpt-6-luna")!;
+
+  async function reserves() {
+    const { buildCampaignPrompt } = await import("../src/app/campaignPrompt.js");
+    const { buildOriginalPrompt, ORIGINAL_HINT, ORIGINAL_JSON_SCHEMA } = await import("../src/eval/original.js");
+    const { CAMPAIGN_BRIEF_HINT, CAMPAIGN_BRIEF_JSON_SCHEMA } = await import("../src/domain/campaignJsonSchema.js");
+    const { absoluteInputTokens, requestText, reserveWithUplift } = await import("../src/eval/costBound.js");
+    const orig = EVAL_CASES.map((x) => reserveWithUplift(absoluteInputTokens(requestText(buildOriginalPrompt(x.brain), JSON.stringify(ORIGINAL_JSON_SCHEMA) + ORIGINAL_HINT)), 2500, price));
+    const cur = EVAL_CASES.map((x) => reserveWithUplift(absoluteInputTokens(requestText(buildCampaignPrompt(x.brain, { asOf: new Date() }), JSON.stringify(CAMPAIGN_BRIEF_JSON_SCHEMA) + CAMPAIGN_BRIEF_HINT)), 2500, price));
+    return { orig, cur };
+  }
+  const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
+
+  it("each invocation evaluates exactly the 14 cases, and 4 invocations make the 56 requests", () => {
+    expect(EVAL_CASES).toHaveLength(14);
+    expect(plan.cost.reservation.requestsPerInvocation).toBe(14);
+    expect(plan.cost.reservation.invocations).toBe(4);
+    expect(14 * 4).toBe(plan.design.primaryRequests);
+    for (const cmd of plan.commands as string[]) {
+      expect(cmd).not.toMatch(/--cases/); // no subset: all 14
+      expect(cmd).toContain("--max-total-requests 56");
+    }
+  });
+  it("the plan's per-case reserves equal the reserves the command would compute from the fixtures today", async () => {
+    const { orig, cur } = await reserves();
+    expect(plan.cost.reservation.original.perCase).toEqual(orig);
+    expect(plan.cost.reservation.current.perCase).toEqual(cur);
+  });
+  it("1,662 and 2,418 are the LARGEST per-request reserves, not the reserve of every request", async () => {
+    const { orig, cur } = await reserves();
+    expect(Math.max(...orig)).toBe(1662);
+    expect(Math.max(...cur)).toBe(2418);
+    expect(Math.min(...orig)).toBeLessThan(1662);
+    expect(Math.min(...cur)).toBeLessThan(2418);
+    expect(new Set(orig).size).toBeGreaterThan(1); // the reserves genuinely differ per case, because the inputs differ
+  });
+  it("exact aggregate = 2 x (22,985 + 33,487) = 112,944; the simple maximum-based bound = 28 x 1,662 + 28 x 2,418 = 114,240; the gap is 1,296", async () => {
+    const { orig, cur } = await reserves();
+    expect(sum(orig)).toBe(22_985);
+    expect(sum(cur)).toBe(33_487);
+    const exact = 2 * (sum(orig) + sum(cur));
+    const simple = 28 * Math.max(...orig) + 28 * Math.max(...cur);
+    expect(exact).toBe(112_944);
+    expect(simple).toBe(114_240);
+    expect(simple - exact).toBe(1_296);
+    expect(plan.cost.reservation).toMatchObject({ exactTotalMicros: exact, simpleUpperBoundMicros: simple, differenceMicros: 1_296 });
+    expect(plan.cost.absoluteWorstCase.totalMicros).toBe(exact);
+    expect(readFileSync("docs/eval/plan-original-vs-current.md", "utf8")).toMatch(/those are maxima, not the reserve of every request/);
+  });
+  it("each invocation budget covers its arm's exact sum AND 14 x its largest reserve; both totals fit the ceiling", async () => {
+    const { orig, cur } = await reserves();
+    const b = plan.cost.perInvocationBudgetMicros as { original: number; current: number };
+    expect(b).toEqual({ original: 31_500, current: 46_500 });
+    expect(b.original).toBeGreaterThanOrEqual(14 * Math.max(...orig));
+    expect(b.current).toBeGreaterThanOrEqual(14 * Math.max(...cur));
+    expect(b.original).toBeGreaterThanOrEqual(sum(orig));
+    expect(b.current).toBeGreaterThanOrEqual(sum(cur));
+    expect(plan.cost.reservation.budgetsCoverMaxTimesRequests).toBe(true);
+    expect(2 * (b.original + b.current)).toBe(156_000);
+    expect(114_240).toBeLessThanOrEqual(156_000);
+  });
+  it("all four commands name the same ledger, the same limits and the same experiment (they share one persistent ledger)", () => {
+    const cmds = plan.commands as string[];
+    const val = (c: string, flag: string) => new RegExp(`--${flag} (\\S+)`).exec(c)?.[1];
+    for (const flag of ["ledger", "aggregate-ceiling-micros", "max-total-requests"]) expect(new Set(cmds.map((c) => val(c, flag))).size, flag).toBe(1);
+    const experiments = cmds.map((c) => val(c, "label")!.replace(/-(original|current)-rep\d+$/, ""));
+    expect(new Set(experiments)).toEqual(new Set(["cmp-3-2"]));
+    expect(val(cmds[0]!, "ledger")).toBe("docs/eval/ledger-cmp-3-2.json");
+  });
+  it("the diagnostic ledger and the comparison ledger are separate, and the diagnostic's recorded spend is intact", () => {
+    const diag = JSON.parse(readFileSync("docs/live-verification/ledger-tier-diagnostic.json", "utf8")) as Ledger;
+    expect(diag).toMatchObject({ experiment: "tier-diagnostic", aggregateCeilingMicros: 2000, maxTotalRequests: 1 });
+    expect(diag.entries).toHaveLength(1);
+    expect(diag.entries[0]).toMatchObject({ status: "finished", requests: 1, chargedMicros: 20 });
+    expect(committedMicros(diag)).toBe(20);
+    expect(plan.cost.priorDiagnosticSpendMicros).toBe(20);
+    expect("docs/live-verification/ledger-tier-diagnostic.json").not.toBe((plan.commands[0] as string).match(/--ledger (\S+)/)![1]);
+    // neither tool refers to the other's ledger, so neither can overwrite it
+    expect(readFileSync("scripts/eval-campaigns.ts", "utf8")).not.toMatch(/ledger-tier-diagnostic/);
+    expect(readFileSync("scripts/live-tier-diagnostic.ts", "utf8")).not.toMatch(/ledger-cmp/);
+    expect(readFileSync("src/eval/tierDiagnostic.ts", "utf8")).not.toMatch(/ledger-cmp/);
+    const cmp = "docs/eval/ledger-cmp-3-2.json";
+    if (existsSync(cmp)) expect((JSON.parse(readFileSync(cmp, "utf8")) as Ledger).experiment).toBe("cmp-3-2"); // exists only after a run, and then it is its own experiment
+  });
+  it("re-running the diagnostic is refused, so its spend cannot be erased or duplicated", async () => {
+    const { runTierDiagnostic } = await import("../src/eval/tierDiagnostic.js");
+    const { ModelRegistry } = await import("../src/ai/registry.js");
+    let sent = 0;
+    const copy = join(tmp(), "ledger.json");
+    writeFileSync(copy, readFileSync("docs/live-verification/ledger-tier-diagnostic.json", "utf8"));
+    const r = await runTierDiagnostic({ apiKey: FAKE_KEY, fetchImpl: (async () => { sent++; throw new Error("must not be called"); }) as unknown as typeof fetch, ledgerPath: copy, pricing: PricingTable.fromFile("config/ai-pricing.json"), registry: ModelRegistry.fromFile("config/ai-models.json") });
+    expect(r.mode).toBe("refused");
+    expect(sent).toBe(0);
+    expect(JSON.parse(readFileSync(copy, "utf8")).entries[0].chargedMicros).toBe(20);
+  });
+});
+
+describe("closing an invocation can never pass silently", () => {
+  const open = (): LedgerEntry => ({ label: "cmp-3-2-current-rep1", arm: "current", startedAt: "t", status: "started", reservedMicros: 46_500, requests: 14 });
+  const outcome = (over: Partial<import("../src/eval/ledger.js").Outcome> = {}) => ({ spentMicros: 9_000, accessChargedMicros: 0, requestsSent: 14, inFlightReserveMicros: 2_418, finishedAt: "t2", ...over });
+  const ledgerOf = (e: LedgerEntry): Ledger => ({ experiment: "cmp-3-2", aggregateCeilingMicros: 156_000, maxTotalRequests: 56, entries: [e] });
+
+  it("a clean invocation is finished at its measured charge and does not block the next", async () => {
+    const { closeEntry } = await import("../src/eval/ledger.js");
+    const e = open();
+    closeEntry(e, outcome());
+    expect(e).toMatchObject({ status: "finished", requests: 14, chargedMicros: 9_000, halted: undefined });
+    expect(canStart(ledgerOf(e), { reservedMicros: 46_500, requests: 14 }).ok).toBe(true);
+  });
+  it.each([
+    ["a halt (retry, repair, tier, unknown cost, rejection, budget)", { halted: "stopped: a request needed 2 attempts" }, /needed 2 attempts/, 9_000],
+    ["an error mid-run: the possibly in-flight request is charged one worst-case reserve", { error: "socket hang up" }, /ended with an error \(socket hang up\).*2418/, 11_418],
+    ["a charge above what was reserved", { spentMicros: 50_000 }, /charged 50000 micro-USD, more than the 46500/, 50_000],
+  ] as const)("%s blocks the next invocation until reconciled", async (_n, over, reason, charged) => {
+    const { closeEntry } = await import("../src/eval/ledger.js");
+    const e = open();
+    closeEntry(e, outcome(over as never));
+    expect(e.halted).toMatch(reason);
+    expect(e.chargedMicros).toBe(charged);
+    const l = ledgerOf(e);
+    expect(canStart(l, { reservedMicros: 1, requests: 1 })).toMatchObject({ ok: false, reason: expect.stringMatching(/reconcile/) });
+    reconcile(l, "Reviewed this invocation and the provider usage page; safe to continue.", "t3");
+    expect(canStart(l, { reservedMicros: 1, requests: 1 }).ok).toBe(true);
+    expect(committedMicros(l)).toBe(charged); // reconciling did not remove the spend
+  });
+  it("an access-check allowance is part of the charge, and the request count is the transport's, not an inference", async () => {
+    const { closeEntry } = await import("../src/eval/ledger.js");
+    const e = open();
+    closeEntry(e, outcome({ accessChargedMicros: 500, requestsSent: 13 }));
+    expect(e).toMatchObject({ chargedMicros: 9_500, accessCheckChargedMicros: 500, requests: 13 });
+  });
+  it("an invocation that ran out of budget is a halt (it did not send all its requests)", async () => {
+    const t = transport(() => ({ body: okBody(goodBrief(), { input_tokens: 1000, output_tokens: 1000 }) }));
+    const g = generator(evalStack(t.fetchImpl), { budgetMicros: 2_500, reserveForCase: () => 2_000 });
+    await g.generate(c);
+    await g.generate(c);
+    expect(g.halted()).toMatch(/evaluation budget reached/);
+    expect(t.seen).toHaveLength(1);
+  });
+  it("a crash that never reaches closeEntry leaves the started entry, which blocks at its full reserve", () => {
+    const e = open();
+    expect(canStart(ledgerOf(e), { reservedMicros: 1, requests: 1 })).toMatchObject({ ok: false, reason: expect.stringMatching(/never finished/) });
+    expect(committedMicros(ledgerOf(e))).toBe(46_500);
+  });
+});
+
+describe("unknown or changed pricing stops a registered experiment before anything is sent", () => {
+  const PRELOAD = join(process.cwd(), "test", "support", "blocknet.cjs");
+  const run = (pricingFile: string) =>
+    spawnSync(process.execPath, ["--require", PRELOAD, "--import", "tsx", join(process.cwd(), "scripts", "eval-campaigns.ts"), "--models", "openai/gpt-6-luna", "--prompt", "current", "--max-output", "2500", "--repair", "0", "--retries", "0", "--budget-micros", "46500", "--label", "cmp-3-2-current-rep1", "--ledger", join(tmp(), "l.json"), "--aggregate-ceiling-micros", "156000", "--max-total-requests", "56"], {
+      encoding: "utf8", timeout: 90_000, env: { ...process.env, AI_PROVIDER_MODE: "live", ALLOW_LIVE_PROVIDER_CALLS: "true", OPENAI_API_KEY: "dummy-not-a-real-key", LIVE_ENV_FILE: "does-not-exist.env", AI_PRICING_FILE: pricingFile },
+    });
+  const pricingWith = (edit: (p: any) => void) => {
+    const cfg = JSON.parse(readFileSync("config/ai-pricing.json", "utf8"));
+    edit(cfg);
+    const f = join(tmp(), "pricing.json");
+    writeFileSync(f, JSON.stringify(cfg));
+    return f;
+  };
+  it("a recorded price that differs from the rates read from the provider is refused as ambiguous", () => {
+    const r = run(pricingWith((cfg) => { cfg.prices.find((p: any) => p.model === "gpt-6-luna").inputPerMTokMicros = 200_000; }));
+    expect(r.status).toBe(1);
+    expect(r.stdout + r.stderr).toMatch(/BLOCKED[^\n]*pricing is ambiguous: the recorded price \(200000\/500000\) differs/);
+  });
+  it("a model with no recorded price is refused", () => {
+    const r = run(pricingWith((cfg) => { cfg.prices = cfg.prices.filter((p: any) => p.model !== "gpt-6-luna"); }));
+    expect(r.status).toBe(1);
+    expect(r.stdout + r.stderr).toMatch(/no verified price/);
+  });
+  it("the unmodified price is accepted", () => {
+    const r = run("config/ai-pricing.json");
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.stdout).toMatch(/READY/);
+  });
+  it("verifiedRatesProblem: matches, differs, unlisted model, missing price", async () => {
+    const { verifiedRatesProblem } = await import("../src/eval/evalPolicy.js");
+    expect(verifiedRatesProblem("openai", "gpt-6-luna", { inputPerMTokMicros: 100_000, outputPerMTokMicros: 500_000 })).toBeUndefined();
+    expect(verifiedRatesProblem("openai", "gpt-6-luna", { inputPerMTokMicros: 100_000, outputPerMTokMicros: 600_000 })).toMatch(/differs from the rates read from the provider on 2026-10-16/);
+    expect(verifiedRatesProblem("openai", "gpt-5.5", { inputPerMTokMicros: 5_000_000, outputPerMTokMicros: 30_000_000 })).toMatch(/no rates for openai\/gpt-5\.5 have been read/);
+    expect(verifiedRatesProblem("openai", "gpt-6-luna", undefined)).toMatch(/no recorded price/);
+  });
+});

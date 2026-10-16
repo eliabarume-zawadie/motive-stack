@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-16T13:18:42.278Z",
+  "generatedAt": "2026-10-16T13:42:54.428Z",
   "networkUsed": false,
   "status": "PLAN ONLY. Nothing here has been sent, and model access has not been checked.",
   "approvedSettings": {
@@ -78,9 +78,9 @@
       "src/eval/evaluate.ts": "18a0e8523a56316cfd588d3f50076f430b212be77f6881329fe3126cd74d4639",
       "src/eval/fixtures.ts": "4c11309b1d5a36c075fbfeffc34a5e9da544f91dc3725c0292185585e64c7ea3",
       "src/eval/report.ts": "8384962a49d328e8e38bc722bfb1617b40ece87f2295b26d9535d2bdecd1b86e",
-      "src/eval/liveRun.ts": "f1440e9a22024c5c4337a8ccd27c02a1e9333c89f893e9ea741c6f301b346b18",
+      "src/eval/liveRun.ts": "fc3396a47d18f46b884e2b50197bbed62c3807833381348379a2d565f8d75232",
       "src/eval/costBound.ts": "00d685c390783b19b01a98881ee40fd93f7e27a71e9fbe5f1a20bfbcebf5f7cd",
-      "src/eval/ledger.ts": "49b2a9973ae607a4818e286b08d3b63a662ef59490d697e3a34f43d76f911cea",
+      "src/eval/ledger.ts": "4a27583a04cf814c0971a604a54d0749a9017551635599c476a021cabf32c033",
       "src/eval/original.ts": "498db7b785d75ae17b6c0952453a767ba09a4fbae9737ca5366fc9d9c595cacb",
       "src/domain/briefRules.ts": "2dcadbdd4ef4cd2f8bf4ee93c4ec91aaece3570ecdb6c8a307f7f01b4596049f",
       "src/domain/facts.ts": "90294580c1602d7d317c742b745deb1e4c1af43b909800a9aea181c92b53ddac",
@@ -89,9 +89,9 @@
       "src/app/campaignPrompt.ts": "bc037a3f00e8f61ee05f4caead2e10e2ba2f718babe89cfa38472a64e6baf57b",
       "src/ai/openaiProvider.ts": "7f729d8f05c35c068388d6976b9cb0ad9e4aaf7f9eae35e529695e206396a0d4",
       "src/ai/stack.ts": "8c97f374765aa4436c1980b171d64c65a4fccfd1404fe7cad43e8f447ae3afd1",
-      "src/eval/evalPolicy.ts": "743df52c95621f938515b81c0a50dcdd53ecc5721e2c4e7f79836ebd13a544a1",
-      "src/eval/tierDiagnostic.ts": "7297d25b4991678becae12584a4c843c05ad163fe6953eb75997872a165cd2e3",
-      "scripts/eval-campaigns.ts": "f013ee7f4a747a777d2b44bd0b2bdfe25f1a880a1eb7b7b24d42a7b23a9c0a69"
+      "src/eval/evalPolicy.ts": "d53224bf6eb4b476ff7a1d2b5c7b334503dde6e97fdd4a7bbaeec5ff598b2dcc",
+      "src/eval/tierDiagnostic.ts": "3217933bf223eec2affb13813eaad747aad250c6d0e3cf3c7a80c658b039a6ea",
+      "scripts/eval-campaigns.ts": "22bfa6bfda037a47db3a6d7b73f4e159b9ea7c1650789ba6c6d46eeb8bdeb703"
     },
     "fixturesSha256": "0c2fb7a3fc16c729d513332047a6ee248422ebc327588f87e3a1747fc89e659e",
     "configSha256": {
@@ -141,6 +141,61 @@
       "original": 31500,
       "current": 46500
     },
+    "reservation": {
+      "original": {
+        "requestsPerRepetition": 14,
+        "perCase": [
+          1648,
+          1640,
+          1640,
+          1637,
+          1637,
+          1642,
+          1662,
+          1641,
+          1635,
+          1644,
+          1640,
+          1643,
+          1640,
+          1636
+        ],
+        "min": 1635,
+        "max": 1662,
+        "sumPerRepetition": 22985,
+        "maxTimesRequests": 23268
+      },
+      "current": {
+        "requestsPerRepetition": 14,
+        "perCase": [
+          2398,
+          2382,
+          2383,
+          2381,
+          2386,
+          2384,
+          2404,
+          2418,
+          2400,
+          2401,
+          2382,
+          2391,
+          2391,
+          2386
+        ],
+        "min": 2381,
+        "max": 2418,
+        "sumPerRepetition": 33487,
+        "maxTimesRequests": 33852
+      },
+      "exactTotalMicros": 112944,
+      "simpleUpperBoundMicros": 114240,
+      "differenceMicros": 1296,
+      "budgetsCoverMaxTimesRequests": true,
+      "requestsPerInvocation": 14,
+      "invocations": 4
+    },
+    "priorDiagnosticSpendMicros": 20,
     "accessCheckAllowanceMicros": 500,
     "maxAccessChecksCharged": 0,
     "maxCommittedMicros": 156000,

@@ -84,7 +84,12 @@ export function makeLiveGenerator(o: LiveOptions): { generate: Generator; spent:
   const generate: Generator = async (c) => {
     if (halted) return { error: halted };
     const caseReserve = o.reserveForCase ? o.reserveForCase(c) : reserve;
-    if (spent + caseReserve > o.budgetMicros) return { error: new BudgetExhausted(spent, o.budgetMicros).message };
+    if (spent + caseReserve > o.budgetMicros) {
+      // An invocation that could not send all of its requests is incomplete: that is a halt, not a quiet end.
+      const message = new BudgetExhausted(spent, o.budgetMicros).message;
+      halted ??= message;
+      return { error: message };
+    }
     const original = o.prompt === "original";
     const { system, prompt } = (original ? buildOriginalPrompt : o.prompt === "legacy" ? buildLegacyPrompt : buildCampaignPrompt)(c.brain);
     const identity = identityOf(o.prompt);

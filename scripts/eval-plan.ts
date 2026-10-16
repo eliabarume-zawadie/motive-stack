@@ -80,6 +80,16 @@ const budgets = { original: originalBudget, current: perRepBudget - originalBudg
 const maxCommitted = REPS * (budgets.original + budgets.current) + checksAllowed * ALLOWANCE;
 const budgetsCoverAbsolute = budgets.original >= absPerRep.original && budgets.current >= absPerRep.current;
 
+/* ---- reconciliation: the exact sum of the per-case reserves versus the simple "maximum x requests" figure ---- */
+const reservesOf = (arm: Arm) => perCase.map((r) => r[arm].absoluteWorstMicros);
+const armStats = (arm: Arm) => { const rs = reservesOf(arm); const max = Math.max(...rs); return { requestsPerRepetition: rs.length, perCase: rs, min: Math.min(...rs), max, sumPerRepetition: rs.reduce((a, b) => a + b, 0), maxTimesRequests: max * rs.length }; };
+const stats = { original: armStats("original"), current: armStats("current") };
+const exactTotal = REPS * (stats.original.sumPerRepetition + stats.current.sumPerRepetition);
+const simpleUpperBound = REPS * (stats.original.maxTimesRequests + stats.current.maxTimesRequests);
+const budgetsCoverMaxBound = budgets.original >= stats.original.maxTimesRequests && budgets.current >= stats.current.maxTimesRequests;
+const diagnosticLedger = existsSync("docs/live-verification/ledger-tier-diagnostic.json") ? (JSON.parse(readFileSync("docs/live-verification/ledger-tier-diagnostic.json", "utf8")) as { entries: Array<{ chargedMicros?: number; requests: number; status: string }> }) : undefined;
+const diagnosticSpend = diagnosticLedger ? diagnosticLedger.entries.reduce((s, e) => s + (e.chargedMicros ?? 0), 0) : 0;
+
 /* ---- calibration: the estimate against requests that were actually billed (committed evidence, no new request) ---- */
 interface Calib { arm: string; id: string; billedIn: number; billedOut: number; billedMicros: number; estIn: number; absIn: number; ratioBilledToEstimate: number; estWorst: number }
 const calib: Calib[] = [];
@@ -136,6 +146,8 @@ const plan = {
     expectedTotalMicros: { low: expectedLow, high: expectedHigh, basis: "estimated worst case x the share actually billed in six earlier requests; an expectation, not a bound" },
     hardCeilingMicros: CEILING,
     perInvocationBudgetMicros: budgets,
+    reservation: { original: stats.original, current: stats.current, exactTotalMicros: exactTotal, simpleUpperBoundMicros: simpleUpperBound, differenceMicros: simpleUpperBound - exactTotal, budgetsCoverMaxTimesRequests: budgetsCoverMaxBound, requestsPerInvocation: EVAL_CASES.length, invocations: ARMS.length * REPS },
+    priorDiagnosticSpendMicros: diagnosticSpend,
     accessCheckAllowanceMicros: ALLOWANCE, maxAccessChecksCharged: checksAllowed,
     maxCommittedMicros: maxCommitted, budgetsCoverAbsoluteWorstCase: budgetsCoverAbsolute,
     inputTokensPerRep: { original: perCase.reduce((s, r) => s + r.original.estimatedInputTokens, 0), current: perCase.reduce((s, r) => s + r.current.estimatedInputTokens, 0) },
@@ -211,6 +223,15 @@ L.push("", `- **Approved ceiling:** ${CEILING} µUSD (${usd(CEILING)}). It is ${
 if (!absFits) L.push(`- **What that means.** Static arithmetic alone cannot prove that all ${requests} requests fit if every input and output sat at its absolute maximum. What is guaranteed instead is that **spend cannot pass the ceiling**: before each request the run reserves that request's own absolute worst case on top of the spend measured so far, and refuses to send if the sum would pass its budget. In the impossible-in-practice absolute-worst world the run would stop early and record the remaining cases as not run. In the realistic world (the six billed requests used ${(Math.min(...spendShare) * 100).toFixed(0)}% to ${(Math.max(...spendShare) * 100).toFixed(0)}% of the estimated worst case) every request runs.`);
 if (absFits) L.push(`- **What that means.** Even if every one of the ${requests} requests used its absolute maximum input and the full output cap, the total (${absTotal} µUSD) stays within the ceiling, so **no request can be blocked by the budget in any circumstance**, and the aggregate cannot pass the ceiling.`);
 L.push(`- **Budgets.** ${checksAllowed === 0 ? "No access check is planned, so the whole ceiling is available." : `After a ${ALLOWANCE} µUSD allowance for each possible access check (up to ${checksAllowed}), the remainder is split.`} The ceiling is split between the invocations in proportion to each arm's absolute worst case: original **${budgets.original}** µUSD and current **${budgets.current}** µUSD per invocation. The most that can ever be committed is ${REPS} × (${budgets.original} + ${budgets.current})${checksAllowed ? ` + ${checksAllowed} × ${ALLOWANCE}` : ""} = **${maxCommitted} µUSD**, which is ${maxCommitted <= CEILING ? "within" : "ABOVE"} the ceiling. Each budget is ${budgetsCoverAbsolute ? "above" : "BELOW"} that arm's absolute worst case for one repetition (${absPerRep.original} and ${absPerRep.current})${budgetsCoverAbsolute ? ", so a budget can never block a request" : ""}.`);
+L.push("", "### Reconciliation of the aggregate", "");
+L.push(`Each invocation evaluates exactly **${EVAL_CASES.length}** requests (one per case, one arm); there are **${ARMS.length * REPS}** invocations. A reserve is computed **per request from that request's own input**, so the 14 values differ slightly. The largest single-request reserve per arm is ${stats.original.max} (original) and ${stats.current.max} (current); those are maxima, not the reserve of every request.`, "");
+row("Arm", "Requests per invocation", "Smallest reserve", "Largest reserve", "Sum of the 14 actual reserves", "14 × largest"); row("---", "---", "---", "---", "---", "---");
+row("Original", String(stats.original.requestsPerRepetition), String(stats.original.min), String(stats.original.max), String(stats.original.sumPerRepetition), String(stats.original.maxTimesRequests));
+row("Current", String(stats.current.requestsPerRepetition), String(stats.current.min), String(stats.current.max), String(stats.current.sumPerRepetition), String(stats.current.maxTimesRequests));
+L.push("", `- **Exact aggregate** = ${REPS} × (${stats.original.sumPerRepetition} + ${stats.current.sumPerRepetition}) = **${exactTotal} µUSD (${usd(exactTotal)})**. This is what the plan reports.`);
+L.push(`- **Simple upper bound** = ${REPS} × (${EVAL_CASES.length} × ${stats.original.max} + ${EVAL_CASES.length} × ${stats.current.max}) = ${EVAL_CASES.length * REPS} × ${stats.original.max} + ${EVAL_CASES.length * REPS} × ${stats.current.max} = **${simpleUpperBound} µUSD (${usd(simpleUpperBound)})**. It assumes every request reserved the largest value for its arm, so it is higher by ${simpleUpperBound - exactTotal} µUSD (${stats.original.maxTimesRequests - stats.original.sumPerRepetition} + ${stats.current.maxTimesRequests - stats.current.sumPerRepetition} per repetition, × ${REPS}). Both figures are valid upper bounds; the second is the one to quote if a single simple number is wanted.`);
+L.push(`- **Both are inside the ceiling** of ${CEILING} µUSD (headroom ${CEILING - simpleUpperBound} µUSD on the simple bound). Each invocation budget (original ${budgets.original}, current ${budgets.current}) covers its arm's exact sum **and** 14 × largest reserve: ${budgetsCoverAbsolute && budgetsCoverMaxBound ? "yes" : "NO"}.`);
+L.push(`- **Spend already incurred, outside this ceiling:** the single service-tier diagnostic charged ${diagnosticSpend} µUSD to its own ledger (\`docs/live-verification/ledger-tier-diagnostic.json\`, ceiling 2000, one request). That ledger and the comparison ledger (\`docs/eval/ledger-cmp-3-2.json\`) are separate files for separate experiments; neither command reads or writes the other, so neither erases the other's spend. Earlier live runs are recorded in \`docs/eval/m3-live*\` and are not part of this experiment.`, "");
 L.push(`- **Aggregate limit across invocations.** A ledger file (\`docs/eval/ledger-cmp-3-2.json\`) records every invocation before it sends anything. The command refuses to start if the committed total plus its own reserve would pass ${CEILING} µUSD or ${requests} requests, if an earlier invocation halted or never finished and has not been explicitly reconciled by a person (\`--reconcile\` with a written note, which is recorded), or if asked to change the limits of an existing ledger.`);
 L.push("- **If anything charges more than its reserve** (the provider bills a rate not recorded here), the first such request is seen after the fact, the run halts, and the ledger refuses to continue. The worst consequence is therefore bounded by one request's overshoot, not the whole run.", "");
 
@@ -302,4 +323,10 @@ L.push("8. **The original arm is a reconstruction** (section 7), the fixtures ar
 L.push("9. **The estimate of input tokens is calibrated on the current contract only** (section 4); the reserve uses the absolute figure for that reason.");
 L.push("10. **The plan's numbers are valid for the committed code.** Regenerate with `npm run eval:plan` after any change.", "");
 if (WRITE) writeFileSync("docs/eval/plan-original-vs-current.md", L.join("\n"));
+else {
+  // --no-write shows the arithmetic without touching the committed files.
+  const start = L.findIndex((l) => l.startsWith("### Reconciliation of the aggregate"));
+  const end = L.findIndex((l, i) => i > start && /^(##|###) /.test(l));
+  console.log(L.slice(start, end < 0 ? undefined : end).join("\n"));
+}
 console.log(`Plan written: ${requests} requests; estimated worst case ${estTotal} µUSD (${usd(estTotal)}); absolute worst case ${absTotal} µUSD (${usd(absTotal)}); ceiling ${CEILING} µUSD; max committed ${maxCommitted} µUSD; budgets ${budgets.original}/${budgets.current}. No network request was made.`);

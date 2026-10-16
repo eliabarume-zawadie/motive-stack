@@ -23,9 +23,9 @@ import { config as loadEnv } from "dotenv";
 import { MockAiProvider } from "../src/ai/mockProvider.js";
 import { CAMPAIGN_BRIEF_HINT, CAMPAIGN_BRIEF_JSON_SCHEMA } from "../src/domain/campaignJsonSchema.js";
 import { absoluteInputTokens, estimatedInputTokens, requestText, reserveWithUplift, worstCaseMicros } from "../src/eval/costBound.js";
-import { canStart, committedMicros, committedRequests, loadLedger, reconcile, saveLedger, type Ledger, type LedgerEntry } from "../src/eval/ledger.js";
+import { canStart, closeEntry, committedMicros, committedRequests, loadLedger, reconcile, saveLedger, type Ledger, type LedgerEntry } from "../src/eval/ledger.js";
 import { buildAiStack } from "../src/ai/stack.js";
-import { EVAL_SERVICE_TIER, evaluationEnv } from "../src/eval/evalPolicy.js";
+import { EVAL_SERVICE_TIER, evaluationEnv, verifiedRatesProblem } from "../src/eval/evalPolicy.js";
 import { buildCampaignPrompt } from "../src/app/campaignPrompt.js";
 import { BusinessBrainSchema } from "../src/domain/schemas.js";
 import { EVALUATOR_VERSION, evaluateBrief, runEvaluation, summarize, DIMENSIONS, DIMENSION_LABELS, type EvalReport, type Generator } from "../src/eval/evaluate.js";
@@ -154,6 +154,7 @@ for (const spec of modelsArg.split(",").map((s) => s.trim())) {
   let why = checkAccess ? "" : "access NOT checked (pass --check-access to check; the check is charged to the budget)";
   if (!entry?.enabled || !entry.capabilities.structuredOutput) { ok = false; why = "not an enabled structured-output model in config/ai-models.json"; }
   else if (!price) { ok = false; why = "no verified price in config/ai-pricing.json, so spend cannot be limited"; }
+  else if (ledgerPath && verifiedRatesProblem(p, model, price)) { ok = false; why = verifiedRatesProblem(p, model, price) as string; }
   else if (!key) { ok = false; why = `${KEY[p]} is not set`; }
   else if (checkAccess) {
     const access = await verifyModelAccess(p, model, key);
@@ -195,23 +196,33 @@ for (const p of plans.filter((x) => x.ok)) {
   });
   const name = `${label}-${p.provider}-${p.model.replace(/[^a-z0-9.]+/gi, "_")}`;
   let report: EvalReport | undefined;
+  let failure: unknown;
+  const httpBefore = transport.sent();
   try {
     report = await runEvaluation(cases, generate, name, `LIVE ${p.provider}/${p.model} | prompt ${variant} | repair ${repair} | synthetic data | ${new Date().toISOString().slice(0, 10)}`, {
       evaluator: EVALUATOR_VERSION, identity: identityOf(variant), model: `${p.provider}/${p.model}`,
       params: { maxOutputTokens: maxOut, repairAttempts: Number(repair), maxRetries: retries, serviceTier, store: false, budgetMicros: budget, cases: cases.length },
       note: variant === "legacy" ? "DEPRECATED arm: the original prompt text with the CURRENT output contract. Not a faithful baseline." : variant === "original" ? "Faithful baseline: the recovered original prompt, output contract and Business Brain fields. Compare with the comparable view only." : undefined,
     });
+  } catch (e) {
+    failure = e; // recorded in the ledger below, then re-thrown: an invocation that ends in an error never looks like a normal one
   } finally {
     if (entry && ledger && ledgerPath) {
-      const sent = report ? report.cases.filter((c) => (c.meta?.attempts ?? 0) > 0).length : cases.length;
-      Object.assign(entry, { status: "finished", requests: sent, chargedMicros: spent() + (checkAccess ? accessAllowance : 0), accessCheckChargedMicros: checkAccess ? accessAllowance : 0, halted: halted(), finishedAt: new Date().toISOString() });
+      closeEntry(entry, {
+        spentMicros: spent(), accessChargedMicros: checkAccess ? accessAllowance : 0,
+        requestsSent: transport.sent() - httpBefore, // counted at the transport: requests that actually left the process
+        halted: halted(), error: failure === undefined ? undefined : String((failure as Error)?.message ?? failure).slice(0, 200),
+        inFlightReserveMicros: p.maxReserve, finishedAt: new Date().toISOString(),
+      });
       saveLedger(ledgerPath, ledger);
     }
   }
+  if (failure !== undefined) throw failure;
+  if (!report) throw new Error("no report was produced");
   save(name, report, baseline);
   reports.push(report);
   console.log(`\n  HTTP requests sent in this invocation: ${transport.sent()} (planned at most ${cases.length * specs.length})`);
-  if (halted()) console.log(`\n  RUN HALTED: ${halted()}`);
+  if (halted()) { console.log(`\n  RUN HALTED: ${halted()}`); process.exitCode = 1; }
   console.log("\n" + renderConsole(report) + `\n  estimated spend: ${spent()} micro-USD ($${(spent() / 1e6).toFixed(6)})`);
   if (ledger) console.log(`  ledger: committed ${committedMicros(ledger)} of ${ledger.aggregateCeilingMicros} micro-USD, ${committedRequests(ledger)} of ${ledger.maxTotalRequests} requests`);
 }

@@ -1,6 +1,6 @@
 # Evaluation plan and preflight: recovered original vs current candidate (NOTHING SENT)
 
-Generated 2026-10-16T13:18:42.278Z by `npm run eval:plan`. **This script made no network request** (it replaces `fetch` with a function that throws) and no model call or provider-access check. The only network use in preparing this document was reading the provider's public documentation pages on 2026-10-16. The live comparison has not been started and needs your final authorization.
+Generated 2026-10-16T13:42:54.428Z by `npm run eval:plan`. **This script made no network request** (it replaces `fetch` with a function that throws) and no model call or provider-access check. The only network use in preparing this document was reading the provider's public documentation pages on 2026-10-16. The live comparison has not been started and needs your final authorization.
 
 ## 0. Approved settings
 
@@ -91,6 +91,21 @@ Evidence: `docs/live-verification/openai-tier-diagnostic-2026-10-16T12-49-19-911
 - **Approved ceiling:** 156000 µUSD ($0.1560). It is 1.88× the estimated worst case. The absolute worst case, if every one of the 56 requests hit it, is within the ceiling (112944 vs 156000).
 - **What that means.** Even if every one of the 56 requests used its absolute maximum input and the full output cap, the total (112944 µUSD) stays within the ceiling, so **no request can be blocked by the budget in any circumstance**, and the aggregate cannot pass the ceiling.
 - **Budgets.** No access check is planned, so the whole ceiling is available. The ceiling is split between the invocations in proportion to each arm's absolute worst case: original **31500** µUSD and current **46500** µUSD per invocation. The most that can ever be committed is 2 × (31500 + 46500) = **156000 µUSD**, which is within the ceiling. Each budget is above that arm's absolute worst case for one repetition (22985 and 33487), so a budget can never block a request.
+
+### Reconciliation of the aggregate
+
+Each invocation evaluates exactly **14** requests (one per case, one arm); there are **4** invocations. A reserve is computed **per request from that request's own input**, so the 14 values differ slightly. The largest single-request reserve per arm is 1662 (original) and 2418 (current); those are maxima, not the reserve of every request.
+
+| Arm | Requests per invocation | Smallest reserve | Largest reserve | Sum of the 14 actual reserves | 14 × largest |
+| --- | --- | --- | --- | --- | --- |
+| Original | 14 | 1635 | 1662 | 22985 | 23268 |
+| Current | 14 | 2381 | 2418 | 33487 | 33852 |
+
+- **Exact aggregate** = 2 × (22985 + 33487) = **112944 µUSD ($0.1129)**. This is what the plan reports.
+- **Simple upper bound** = 2 × (14 × 1662 + 14 × 2418) = 28 × 1662 + 28 × 2418 = **114240 µUSD ($0.1142)**. It assumes every request reserved the largest value for its arm, so it is higher by 1296 µUSD (283 + 365 per repetition, × 2). Both figures are valid upper bounds; the second is the one to quote if a single simple number is wanted.
+- **Both are inside the ceiling** of 156000 µUSD (headroom 41760 µUSD on the simple bound). Each invocation budget (original 31500, current 46500) covers its arm's exact sum **and** 14 × largest reserve: yes.
+- **Spend already incurred, outside this ceiling:** the single service-tier diagnostic charged 20 µUSD to its own ledger (`docs/live-verification/ledger-tier-diagnostic.json`, ceiling 2000, one request). That ledger and the comparison ledger (`docs/eval/ledger-cmp-3-2.json`) are separate files for separate experiments; neither command reads or writes the other, so neither erases the other's spend. Earlier live runs are recorded in `docs/eval/m3-live*` and are not part of this experiment.
+
 - **Aggregate limit across invocations.** A ledger file (`docs/eval/ledger-cmp-3-2.json`) records every invocation before it sends anything. The command refuses to start if the committed total plus its own reserve would pass 156000 µUSD or 56 requests, if an earlier invocation halted or never finished and has not been explicitly reconciled by a person (`--reconcile` with a written note, which is recorded), or if asked to change the limits of an existing ledger.
 - **If anything charges more than its reserve** (the provider bills a rate not recorded here), the first such request is seen after the fact, the run halts, and the ledger refuses to continue. The worst consequence is therefore bounded by one request's overshoot, not the whole run.
 
