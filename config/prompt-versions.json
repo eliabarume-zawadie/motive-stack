@@ -1,0 +1,33 @@
+{
+  "_comment": "Pins the fingerprint of each campaign prompt and output contract. A test fails if the prompt text or the output contract changes without a new entry, so a prompt cannot be replaced silently. Add a new version; never edit a pinned hash.",
+  "entries": [
+    {
+      "id": "campaign-prompt",
+      "version": "campaign-prompt/3.1.0-candidate",
+      "sha256": "459ef9a3cb72c6a1918913aa6eb10170c8d8c676563fb946a194efa17ad27653",
+      "status": "candidate",
+      "note": "The prompt in use. Not claimed to be better than the original; that has not been shown. Earlier live runs (m3-live, m3-live2 reports) used an EARLIER revision of this prompt that was not fingerprinted, so they cannot be reproduced exactly."
+    },
+    {
+      "id": "campaign-prompt",
+      "version": "campaign-prompt/1.0.0-original",
+      "sha256": "3d63b4e32e9f72a45d97402fe17234e5abe5e94a10ddc6fd4040cb16685b7586",
+      "status": "baseline-original",
+      "note": "Recovered from the session transcript (no Git history exists). See src/eval/original.ts."
+    },
+    {
+      "id": "campaign-brief-schema",
+      "version": "campaign-brief-schema/3.0.0",
+      "sha256": "d1c637fd379a3d3c4065c248f1e1828803fe3ef9ba5945b6868bee002a7b89c4",
+      "status": "candidate",
+      "note": "JSON schema + hint + accepted field set of the current brief."
+    },
+    {
+      "id": "campaign-brief-schema",
+      "version": "campaign-brief-schema/1.0.0-original",
+      "sha256": "d4ca745fe5a8d1944e6bfb795959d24329f4c8393ca15d5afeccc0b632b2c385",
+      "status": "baseline-original",
+      "note": "Recovered original brief contract. See src/eval/original.ts."
+    }
+  ]
+}

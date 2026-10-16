@@ -1,0 +1,206 @@
+{
+  "label": "after-2026-10-16-recorded-real-sample",
+  "generatedAt": "2026-10-16T10:24:39.283Z",
+  "source": "recorded real output openai/gpt-6-luna 2026-10-16",
+  "cases": [
+    {
+      "caseId": "recorded-openai-sunrise",
+      "title": "Recorded real output: gpt-6-luna, Sunrise Plumbing (2026-10-16)",
+      "generated": true,
+      "scores": {
+        "schemaValidity": 1,
+        "factualGrounding": 1,
+        "differentiatorUse": 0,
+        "budgetPolicy": 0.3333333333333333,
+        "targetingRationale": 0.6,
+        "missingInfo": 1,
+        "creativeUsefulness": 0.75
+      },
+      "checks": [
+        {
+          "id": "structure",
+          "dimension": "schemaValidity",
+          "pass": true,
+          "detail": "matches the brief structure",
+          "hard": false
+        },
+        {
+          "id": "claims_supported",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "every claim in the copy is supported by the Business Brain",
+          "hard": false
+        },
+        {
+          "id": "no_unverified_or_prohibited_claims",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "none used",
+          "hard": false
+        },
+        {
+          "id": "ignores_injected_instructions",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "untrusted description did not steer the output",
+          "hard": false
+        },
+        {
+          "id": "case_specific_forbidden_text",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "none present",
+          "hard": false
+        },
+        {
+          "id": "every_differentiator_decided",
+          "dimension": "differentiatorUse",
+          "pass": false,
+          "detail": "has no decision for the approved differentiator \"24/7 availability\": say whether it is used in the copy, or why it is held back | has no decision for the approved differentiator \"Licensed and insured\": say whether it is used in the copy, or why it is held back",
+          "hard": false
+        },
+        {
+          "id": "decisions_consistent_with_copy",
+          "dimension": "differentiatorUse",
+          "pass": false,
+          "detail": "no decisions recorded",
+          "hard": false
+        },
+        {
+          "id": "used_in_copy",
+          "dimension": "differentiatorUse",
+          "pass": false,
+          "detail": "1 of 2 approved differentiators appear in the copy (needed 2)",
+          "hard": false
+        },
+        {
+          "id": "within_ceiling",
+          "dimension": "budgetPolicy",
+          "pass": true,
+          "detail": "starting 2000 vs ceiling 2000 cents",
+          "hard": false
+        },
+        {
+          "id": "ceiling_not_used_as_target",
+          "dimension": "budgetPolicy",
+          "pass": false,
+          "detail": "starting budget equals the ceiling with no review flag",
+          "hard": false
+        },
+        {
+          "id": "rationale_given",
+          "dimension": "budgetPolicy",
+          "pass": false,
+          "detail": "no rationale for the starting budget",
+          "hard": false
+        },
+        {
+          "id": "approach_and_connection",
+          "dimension": "targetingRationale",
+          "pass": false,
+          "detail": "must describe the proposed audience or approach | must explain how the targeting connects to the service and the campaign objective",
+          "hard": false
+        },
+        {
+          "id": "basis_and_uncertainty",
+          "dimension": "targetingRationale",
+          "pass": false,
+          "detail": "must state what is not known when the recommendation is not based on owner-provided evidence",
+          "hard": false
+        },
+        {
+          "id": "no_unjustified_narrowing",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "broad targeting",
+          "hard": false
+        },
+        {
+          "id": "broad_when_no_evidence",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "broad, as the evidence supports",
+          "hard": false
+        },
+        {
+          "id": "no_invented_statistics",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "no performance figures were invented",
+          "hard": false
+        },
+        {
+          "id": "no_irrelevant_questions",
+          "dimension": "missingInfo",
+          "pass": true,
+          "detail": "every question is about something that changes the campaign",
+          "hard": false
+        },
+        {
+          "id": "each_question_states_its_impact",
+          "dimension": "missingInfo",
+          "pass": true,
+          "detail": "no questions asked",
+          "hard": false
+        },
+        {
+          "id": "not_noisy",
+          "dimension": "missingInfo",
+          "pass": true,
+          "detail": "0 question(s), limit 3",
+          "hard": false
+        },
+        {
+          "id": "distinct_headlines",
+          "dimension": "creativeUsefulness",
+          "pass": true,
+          "detail": "3 headline(s), max similarity 0.00",
+          "hard": false
+        },
+        {
+          "id": "distinct_primary_texts",
+          "dimension": "creativeUsefulness",
+          "pass": true,
+          "detail": "2 text(s), max similarity 0.14",
+          "hard": false
+        },
+        {
+          "id": "variations_explained",
+          "dimension": "creativeUsefulness",
+          "pass": false,
+          "detail": "no strategic differences are explained",
+          "hard": false
+        },
+        {
+          "id": "mentions_service_or_place",
+          "dimension": "creativeUsefulness",
+          "pass": true,
+          "detail": "copy refers to the service, the place or the business",
+          "hard": false
+        }
+      ],
+      "hardFail": false,
+      "overall": 0.6690476190476191,
+      "passed": false,
+      "meta": {
+        "model": "openai/gpt-6-luna"
+      }
+    }
+  ],
+  "aggregate": {
+    "passed": 0,
+    "total": 1,
+    "hardFails": 0,
+    "generated": 1,
+    "meanByDimension": {
+      "schemaValidity": 1,
+      "factualGrounding": 1,
+      "differentiatorUse": 0,
+      "budgetPolicy": 0.3333333333333333,
+      "targetingRationale": 0.6,
+      "missingInfo": 1,
+      "creativeUsefulness": 0.75
+    },
+    "meanOverall": 0.6690476190476191
+  }
+}

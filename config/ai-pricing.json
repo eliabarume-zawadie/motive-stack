@@ -1,0 +1,54 @@
+{
+  "_comment": "Prices are CONFIGURATION. Every entry below was read from the provider's official pricing page on the date in 'asOf' (see docs/ai-verification.md). Units: integer micro-USD per 1,000,000 tokens (0.10 USD per million tokens = 100000). They assume STANDARD synchronous requests on the default (global) routing with no prompt caching, no batch/flex/priority tier and no regional/data-residency uplift; those change the price and are NOT modelled. A model with no entry has an UNKNOWN cost (recorded as unknown, never zero). Re-verify before relying on these: provider prices change.",
+  "currency": "USD",
+  "prices": [
+    {
+      "provider": "anthropic",
+      "model": "claude-haiku-5-5",
+      "inputPerMTokMicros": 100000,
+      "outputPerMTokMicros": 500000,
+      "longContext": { "aboveInputTokens": 100000, "inputPerMTokMicros": 500000, "outputPerMTokMicros": 2500000 },
+      "appliesTo": "Claude API, global routing, standard (non-batch), no prompt caching. Prompts over 100,000 tokens use the higher long-context rate. US-only inference_geo adds 1.1x (not modelled).",
+      "asOf": "2026-10-16",
+      "source": "https://platform.claude.com/docs/en/about-claude/pricing"
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-sonnet-5-5",
+      "inputPerMTokMicros": 2000000,
+      "outputPerMTokMicros": 10000000,
+      "appliesTo": "Claude API, global routing, standard (non-batch), no prompt caching. Full 1M context at standard pricing. US-only inference_geo adds 1.1x (not modelled).",
+      "asOf": "2026-10-16",
+      "source": "https://platform.claude.com/docs/en/about-claude/pricing"
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-opus-5-5",
+      "inputPerMTokMicros": 4000000,
+      "outputPerMTokMicros": 20000000,
+      "appliesTo": "Claude API, global routing, standard (non-batch), no prompt caching. Full 1M context at standard pricing. US-only inference_geo adds 1.1x (not modelled).",
+      "asOf": "2026-10-16",
+      "source": "https://platform.claude.com/docs/en/about-claude/pricing"
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-6-luna",
+      "inputPerMTokMicros": 100000,
+      "outputPerMTokMicros": 500000,
+      "longContext": { "aboveInputTokens": 272000, "inputPerMTokMicros": 200000, "outputPerMTokMicros": 750000 },
+      "appliesTo": "OpenAI standard tier, no cached input, no batch/flex/priority. Prompts over 272K input tokens: 2x input and 1.5x output for the full request. Regional processing adds 10% (not modelled). Reasoning tokens bill as output tokens.",
+      "asOf": "2026-10-16",
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "inputPerMTokMicros": 5000000,
+      "outputPerMTokMicros": 30000000,
+      "longContext": { "aboveInputTokens": 272000, "inputPerMTokMicros": 10000000, "outputPerMTokMicros": 45000000 },
+      "appliesTo": "OpenAI standard tier, no cached input, no batch/flex/priority. Prompts over 272K input tokens: 2x input and 1.5x output for the full request. Regional processing adds 10% (not modelled). Reasoning tokens bill as output tokens.",
+      "asOf": "2026-10-16",
+      "source": "https://developers.openai.com/api/docs/pricing"
+    }
+  ]
+}

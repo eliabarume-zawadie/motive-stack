@@ -1,0 +1,57 @@
+{
+  "verifiedLocallyAt": "2026-10-16T09:08:57.408Z",
+  "costUsd": 0,
+  "networkEgress": "none (localhost only)",
+  "ollamaVersion": "0.40.3",
+  "model": "llama3.1:latest",
+  "parameterSize": "8.0B",
+  "quantization": "Q4_K_M",
+  "sizeGB": 4.92,
+  "connectionTest": {
+    "connected": true,
+    "latencyMs": 5523,
+    "requestId": "resp_66019"
+  },
+  "inference": "CPU",
+  "servedContextTokens": 4096,
+  "repairAttemptsAllowed": 1,
+  "samples": [
+    {
+      "n": 1,
+      "ok": false,
+      "wallMs": 310235,
+      "attempts": 2,
+      "failKind": "invalid_output",
+      "firstTryOk": false,
+      "inputTokens": 1275,
+      "outputTokens": 676
+    },
+    {
+      "n": 2,
+      "ok": false,
+      "wallMs": 245075,
+      "attempts": 2,
+      "failKind": "invalid_output",
+      "firstTryOk": false,
+      "inputTokens": 1234,
+      "outputTokens": 590
+    },
+    {
+      "n": 3,
+      "ok": false,
+      "wallMs": 250715,
+      "attempts": 2,
+      "failKind": "invalid_output",
+      "firstTryOk": false,
+      "inputTokens": 1234,
+      "outputTokens": 590
+    }
+  ],
+  "attempted": 3,
+  "validFirstTry": 0,
+  "validFinal": 0,
+  "validRate": 0,
+  "medianSeconds": 251,
+  "validBriefsWithinBudgetCap": 0,
+  "note": "Measured at temperature 0. validRate is the FINAL result including the app's repair attempt. A small sample is an indication, not a reliability guarantee."
+}

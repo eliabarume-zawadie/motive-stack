@@ -1,0 +1,44 @@
+{
+  "name": "motive-stack",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "db:init": "tsx src/db/init.ts",
+    "start": "tsx src/server/main.ts",
+    "dev": "tsx watch src/server/main.ts",
+    "worker": "tsx src/worker.ts",
+    "test": "vitest run",
+    "test:live": "cross-env LIVE_TESTS=1 vitest run test/live test/ai.test.ts",
+    "typecheck": "tsc --noEmit",
+    "cli": "tsx src/cli.ts",
+    "live:preflight": "tsx scripts/live-preflight.ts",
+    "test:live:openai": "cross-env LIVE_TESTS=1 LIVE_AI_PROVIDER=openai vitest run test/live/ai.live.test.ts",
+    "test:live:anthropic": "cross-env LIVE_TESTS=1 LIVE_AI_PROVIDER=anthropic vitest run test/live/ai.live.test.ts",
+    "local:preflight": "tsx scripts/local-preflight.ts",
+    "test:local:ollama": "cross-env LIVE_TESTS=1 LOCAL_TESTS=1 AI_PROVIDER_MODE=local vitest run test/local/ollama.local.test.ts",
+    "eval:campaigns": "tsx scripts/eval-campaigns.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.134.0",
+    "@fastify/static": "^10.1.6",
+    "better-sqlite3": "^13.0.3",
+    "dotenv": "^16.4.5",
+    "fastify": "^5.12.7",
+    "openai": "^7.34.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/jsdom": "^30.0.0",
+    "@types/node": "^22.7.0",
+    "cross-env": "^7.0.3",
+    "jsdom": "^30.1.3",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

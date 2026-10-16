@@ -1,0 +1,19 @@
+# Secrets - never commit
+secret-key
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Local Claude Code settings
+.claude/settings.local.json
+
+node_modules/
+dist/
+
+# Local development data
+data/
+*.db
+*.db-wal
+*.db-shm

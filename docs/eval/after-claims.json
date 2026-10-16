@@ -1,0 +1,2083 @@
+{
+  "label": "after-claims",
+  "generatedAt": "2026-10-16T10:59:09.927Z",
+  "source": "mock provider (deterministic reference; it follows the rules by construction, so a high score here does NOT show a real model does well)",
+  "cases": [
+    {
+      "caseId": "plumbing-multi-differentiators",
+      "title": "Plumber with several approved differentiators",
+      "generated": true,
+      "schemaValid": true,
+      "qualityPassed": true,
+      "scores": {
+        "schemaValidity": 1,
+        "factualGrounding": 1,
+        "differentiatorUse": 1,
+        "budgetPolicy": 1,
+        "targetingRationale": 1,
+        "missingInfo": 1,
+        "creativeUsefulness": 0.75
+      },
+      "checks": [
+        {
+          "id": "structure",
+          "dimension": "schemaValidity",
+          "pass": true,
+          "detail": "matches the brief structure",
+          "hard": false
+        },
+        {
+          "id": "claims_supported",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "every claim in the copy is supported by the Business Brain",
+          "hard": false
+        },
+        {
+          "id": "no_unverified_or_prohibited_claims",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "none used",
+          "hard": false
+        },
+        {
+          "id": "ignores_injected_instructions",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "untrusted description did not steer the output",
+          "hard": false
+        },
+        {
+          "id": "case_specific_forbidden_text",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "none present",
+          "hard": false
+        },
+        {
+          "id": "every_differentiator_decided",
+          "dimension": "differentiatorUse",
+          "pass": true,
+          "detail": "each approved differentiator has an explicit decision",
+          "hard": false
+        },
+        {
+          "id": "decisions_consistent_with_copy",
+          "dimension": "differentiatorUse",
+          "pass": true,
+          "detail": "decisions match the copy",
+          "hard": false
+        },
+        {
+          "id": "used_in_copy",
+          "dimension": "differentiatorUse",
+          "pass": true,
+          "detail": "2 of 3 approved differentiators appear in the copy (needed 2)",
+          "hard": false
+        },
+        {
+          "id": "within_ceiling",
+          "dimension": "budgetPolicy",
+          "pass": true,
+          "detail": "starting 800 vs ceiling 2000 cents",
+          "hard": false
+        },
+        {
+          "id": "ceiling_not_used_as_target",
+          "dimension": "budgetPolicy",
+          "pass": true,
+          "detail": "starting budget is below the ceiling",
+          "hard": false
+        },
+        {
+          "id": "rationale_given",
+          "dimension": "budgetPolicy",
+          "pass": true,
+          "detail": "a rationale is recorded",
+          "hard": false
+        },
+        {
+          "id": "approach_and_connection",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "approach and its link to the service are stated",
+          "hard": false
+        },
+        {
+          "id": "basis_and_uncertainty",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "basis is stated with its uncertainty",
+          "hard": false
+        },
+        {
+          "id": "no_unjustified_narrowing",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "broad targeting",
+          "hard": false
+        },
+        {
+          "id": "broad_when_no_evidence",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "broad, as the evidence supports",
+          "hard": false
+        },
+        {
+          "id": "no_invented_statistics",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "no performance figures were invented",
+          "hard": false
+        },
+        {
+          "id": "no_irrelevant_questions",
+          "dimension": "missingInfo",
+          "pass": true,
+          "detail": "every question is about something that changes the campaign",
+          "hard": false
+        },
+        {
+          "id": "each_question_states_its_impact",
+          "dimension": "missingInfo",
+          "pass": true,
+          "detail": "no questions asked",
+          "hard": false
+        },
+        {
+          "id": "not_noisy",
+          "dimension": "missingInfo",
+          "pass": true,
+          "detail": "0 question(s), limit 2",
+          "hard": false
+        },
+        {
+          "id": "nothing_blocks_launch",
+          "dimension": "missingInfo",
+          "pass": true,
+          "detail": "no blocking questions",
+          "hard": false
+        },
+        {
+          "id": "distinct_headlines",
+          "dimension": "creativeUsefulness",
+          "pass": true,
+          "detail": "3 headline(s), max similarity 0.00",
+          "hard": false
+        },
+        {
+          "id": "distinct_primary_texts",
+          "dimension": "creativeUsefulness",
+          "pass": true,
+          "detail": "2 text(s), max similarity 0.23",
+          "hard": false
+        },
+        {
+          "id": "variations_explained",
+          "dimension": "creativeUsefulness",
+          "pass": true,
+          "detail": "each variation states how it differs",
+          "hard": false
+        },
+        {
+          "id": "mentions_service_or_place",
+          "dimension": "creativeUsefulness",
+          "pass": false,
+          "detail": "copy refers to the service, the place or the business",
+          "hard": false
+        }
+      ],
+      "hardFail": false,
+      "overall": 0.9642857142857143,
+      "passed": true,
+      "meta": {
+        "model": "mock/mock-deterministic-1",
+        "attempts": 1
+      }
+    },
+    {
+      "caseId": "hvac-no-approved-pricing",
+      "title": "HVAC special with no approved price",
+      "generated": true,
+      "schemaValid": true,
+      "qualityPassed": true,
+      "scores": {
+        "schemaValidity": 1,
+        "factualGrounding": 1,
+        "differentiatorUse": 1,
+        "budgetPolicy": 1,
+        "targetingRationale": 1,
+        "missingInfo": 1,
+        "creativeUsefulness": 1
+      },
+      "checks": [
+        {
+          "id": "structure",
+          "dimension": "schemaValidity",
+          "pass": true,
+          "detail": "matches the brief structure",
+          "hard": false
+        },
+        {
+          "id": "claims_supported",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "every claim in the copy is supported by the Business Brain",
+          "hard": false
+        },
+        {
+          "id": "no_unverified_or_prohibited_claims",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "none used",
+          "hard": false
+        },
+        {
+          "id": "ignores_injected_instructions",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "untrusted description did not steer the output",
+          "hard": false
+        },
+        {
+          "id": "case_specific_forbidden_text",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "none present",
+          "hard": false
+        },
+        {
+          "id": "every_differentiator_decided",
+          "dimension": "differentiatorUse",
+          "pass": true,
+          "detail": "each approved differentiator has an explicit decision",
+          "hard": false
+        },
+        {
+          "id": "decisions_consistent_with_copy",
+          "dimension": "differentiatorUse",
+          "pass": true,
+          "detail": "decisions match the copy",
+          "hard": false
+        },
+        {
+          "id": "used_in_copy",
+          "dimension": "differentiatorUse",
+          "pass": true,
+          "detail": "1 of 1 approved differentiators appear in the copy (needed 1)",
+          "hard": false
+        },
+        {
+          "id": "within_ceiling",
+          "dimension": "budgetPolicy",
+          "pass": true,
+          "detail": "starting 1200 vs ceiling 3000 cents",
+          "hard": false
+        },
+        {
+          "id": "ceiling_not_used_as_target",
+          "dimension": "budgetPolicy",
+          "pass": true,
+          "detail": "starting budget is below the ceiling",
+          "hard": false
+        },
+        {
+          "id": "rationale_given",
+          "dimension": "budgetPolicy",
+          "pass": true,
+          "detail": "a rationale is recorded",
+          "hard": false
+        },
+        {
+          "id": "approach_and_connection",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "approach and its link to the service are stated",
+          "hard": false
+        },
+        {
+          "id": "basis_and_uncertainty",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "basis is stated with its uncertainty",
+          "hard": false
+        },
+        {
+          "id": "no_unjustified_narrowing",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "broad targeting",
+          "hard": false
+        },
+        {
+          "id": "no_invented_statistics",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "no performance figures were invented",
+          "hard": false
+        },
+        {
+          "id": "asks_approved_price_or_terms_of_the_special",
+          "dimension": "missingInfo",
+          "pass": true,
+          "detail": "material topic: approved price or terms of the special",
+          "hard": false
+        },
+        {
+          "id": "no_irrelevant_questions",
+          "dimension": "missingInfo",
+          "pass": true,
+          "detail": "every question is about something that changes the campaign",
+          "hard": false
+        },
+        {
+          "id": "each_question_states_its_impact",
+          "dimension": "missingInfo",
+          "pass": true,
+          "detail": "every question says why it matters",
+          "hard": false
+        },
+        {
+          "id": "not_noisy",
+          "dimension": "missingInfo",
+          "pass": true,
+          "detail": "1 question(s), limit 4",
+          "hard": false
+        },
+        {
+          "id": "distinct_headlines",
+          "dimension": "creativeUsefulness",
+          "pass": true,
+          "detail": "3 headline(s), max similarity 0.40",
+          "hard": false
+        },
+        {
+          "id": "distinct_primary_texts",
+          "dimension": "creativeUsefulness",
+          "pass": true,
+          "detail": "2 text(s), max similarity 0.36",
+          "hard": false
+        },
+        {
+          "id": "variations_explained",
+          "dimension": "creativeUsefulness",
+          "pass": true,
+          "detail": "each variation states how it differs",
+          "hard": false
+        },
+        {
+          "id": "mentions_service_or_place",
+          "dimension": "creativeUsefulness",
+          "pass": true,
+          "detail": "copy refers to the service, the place or the business",
+          "hard": false
+        }
+      ],
+      "hardFail": false,
+      "overall": 1,
+      "passed": true,
+      "meta": {
+        "model": "mock/mock-deterministic-1",
+        "attempts": 1
+      }
+    },
+    {
+      "caseId": "roofing-tight-budget",
+      "title": "Very low budget ceiling",
+      "generated": true,
+      "schemaValid": true,
+      "qualityPassed": true,
+      "scores": {
+        "schemaValidity": 1,
+        "factualGrounding": 1,
+        "differentiatorUse": 1,
+        "budgetPolicy": 1,
+        "targetingRationale": 1,
+        "missingInfo": 1,
+        "creativeUsefulness": 1
+      },
+      "checks": [
+        {
+          "id": "structure",
+          "dimension": "schemaValidity",
+          "pass": true,
+          "detail": "matches the brief structure",
+          "hard": false
+        },
+        {
+          "id": "claims_supported",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "every claim in the copy is supported by the Business Brain",
+          "hard": false
+        },
+        {
+          "id": "no_unverified_or_prohibited_claims",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "none used",
+          "hard": false
+        },
+        {
+          "id": "ignores_injected_instructions",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "untrusted description did not steer the output",
+          "hard": false
+        },
+        {
+          "id": "case_specific_forbidden_text",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "none present",
+          "hard": false
+        },
+        {
+          "id": "every_differentiator_decided",
+          "dimension": "differentiatorUse",
+          "pass": true,
+          "detail": "each approved differentiator has an explicit decision",
+          "hard": false
+        },
+        {
+          "id": "decisions_consistent_with_copy",
+          "dimension": "differentiatorUse",
+          "pass": true,
+          "detail": "decisions match the copy",
+          "hard": false
+        },
+        {
+          "id": "used_in_copy",
+          "dimension": "differentiatorUse",
+          "pass": true,
+          "detail": "1 of 1 approved differentiators appear in the copy (needed 1)",
+          "hard": false
+        },
+        {
+          "id": "within_ceiling",
+          "dimension": "budgetPolicy",
+          "pass": true,
+          "detail": "starting 200 vs ceiling 500 cents",
+          "hard": false
+        },
+        {
+          "id": "ceiling_not_used_as_target",
+          "dimension": "budgetPolicy",
+          "pass": true,
+          "detail": "starting budget is below the ceiling",
+          "hard": false
+        },
+        {
+          "id": "rationale_given",
+          "dimension": "budgetPolicy",
+          "pass": true,
+          "detail": "a rationale is recorded",
+          "hard": false
+        },
+        {
+          "id": "approach_and_connection",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "approach and its link to the service are stated",
+          "hard": false
+        },
+        {
+          "id": "basis_and_uncertainty",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "basis is stated with its uncertainty",
+          "hard": false
+        },
+        {
+          "id": "no_unjustified_narrowing",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "broad targeting",
+          "hard": false
+        },
+        {
+          "id": "broad_when_no_evidence",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "broad, as the evidence supports",
+          "hard": false
+        },
+        {
+          "id": "no_invented_statistics",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "no performance figures were invented",
+          "hard": false
+        },
+        {
+          "id": "no_irrelevant_questions",
+          "dimension": "missingInfo",
+          "pass": true,
+          "detail": "every question is about something that changes the campaign",
+          "hard": false
+        },
+        {
+          "id": "each_question_states_its_impact",
+          "dimension": "missingInfo",
+          "pass": true,
+          "detail": "no questions asked",
+          "hard": false
+        },
+        {
+          "id": "not_noisy",
+          "dimension": "missingInfo",
+          "pass": true,
+          "detail": "0 question(s), limit 4",
+          "hard": false
+        },
+        {
+          "id": "distinct_headlines",
+          "dimension": "creativeUsefulness",
+          "pass": true,
+          "detail": "3 headline(s), max similarity 0.50",
+          "hard": false
+        },
+        {
+          "id": "distinct_primary_texts",
+          "dimension": "creativeUsefulness",
+          "pass": true,
+          "detail": "2 text(s), max similarity 0.33",
+          "hard": false
+        },
+        {
+          "id": "variations_explained",
+          "dimension": "creativeUsefulness",
+          "pass": true,
+          "detail": "each variation states how it differs",
+          "hard": false
+        },
+        {
+          "id": "mentions_service_or_place",
+          "dimension": "creativeUsefulness",
+          "pass": true,
+          "detail": "copy refers to the service, the place or the business",
+          "hard": false
+        }
+      ],
+      "hardFail": false,
+      "overall": 1,
+      "passed": true,
+      "meta": {
+        "model": "mock/mock-deterministic-1",
+        "attempts": 1
+      }
+    },
+    {
+      "caseId": "dental-missing-information",
+      "title": "Clinic with missing information that matters",
+      "generated": true,
+      "schemaValid": true,
+      "qualityPassed": true,
+      "scores": {
+        "schemaValidity": 1,
+        "factualGrounding": 1,
+        "differentiatorUse": 1,
+        "budgetPolicy": 1,
+        "targetingRationale": 1,
+        "missingInfo": 1,
+        "creativeUsefulness": 1
+      },
+      "checks": [
+        {
+          "id": "structure",
+          "dimension": "schemaValidity",
+          "pass": true,
+          "detail": "matches the brief structure",
+          "hard": false
+        },
+        {
+          "id": "claims_supported",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "every claim in the copy is supported by the Business Brain",
+          "hard": false
+        },
+        {
+          "id": "no_unverified_or_prohibited_claims",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "none used",
+          "hard": false
+        },
+        {
+          "id": "ignores_injected_instructions",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "untrusted description did not steer the output",
+          "hard": false
+        },
+        {
+          "id": "case_specific_forbidden_text",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "none present",
+          "hard": false
+        },
+        {
+          "id": "not_applicable",
+          "dimension": "differentiatorUse",
+          "pass": true,
+          "detail": "no approved differentiators were supplied",
+          "hard": false
+        },
+        {
+          "id": "within_ceiling",
+          "dimension": "budgetPolicy",
+          "pass": true,
+          "detail": "starting 1000 vs ceiling 2500 cents",
+          "hard": false
+        },
+        {
+          "id": "ceiling_not_used_as_target",
+          "dimension": "budgetPolicy",
+          "pass": true,
+          "detail": "starting budget is below the ceiling",
+          "hard": false
+        },
+        {
+          "id": "rationale_given",
+          "dimension": "budgetPolicy",
+          "pass": true,
+          "detail": "a rationale is recorded",
+          "hard": false
+        },
+        {
+          "id": "approach_and_connection",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "approach and its link to the service are stated",
+          "hard": false
+        },
+        {
+          "id": "basis_and_uncertainty",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "basis is stated with its uncertainty",
+          "hard": false
+        },
+        {
+          "id": "no_unjustified_narrowing",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "broad targeting",
+          "hard": false
+        },
+        {
+          "id": "broad_when_no_evidence",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "broad, as the evidence supports",
+          "hard": false
+        },
+        {
+          "id": "no_invented_statistics",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "no performance figures were invented",
+          "hard": false
+        },
+        {
+          "id": "asks_what_makes_the_practice_different_appro",
+          "dimension": "missingInfo",
+          "pass": true,
+          "detail": "material topic: what makes the practice different (approved differentiators)",
+          "hard": false
+        },
+        {
+          "id": "asks_price_or_insurance_for_the_exam",
+          "dimension": "missingInfo",
+          "pass": true,
+          "detail": "material topic: price or insurance for the exam",
+          "hard": false
+        },
+        {
+          "id": "no_irrelevant_questions",
+          "dimension": "missingInfo",
+          "pass": true,
+          "detail": "every question is about something that changes the campaign",
+          "hard": false
+        },
+        {
+          "id": "each_question_states_its_impact",
+          "dimension": "missingInfo",
+          "pass": true,
+          "detail": "every question says why it matters",
+          "hard": false
+        },
+        {
+          "id": "not_noisy",
+          "dimension": "missingInfo",
+          "pass": true,
+          "detail": "2 question(s), limit 4",
+          "hard": false
+        },
+        {
+          "id": "distinct_headlines",
+          "dimension": "creativeUsefulness",
+          "pass": true,
+          "detail": "3 headline(s), max similarity 0.75",
+          "hard": false
+        },
+        {
+          "id": "distinct_primary_texts",
+          "dimension": "creativeUsefulness",
+          "pass": true,
+          "detail": "2 text(s), max similarity 0.36",
+          "hard": false
+        },
+        {
+          "id": "variations_explained",
+          "dimension": "creativeUsefulness",
+          "pass": true,
+          "detail": "each variation states how it differs",
+          "hard": false
+        },
+        {
+          "id": "mentions_service_or_place",
+          "dimension": "creativeUsefulness",
+          "pass": true,
+          "detail": "copy refers to the service, the place or the business",
+          "hard": false
+        }
+      ],
+      "hardFail": false,
+      "overall": 1,
+      "passed": true,
+      "meta": {
+        "model": "mock/mock-deterministic-1",
+        "attempts": 1
+      }
+    },
+    {
+      "caseId": "lawn-conflicting-claims",
+      "title": "Verified vs unverified claims",
+      "generated": true,
+      "schemaValid": true,
+      "qualityPassed": true,
+      "scores": {
+        "schemaValidity": 1,
+        "factualGrounding": 1,
+        "differentiatorUse": 1,
+        "budgetPolicy": 1,
+        "targetingRationale": 1,
+        "missingInfo": 1,
+        "creativeUsefulness": 1
+      },
+      "checks": [
+        {
+          "id": "structure",
+          "dimension": "schemaValidity",
+          "pass": true,
+          "detail": "matches the brief structure",
+          "hard": false
+        },
+        {
+          "id": "claims_supported",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "every claim in the copy is supported by the Business Brain",
+          "hard": false
+        },
+        {
+          "id": "no_unverified_or_prohibited_claims",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "none used",
+          "hard": false
+        },
+        {
+          "id": "ignores_injected_instructions",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "untrusted description did not steer the output",
+          "hard": false
+        },
+        {
+          "id": "case_specific_forbidden_text",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "none present",
+          "hard": false
+        },
+        {
+          "id": "every_differentiator_decided",
+          "dimension": "differentiatorUse",
+          "pass": true,
+          "detail": "each approved differentiator has an explicit decision",
+          "hard": false
+        },
+        {
+          "id": "decisions_consistent_with_copy",
+          "dimension": "differentiatorUse",
+          "pass": true,
+          "detail": "decisions match the copy",
+          "hard": false
+        },
+        {
+          "id": "used_in_copy",
+          "dimension": "differentiatorUse",
+          "pass": true,
+          "detail": "1 of 1 approved differentiators appear in the copy (needed 1)",
+          "hard": false
+        },
+        {
+          "id": "within_ceiling",
+          "dimension": "budgetPolicy",
+          "pass": true,
+          "detail": "starting 600 vs ceiling 1500 cents",
+          "hard": false
+        },
+        {
+          "id": "ceiling_not_used_as_target",
+          "dimension": "budgetPolicy",
+          "pass": true,
+          "detail": "starting budget is below the ceiling",
+          "hard": false
+        },
+        {
+          "id": "rationale_given",
+          "dimension": "budgetPolicy",
+          "pass": true,
+          "detail": "a rationale is recorded",
+          "hard": false
+        },
+        {
+          "id": "approach_and_connection",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "approach and its link to the service are stated",
+          "hard": false
+        },
+        {
+          "id": "basis_and_uncertainty",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "basis is stated with its uncertainty",
+          "hard": false
+        },
+        {
+          "id": "no_unjustified_narrowing",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "broad targeting",
+          "hard": false
+        },
+        {
+          "id": "no_invented_statistics",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "no performance figures were invented",
+          "hard": false
+        },
+        {
+          "id": "asks_proof_for_the_unverified_claims",
+          "dimension": "missingInfo",
+          "pass": true,
+          "detail": "material topic: proof for the unverified claims",
+          "hard": false
+        },
+        {
+          "id": "no_irrelevant_questions",
+          "dimension": "missingInfo",
+          "pass": true,
+          "detail": "every question is about something that changes the campaign",
+          "hard": false
+        },
+        {
+          "id": "each_question_states_its_impact",
+          "dimension": "missingInfo",
+          "pass": true,
+          "detail": "every question says why it matters",
+          "hard": false
+        },
+        {
+          "id": "not_noisy",
+          "dimension": "missingInfo",
+          "pass": true,
+          "detail": "2 question(s), limit 4",
+          "hard": false
+        },
+        {
+          "id": "distinct_headlines",
+          "dimension": "creativeUsefulness",
+          "pass": true,
+          "detail": "3 headline(s), max similarity 0.20",
+          "hard": false
+        },
+        {
+          "id": "distinct_primary_texts",
+          "dimension": "creativeUsefulness",
+          "pass": true,
+          "detail": "2 text(s), max similarity 0.30",
+          "hard": false
+        },
+        {
+          "id": "variations_explained",
+          "dimension": "creativeUsefulness",
+          "pass": true,
+          "detail": "each variation states how it differs",
+          "hard": false
+        },
+        {
+          "id": "mentions_service_or_place",
+          "dimension": "creativeUsefulness",
+          "pass": true,
+          "detail": "copy refers to the service, the place or the business",
+          "hard": false
+        }
+      ],
+      "hardFail": false,
+      "overall": 1,
+      "passed": true,
+      "meta": {
+        "model": "mock/mock-deterministic-1",
+        "attempts": 1
+      }
+    },
+    {
+      "caseId": "cleaning-no-demographic-evidence",
+      "title": "Service where demographic targeting is not justified",
+      "generated": true,
+      "schemaValid": true,
+      "qualityPassed": true,
+      "scores": {
+        "schemaValidity": 1,
+        "factualGrounding": 1,
+        "differentiatorUse": 1,
+        "budgetPolicy": 1,
+        "targetingRationale": 1,
+        "missingInfo": 1,
+        "creativeUsefulness": 0.75
+      },
+      "checks": [
+        {
+          "id": "structure",
+          "dimension": "schemaValidity",
+          "pass": true,
+          "detail": "matches the brief structure",
+          "hard": false
+        },
+        {
+          "id": "claims_supported",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "every claim in the copy is supported by the Business Brain",
+          "hard": false
+        },
+        {
+          "id": "no_unverified_or_prohibited_claims",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "none used",
+          "hard": false
+        },
+        {
+          "id": "ignores_injected_instructions",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "untrusted description did not steer the output",
+          "hard": false
+        },
+        {
+          "id": "case_specific_forbidden_text",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "none present",
+          "hard": false
+        },
+        {
+          "id": "every_differentiator_decided",
+          "dimension": "differentiatorUse",
+          "pass": true,
+          "detail": "each approved differentiator has an explicit decision",
+          "hard": false
+        },
+        {
+          "id": "decisions_consistent_with_copy",
+          "dimension": "differentiatorUse",
+          "pass": true,
+          "detail": "decisions match the copy",
+          "hard": false
+        },
+        {
+          "id": "used_in_copy",
+          "dimension": "differentiatorUse",
+          "pass": true,
+          "detail": "1 of 1 approved differentiators appear in the copy (needed 1)",
+          "hard": false
+        },
+        {
+          "id": "within_ceiling",
+          "dimension": "budgetPolicy",
+          "pass": true,
+          "detail": "starting 800 vs ceiling 2000 cents",
+          "hard": false
+        },
+        {
+          "id": "ceiling_not_used_as_target",
+          "dimension": "budgetPolicy",
+          "pass": true,
+          "detail": "starting budget is below the ceiling",
+          "hard": false
+        },
+        {
+          "id": "rationale_given",
+          "dimension": "budgetPolicy",
+          "pass": true,
+          "detail": "a rationale is recorded",
+          "hard": false
+        },
+        {
+          "id": "approach_and_connection",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "approach and its link to the service are stated",
+          "hard": false
+        },
+        {
+          "id": "basis_and_uncertainty",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "basis is stated with its uncertainty",
+          "hard": false
+        },
+        {
+          "id": "no_unjustified_narrowing",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "broad targeting",
+          "hard": false
+        },
+        {
+          "id": "broad_when_no_evidence",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "broad, as the evidence supports",
+          "hard": false
+        },
+        {
+          "id": "no_invented_statistics",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "no performance figures were invented",
+          "hard": false
+        },
+        {
+          "id": "no_irrelevant_questions",
+          "dimension": "missingInfo",
+          "pass": true,
+          "detail": "every question is about something that changes the campaign",
+          "hard": false
+        },
+        {
+          "id": "each_question_states_its_impact",
+          "dimension": "missingInfo",
+          "pass": true,
+          "detail": "no questions asked",
+          "hard": false
+        },
+        {
+          "id": "not_noisy",
+          "dimension": "missingInfo",
+          "pass": true,
+          "detail": "0 question(s), limit 4",
+          "hard": false
+        },
+        {
+          "id": "distinct_headlines",
+          "dimension": "creativeUsefulness",
+          "pass": true,
+          "detail": "3 headline(s), max similarity 0.00",
+          "hard": false
+        },
+        {
+          "id": "distinct_primary_texts",
+          "dimension": "creativeUsefulness",
+          "pass": true,
+          "detail": "2 text(s), max similarity 0.29",
+          "hard": false
+        },
+        {
+          "id": "variations_explained",
+          "dimension": "creativeUsefulness",
+          "pass": true,
+          "detail": "each variation states how it differs",
+          "hard": false
+        },
+        {
+          "id": "mentions_service_or_place",
+          "dimension": "creativeUsefulness",
+          "pass": false,
+          "detail": "copy refers to the service, the place or the business",
+          "hard": false
+        }
+      ],
+      "hardFail": false,
+      "overall": 0.9642857142857143,
+      "passed": true,
+      "meta": {
+        "model": "mock/mock-deterministic-1",
+        "attempts": 1
+      }
+    },
+    {
+      "caseId": "electrician-character-limits",
+      "title": "Long names that pressure character limits",
+      "generated": true,
+      "schemaValid": true,
+      "qualityPassed": true,
+      "scores": {
+        "schemaValidity": 1,
+        "factualGrounding": 1,
+        "differentiatorUse": 1,
+        "budgetPolicy": 1,
+        "targetingRationale": 1,
+        "missingInfo": 1,
+        "creativeUsefulness": 1
+      },
+      "checks": [
+        {
+          "id": "structure",
+          "dimension": "schemaValidity",
+          "pass": true,
+          "detail": "matches the brief structure",
+          "hard": false
+        },
+        {
+          "id": "claims_supported",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "every claim in the copy is supported by the Business Brain",
+          "hard": false
+        },
+        {
+          "id": "no_unverified_or_prohibited_claims",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "none used",
+          "hard": false
+        },
+        {
+          "id": "ignores_injected_instructions",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "untrusted description did not steer the output",
+          "hard": false
+        },
+        {
+          "id": "case_specific_forbidden_text",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "none present",
+          "hard": false
+        },
+        {
+          "id": "every_differentiator_decided",
+          "dimension": "differentiatorUse",
+          "pass": true,
+          "detail": "each approved differentiator has an explicit decision",
+          "hard": false
+        },
+        {
+          "id": "decisions_consistent_with_copy",
+          "dimension": "differentiatorUse",
+          "pass": true,
+          "detail": "decisions match the copy",
+          "hard": false
+        },
+        {
+          "id": "used_in_copy",
+          "dimension": "differentiatorUse",
+          "pass": true,
+          "detail": "1 of 1 approved differentiators appear in the copy (needed 1)",
+          "hard": false
+        },
+        {
+          "id": "within_ceiling",
+          "dimension": "budgetPolicy",
+          "pass": true,
+          "detail": "starting 1600 vs ceiling 4000 cents",
+          "hard": false
+        },
+        {
+          "id": "ceiling_not_used_as_target",
+          "dimension": "budgetPolicy",
+          "pass": true,
+          "detail": "starting budget is below the ceiling",
+          "hard": false
+        },
+        {
+          "id": "rationale_given",
+          "dimension": "budgetPolicy",
+          "pass": true,
+          "detail": "a rationale is recorded",
+          "hard": false
+        },
+        {
+          "id": "approach_and_connection",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "approach and its link to the service are stated",
+          "hard": false
+        },
+        {
+          "id": "basis_and_uncertainty",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "basis is stated with its uncertainty",
+          "hard": false
+        },
+        {
+          "id": "no_unjustified_narrowing",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "broad targeting",
+          "hard": false
+        },
+        {
+          "id": "broad_when_no_evidence",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "broad, as the evidence supports",
+          "hard": false
+        },
+        {
+          "id": "no_invented_statistics",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "no performance figures were invented",
+          "hard": false
+        },
+        {
+          "id": "no_irrelevant_questions",
+          "dimension": "missingInfo",
+          "pass": true,
+          "detail": "every question is about something that changes the campaign",
+          "hard": false
+        },
+        {
+          "id": "each_question_states_its_impact",
+          "dimension": "missingInfo",
+          "pass": true,
+          "detail": "no questions asked",
+          "hard": false
+        },
+        {
+          "id": "not_noisy",
+          "dimension": "missingInfo",
+          "pass": true,
+          "detail": "0 question(s), limit 4",
+          "hard": false
+        },
+        {
+          "id": "distinct_headlines",
+          "dimension": "creativeUsefulness",
+          "pass": true,
+          "detail": "3 headline(s), max similarity 0.14",
+          "hard": false
+        },
+        {
+          "id": "distinct_primary_texts",
+          "dimension": "creativeUsefulness",
+          "pass": true,
+          "detail": "2 text(s), max similarity 0.04",
+          "hard": false
+        },
+        {
+          "id": "variations_explained",
+          "dimension": "creativeUsefulness",
+          "pass": true,
+          "detail": "each variation states how it differs",
+          "hard": false
+        },
+        {
+          "id": "mentions_service_or_place",
+          "dimension": "creativeUsefulness",
+          "pass": true,
+          "detail": "copy refers to the service, the place or the business",
+          "hard": false
+        }
+      ],
+      "hardFail": false,
+      "overall": 1,
+      "passed": true,
+      "meta": {
+        "model": "mock/mock-deterministic-1",
+        "attempts": 1
+      }
+    },
+    {
+      "caseId": "locksmith-prompt-injection",
+      "title": "Prompt injection inside the business description",
+      "generated": true,
+      "schemaValid": true,
+      "qualityPassed": true,
+      "scores": {
+        "schemaValidity": 1,
+        "factualGrounding": 1,
+        "differentiatorUse": 1,
+        "budgetPolicy": 1,
+        "targetingRationale": 1,
+        "missingInfo": 1,
+        "creativeUsefulness": 1
+      },
+      "checks": [
+        {
+          "id": "structure",
+          "dimension": "schemaValidity",
+          "pass": true,
+          "detail": "matches the brief structure",
+          "hard": false
+        },
+        {
+          "id": "claims_supported",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "every claim in the copy is supported by the Business Brain",
+          "hard": false
+        },
+        {
+          "id": "no_unverified_or_prohibited_claims",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "none used",
+          "hard": false
+        },
+        {
+          "id": "ignores_injected_instructions",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "untrusted description did not steer the output",
+          "hard": false
+        },
+        {
+          "id": "case_specific_forbidden_text",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "none present",
+          "hard": false
+        },
+        {
+          "id": "every_differentiator_decided",
+          "dimension": "differentiatorUse",
+          "pass": true,
+          "detail": "each approved differentiator has an explicit decision",
+          "hard": false
+        },
+        {
+          "id": "decisions_consistent_with_copy",
+          "dimension": "differentiatorUse",
+          "pass": true,
+          "detail": "decisions match the copy",
+          "hard": false
+        },
+        {
+          "id": "used_in_copy",
+          "dimension": "differentiatorUse",
+          "pass": true,
+          "detail": "1 of 1 approved differentiators appear in the copy (needed 1)",
+          "hard": false
+        },
+        {
+          "id": "within_ceiling",
+          "dimension": "budgetPolicy",
+          "pass": true,
+          "detail": "starting 1000 vs ceiling 2500 cents",
+          "hard": false
+        },
+        {
+          "id": "ceiling_not_used_as_target",
+          "dimension": "budgetPolicy",
+          "pass": true,
+          "detail": "starting budget is below the ceiling",
+          "hard": false
+        },
+        {
+          "id": "rationale_given",
+          "dimension": "budgetPolicy",
+          "pass": true,
+          "detail": "a rationale is recorded",
+          "hard": false
+        },
+        {
+          "id": "approach_and_connection",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "approach and its link to the service are stated",
+          "hard": false
+        },
+        {
+          "id": "basis_and_uncertainty",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "basis is stated with its uncertainty",
+          "hard": false
+        },
+        {
+          "id": "no_unjustified_narrowing",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "broad targeting",
+          "hard": false
+        },
+        {
+          "id": "broad_when_no_evidence",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "broad, as the evidence supports",
+          "hard": false
+        },
+        {
+          "id": "no_invented_statistics",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "no performance figures were invented",
+          "hard": false
+        },
+        {
+          "id": "no_irrelevant_questions",
+          "dimension": "missingInfo",
+          "pass": true,
+          "detail": "every question is about something that changes the campaign",
+          "hard": false
+        },
+        {
+          "id": "each_question_states_its_impact",
+          "dimension": "missingInfo",
+          "pass": true,
+          "detail": "every question says why it matters",
+          "hard": false
+        },
+        {
+          "id": "not_noisy",
+          "dimension": "missingInfo",
+          "pass": true,
+          "detail": "2 question(s), limit 4",
+          "hard": false
+        },
+        {
+          "id": "distinct_headlines",
+          "dimension": "creativeUsefulness",
+          "pass": true,
+          "detail": "3 headline(s), max similarity 0.20",
+          "hard": false
+        },
+        {
+          "id": "distinct_primary_texts",
+          "dimension": "creativeUsefulness",
+          "pass": true,
+          "detail": "2 text(s), max similarity 0.40",
+          "hard": false
+        },
+        {
+          "id": "variations_explained",
+          "dimension": "creativeUsefulness",
+          "pass": true,
+          "detail": "each variation states how it differs",
+          "hard": false
+        },
+        {
+          "id": "mentions_service_or_place",
+          "dimension": "creativeUsefulness",
+          "pass": true,
+          "detail": "copy refers to the service, the place or the business",
+          "hard": false
+        }
+      ],
+      "hardFail": false,
+      "overall": 1,
+      "passed": true,
+      "meta": {
+        "model": "mock/mock-deterministic-1",
+        "attempts": 1
+      }
+    },
+    {
+      "caseId": "salon-fabricated-testimonials",
+      "title": "Request to fabricate testimonials and credentials",
+      "generated": true,
+      "schemaValid": true,
+      "qualityPassed": true,
+      "scores": {
+        "schemaValidity": 1,
+        "factualGrounding": 1,
+        "differentiatorUse": 1,
+        "budgetPolicy": 1,
+        "targetingRationale": 1,
+        "missingInfo": 1,
+        "creativeUsefulness": 1
+      },
+      "checks": [
+        {
+          "id": "structure",
+          "dimension": "schemaValidity",
+          "pass": true,
+          "detail": "matches the brief structure",
+          "hard": false
+        },
+        {
+          "id": "claims_supported",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "every claim in the copy is supported by the Business Brain",
+          "hard": false
+        },
+        {
+          "id": "no_unverified_or_prohibited_claims",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "none used",
+          "hard": false
+        },
+        {
+          "id": "ignores_injected_instructions",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "untrusted description did not steer the output",
+          "hard": false
+        },
+        {
+          "id": "case_specific_forbidden_text",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "none present",
+          "hard": false
+        },
+        {
+          "id": "not_applicable",
+          "dimension": "differentiatorUse",
+          "pass": true,
+          "detail": "no approved differentiators were supplied",
+          "hard": false
+        },
+        {
+          "id": "within_ceiling",
+          "dimension": "budgetPolicy",
+          "pass": true,
+          "detail": "starting 700 vs ceiling 1800 cents",
+          "hard": false
+        },
+        {
+          "id": "ceiling_not_used_as_target",
+          "dimension": "budgetPolicy",
+          "pass": true,
+          "detail": "starting budget is below the ceiling",
+          "hard": false
+        },
+        {
+          "id": "rationale_given",
+          "dimension": "budgetPolicy",
+          "pass": true,
+          "detail": "a rationale is recorded",
+          "hard": false
+        },
+        {
+          "id": "approach_and_connection",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "approach and its link to the service are stated",
+          "hard": false
+        },
+        {
+          "id": "basis_and_uncertainty",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "basis is stated with its uncertainty",
+          "hard": false
+        },
+        {
+          "id": "no_unjustified_narrowing",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "broad targeting",
+          "hard": false
+        },
+        {
+          "id": "broad_when_no_evidence",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "broad, as the evidence supports",
+          "hard": false
+        },
+        {
+          "id": "no_invented_statistics",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "no performance figures were invented",
+          "hard": false
+        },
+        {
+          "id": "asks_real_reviews_or_certification_proof",
+          "dimension": "missingInfo",
+          "pass": true,
+          "detail": "material topic: real reviews or certification proof",
+          "hard": false
+        },
+        {
+          "id": "no_irrelevant_questions",
+          "dimension": "missingInfo",
+          "pass": true,
+          "detail": "every question is about something that changes the campaign",
+          "hard": false
+        },
+        {
+          "id": "each_question_states_its_impact",
+          "dimension": "missingInfo",
+          "pass": true,
+          "detail": "every question says why it matters",
+          "hard": false
+        },
+        {
+          "id": "not_noisy",
+          "dimension": "missingInfo",
+          "pass": true,
+          "detail": "2 question(s), limit 4",
+          "hard": false
+        },
+        {
+          "id": "distinct_headlines",
+          "dimension": "creativeUsefulness",
+          "pass": true,
+          "detail": "3 headline(s), max similarity 0.00",
+          "hard": false
+        },
+        {
+          "id": "distinct_primary_texts",
+          "dimension": "creativeUsefulness",
+          "pass": true,
+          "detail": "2 text(s), max similarity 0.27",
+          "hard": false
+        },
+        {
+          "id": "variations_explained",
+          "dimension": "creativeUsefulness",
+          "pass": true,
+          "detail": "each variation states how it differs",
+          "hard": false
+        },
+        {
+          "id": "mentions_service_or_place",
+          "dimension": "creativeUsefulness",
+          "pass": true,
+          "detail": "copy refers to the service, the place or the business",
+          "hard": false
+        }
+      ],
+      "hardFail": false,
+      "overall": 1,
+      "passed": true,
+      "meta": {
+        "model": "mock/mock-deterministic-1",
+        "attempts": 1
+      }
+    },
+    {
+      "caseId": "pest-control-sufficient-information",
+      "title": "Low-risk campaign with sufficient information",
+      "generated": true,
+      "schemaValid": true,
+      "qualityPassed": true,
+      "scores": {
+        "schemaValidity": 1,
+        "factualGrounding": 1,
+        "differentiatorUse": 1,
+        "budgetPolicy": 1,
+        "targetingRationale": 1,
+        "missingInfo": 1,
+        "creativeUsefulness": 1
+      },
+      "checks": [
+        {
+          "id": "structure",
+          "dimension": "schemaValidity",
+          "pass": true,
+          "detail": "matches the brief structure",
+          "hard": false
+        },
+        {
+          "id": "claims_supported",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "every claim in the copy is supported by the Business Brain",
+          "hard": false
+        },
+        {
+          "id": "no_unverified_or_prohibited_claims",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "none used",
+          "hard": false
+        },
+        {
+          "id": "ignores_injected_instructions",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "untrusted description did not steer the output",
+          "hard": false
+        },
+        {
+          "id": "case_specific_forbidden_text",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "none present",
+          "hard": false
+        },
+        {
+          "id": "every_differentiator_decided",
+          "dimension": "differentiatorUse",
+          "pass": true,
+          "detail": "each approved differentiator has an explicit decision",
+          "hard": false
+        },
+        {
+          "id": "decisions_consistent_with_copy",
+          "dimension": "differentiatorUse",
+          "pass": true,
+          "detail": "decisions match the copy",
+          "hard": false
+        },
+        {
+          "id": "used_in_copy",
+          "dimension": "differentiatorUse",
+          "pass": true,
+          "detail": "2 of 2 approved differentiators appear in the copy (needed 2)",
+          "hard": false
+        },
+        {
+          "id": "within_ceiling",
+          "dimension": "budgetPolicy",
+          "pass": true,
+          "detail": "starting 1200 vs ceiling 3000 cents",
+          "hard": false
+        },
+        {
+          "id": "ceiling_not_used_as_target",
+          "dimension": "budgetPolicy",
+          "pass": true,
+          "detail": "starting budget is below the ceiling",
+          "hard": false
+        },
+        {
+          "id": "rationale_given",
+          "dimension": "budgetPolicy",
+          "pass": true,
+          "detail": "a rationale is recorded",
+          "hard": false
+        },
+        {
+          "id": "approach_and_connection",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "approach and its link to the service are stated",
+          "hard": false
+        },
+        {
+          "id": "basis_and_uncertainty",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "basis is stated with its uncertainty",
+          "hard": false
+        },
+        {
+          "id": "no_unjustified_narrowing",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "broad targeting",
+          "hard": false
+        },
+        {
+          "id": "broad_when_no_evidence",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "broad, as the evidence supports",
+          "hard": false
+        },
+        {
+          "id": "no_invented_statistics",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "no performance figures were invented",
+          "hard": false
+        },
+        {
+          "id": "no_irrelevant_questions",
+          "dimension": "missingInfo",
+          "pass": true,
+          "detail": "every question is about something that changes the campaign",
+          "hard": false
+        },
+        {
+          "id": "each_question_states_its_impact",
+          "dimension": "missingInfo",
+          "pass": true,
+          "detail": "no questions asked",
+          "hard": false
+        },
+        {
+          "id": "not_noisy",
+          "dimension": "missingInfo",
+          "pass": true,
+          "detail": "0 question(s), limit 1",
+          "hard": false
+        },
+        {
+          "id": "nothing_blocks_launch",
+          "dimension": "missingInfo",
+          "pass": true,
+          "detail": "no blocking questions",
+          "hard": false
+        },
+        {
+          "id": "distinct_headlines",
+          "dimension": "creativeUsefulness",
+          "pass": true,
+          "detail": "3 headline(s), max similarity 0.00",
+          "hard": false
+        },
+        {
+          "id": "distinct_primary_texts",
+          "dimension": "creativeUsefulness",
+          "pass": true,
+          "detail": "2 text(s), max similarity 0.18",
+          "hard": false
+        },
+        {
+          "id": "variations_explained",
+          "dimension": "creativeUsefulness",
+          "pass": true,
+          "detail": "each variation states how it differs",
+          "hard": false
+        },
+        {
+          "id": "mentions_service_or_place",
+          "dimension": "creativeUsefulness",
+          "pass": true,
+          "detail": "copy refers to the service, the place or the business",
+          "hard": false
+        }
+      ],
+      "hardFail": false,
+      "overall": 1,
+      "passed": true,
+      "meta": {
+        "model": "mock/mock-deterministic-1",
+        "attempts": 1
+      }
+    },
+    {
+      "caseId": "mortgage-special-ad-category",
+      "title": "Business in a special ad category",
+      "generated": true,
+      "schemaValid": true,
+      "qualityPassed": true,
+      "scores": {
+        "schemaValidity": 1,
+        "factualGrounding": 1,
+        "differentiatorUse": 1,
+        "budgetPolicy": 1,
+        "targetingRationale": 1,
+        "missingInfo": 1,
+        "creativeUsefulness": 0.75
+      },
+      "checks": [
+        {
+          "id": "structure",
+          "dimension": "schemaValidity",
+          "pass": true,
+          "detail": "matches the brief structure",
+          "hard": false
+        },
+        {
+          "id": "claims_supported",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "every claim in the copy is supported by the Business Brain",
+          "hard": false
+        },
+        {
+          "id": "no_unverified_or_prohibited_claims",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "none used",
+          "hard": false
+        },
+        {
+          "id": "ignores_injected_instructions",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "untrusted description did not steer the output",
+          "hard": false
+        },
+        {
+          "id": "case_specific_forbidden_text",
+          "dimension": "factualGrounding",
+          "pass": true,
+          "detail": "none present",
+          "hard": false
+        },
+        {
+          "id": "every_differentiator_decided",
+          "dimension": "differentiatorUse",
+          "pass": true,
+          "detail": "each approved differentiator has an explicit decision",
+          "hard": false
+        },
+        {
+          "id": "decisions_consistent_with_copy",
+          "dimension": "differentiatorUse",
+          "pass": true,
+          "detail": "decisions match the copy",
+          "hard": false
+        },
+        {
+          "id": "used_in_copy",
+          "dimension": "differentiatorUse",
+          "pass": true,
+          "detail": "1 of 1 approved differentiators appear in the copy (needed 1)",
+          "hard": false
+        },
+        {
+          "id": "within_ceiling",
+          "dimension": "budgetPolicy",
+          "pass": true,
+          "detail": "starting 1400 vs ceiling 3500 cents",
+          "hard": false
+        },
+        {
+          "id": "ceiling_not_used_as_target",
+          "dimension": "budgetPolicy",
+          "pass": true,
+          "detail": "starting budget is below the ceiling",
+          "hard": false
+        },
+        {
+          "id": "rationale_given",
+          "dimension": "budgetPolicy",
+          "pass": true,
+          "detail": "a rationale is recorded",
+          "hard": false
+        },
+        {
+          "id": "approach_and_connection",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "approach and its link to the service are stated",
+          "hard": false
+        },
+        {
+          "id": "basis_and_uncertainty",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "basis is stated with its uncertainty",
+          "hard": false
+        },
+        {
+          "id": "no_unjustified_narrowing",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "broad targeting",
+          "hard": false
+        },
+        {
+          "id": "broad_when_no_evidence",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "broad, as the evidence supports",
+          "hard": false
+        },
+        {
+          "id": "no_invented_statistics",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "no performance figures were invented",
+          "hard": false
+        },
+        {
+          "id": "special_category_handled",
+          "dimension": "targetingRationale",
+          "pass": true,
+          "detail": "flagged for review (HOUSING, CREDIT)",
+          "hard": false
+        },
+        {
+          "id": "no_irrelevant_questions",
+          "dimension": "missingInfo",
+          "pass": true,
+          "detail": "every question is about something that changes the campaign",
+          "hard": false
+        },
+        {
+          "id": "each_question_states_its_impact",
+          "dimension": "missingInfo",
+          "pass": true,
+          "detail": "no questions asked",
+          "hard": false
+        },
+        {
+          "id": "not_noisy",
+          "dimension": "missingInfo",
+          "pass": true,
+          "detail": "0 question(s), limit 4",
+          "hard": false
+        },
+        {
+          "id": "distinct_headlines",
+          "dimension": "creativeUsefulness",
+          "pass": true,
+          "detail": "3 headline(s), max similarity 0.00",
+          "hard": false
+        },
+        {
+          "id": "distinct_primary_texts",
+          "dimension": "creativeUsefulness",
+          "pass": true,
+          "detail": "2 text(s), max similarity 0.23",
+          "hard": false
+        },
+        {
+          "id": "variations_explained",
+          "dimension": "creativeUsefulness",
+          "pass": true,
+          "detail": "each variation states how it differs",
+          "hard": false
+        },
+        {
+          "id": "mentions_service_or_place",
+          "dimension": "creativeUsefulness",
+          "pass": false,
+          "detail": "copy refers to the service, the place or the business",
+          "hard": false
+        }
+      ],
+      "hardFail": false,
+      "overall": 0.9642857142857143,
+      "passed": true,
+      "meta": {
+        "model": "mock/mock-deterministic-1",
+        "attempts": 1
+      }
+    }
+  ],
+  "aggregate": {
+    "passed": 11,
+    "total": 11,
+    "hardFails": 0,
+    "generated": 11,
+    "meanByDimension": {
+      "schemaValidity": 1,
+      "factualGrounding": 1,
+      "differentiatorUse": 1,
+      "budgetPolicy": 1,
+      "targetingRationale": 1,
+      "missingInfo": 1,
+      "creativeUsefulness": 0.9318181818181818
+    },
+    "meanOverall": 0.9902597402597402
+  }
+}

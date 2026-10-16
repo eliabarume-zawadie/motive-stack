@@ -1,0 +1,51 @@
+{
+  "verifiedAgainstRealProvider": true,
+  "verifiedAt": "2026-10-16T09:40:30.398Z",
+  "liveBillableRequests": 4,
+  "budgetMicros": 50000,
+  "maxOutputTokens": 400,
+  "provider": "openai",
+  "model": "gpt-6-luna",
+  "requestId": "req_508e99c15ded43df94d446c62e8c39e7",
+  "latencyMs": 3611,
+  "usage": {
+    "inputTokens": 93,
+    "outputTokens": 17,
+    "source": "provider"
+  },
+  "estimatedCostMicros": 18,
+  "costStatus": "estimated",
+  "status": "ok",
+  "output": {
+    "city": "Paris",
+    "country": "France"
+  },
+  "independentCostMicros": 18,
+  "invalidOutputRejected": true,
+  "limitsEnforcedBeforeRequest": true,
+  "multiModel": [
+    {
+      "model": "gpt-6-luna",
+      "requestId": "req_928eb28dc51e40f4ba8a7d50ba5ac34b",
+      "latencyMs": 1827,
+      "usage": {
+        "inputTokens": 93,
+        "outputTokens": 17,
+        "source": "provider"
+      },
+      "estimatedCostMicros": 18
+    },
+    {
+      "model": "gpt-5.5",
+      "requestId": "req_f30e273eb4984fdabe6cbfdd52f284b0",
+      "latencyMs": 1592,
+      "usage": {
+        "inputTokens": 93,
+        "outputTokens": 17,
+        "source": "provider"
+      },
+      "estimatedCostMicros": 975
+    }
+  ],
+  "authFailureNoFallback": true
+}

@@ -1,0 +1,124 @@
+{
+  "_comment": "Model registry. Edit freely; no secrets here. Model IDs are configuration, not code. IDs below were checked against each provider's official documentation on 2026-10-16 (docs/ai-verification.md). A model ID being listed is NOT proof that YOUR account can use it: run the live verification. reasoningEffort is sent to the provider to bound hidden reasoning tokens (which are billed as output).",
+  "models": [
+    {
+      "provider": "mock",
+      "model": "mock-deterministic-1",
+      "label": "Mock (deterministic, offline)",
+      "tasks": [
+        "campaign_brief",
+        "connection_test",
+        "live_probe"
+      ],
+      "capabilities": {
+        "text": true,
+        "structuredOutput": true
+      },
+      "costTier": "low",
+      "notes": "Simulated. Never calls a network. Results are labelled SIMULATED."
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-haiku-5-5",
+      "label": "Anthropic Claude Haiku 5.5",
+      "tasks": [
+        "campaign_brief",
+        "connection_test",
+        "live_probe"
+      ],
+      "capabilities": {
+        "text": true,
+        "structuredOutput": true
+      },
+      "costTier": "low",
+      "notes": "Model ID verified against the official docs on 2026-10-16 (see docs/ai-verification.md); not yet exercised by a live request from this repository.",
+      "reasoningEffort": "low"
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-sonnet-5-5",
+      "label": "Anthropic Claude Sonnet 5.5",
+      "tasks": [
+        "campaign_brief",
+        "connection_test",
+        "live_probe"
+      ],
+      "capabilities": {
+        "text": true,
+        "structuredOutput": true
+      },
+      "costTier": "medium",
+      "notes": "Model ID verified against the official docs on 2026-10-16 (see docs/ai-verification.md); not yet exercised by a live request from this repository.",
+      "reasoningEffort": "low"
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-opus-5-5",
+      "label": "Anthropic Claude Opus 5.5",
+      "tasks": [
+        "campaign_brief",
+        "connection_test",
+        "live_probe"
+      ],
+      "capabilities": {
+        "text": true,
+        "structuredOutput": true
+      },
+      "costTier": "high",
+      "notes": "Model ID verified against the official docs on 2026-10-16 (see docs/ai-verification.md); not yet exercised by a live request from this repository.",
+      "reasoningEffort": "low"
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-6-luna",
+      "label": "OpenAI GPT-6 Luna",
+      "tasks": [
+        "campaign_brief",
+        "connection_test",
+        "live_probe"
+      ],
+      "capabilities": {
+        "text": true,
+        "structuredOutput": true
+      },
+      "costTier": "low",
+      "reasoningEffort": "none",
+      "notes": "Model ID verified against the official docs on 2026-10-16 (see docs/ai-verification.md); not yet exercised by a live request from this repository."
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "label": "OpenAI GPT-5.5",
+      "tasks": [
+        "campaign_brief",
+        "connection_test",
+        "live_probe"
+      ],
+      "capabilities": {
+        "text": true,
+        "structuredOutput": true
+      },
+      "costTier": "medium",
+      "reasoningEffort": "none",
+      "notes": "Model ID verified against the official docs on 2026-10-16 (see docs/ai-verification.md); not yet exercised by a live request from this repository."
+    },
+    {
+      "provider": "ollama",
+      "model": "llama3.1:latest",
+      "label": "Ollama llama3.1 8B (local)",
+      "tasks": [
+        "campaign_brief",
+        "connection_test"
+      ],
+      "capabilities": {
+        "text": true,
+        "structuredOutput": true
+      },
+      "costTier": "low",
+      "timeoutMs": 300000,
+      "notes": "Runs on this machine (CPU on the dev PC: roughly 2-3 tokens/sec, so one attempt takes about 2 minutes). Free, offline, no key. Temperature 0. MEASURED 2026-10-16: 0 of 3 briefs passed validation even with one repair attempt (the 8B model overshoots the character limits), so treat this entry as plumbing/experimental, not as a reliable brief generator. Default served context is 4096 tokens; prompts that would not fit are refused rather than silently truncated.",
+      "temperature": 0,
+      "contextTokens": 4096
+    }
+  ]
+}
