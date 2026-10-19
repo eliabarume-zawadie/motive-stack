@@ -79,6 +79,18 @@ describe("the plan for the remaining invocations (derived from whatever the real
     expect(block).toMatch(/# DONE \(do not rerun\):/);
     for (const c of remaining) expect(block).toContain(`--label ${labelOf(c)}`);
   });
+  it("when every planned invocation is recorded, shows none remaining, the request cap used, the spend, per-invocation evaluators and the unresolved billing status", () => {
+    if (finished.length !== ALL_LABELS.length) return; // only applies once the campaign is complete
+    expect(ledger.entries.reduce((s, e) => s + e.requests, 0)).toBe(56);
+    expect(plan.remaining).toMatchObject({ invocations: 0, requests: 0, reservedMicros: 0, requestsAfter: 56, fitsCeiling: true, commands: [] });
+    expect(plan.remaining.committedNowMicros).toBe(19_098);
+    expect(md).toMatch(/Status: 4 invocation\(s\) done, 0 remaining/);
+    expect(md).toMatch(/136902 µUSD of the aggregate ceiling and 0 of 56 requests remain/);
+    expect(md).toMatch(/no planned invocation remains and the request cap is used/);
+    for (const l of ALL_LABELS) expect(md).toMatch(new RegExp(`\`${l}\` \\| DONE, 14 requests, \\d+ µUSD recorded \\| campaign-evaluator/3\\.[23]\\.0 \\| [AB]`));
+    expect(md).toMatch(/\*\*Billing is unresolved\.\*\*/);
+    expect(md).not.toMatch(/billing (has been|is) reconciled(?!\.)/i);
+  });
   it("describes where the saved outputs go and how to rescore them offline", () => {
     expect(plan.outputs).toMatchObject({ directory: "docs/eval/outputs", artifactVersion: "campaign-eval-output/1" });
     expect(plan.outputs.rescoring).toMatch(/--rescore/);

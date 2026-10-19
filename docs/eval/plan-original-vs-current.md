@@ -1,6 +1,6 @@
 # Evaluation plan and preflight: recovered original vs current candidate (NOTHING SENT)
 
-Generated 2026-10-19T07:46:35.871Z by `npm run eval:plan`. **This script made no network request** (it replaces `fetch` with a function that throws) and no model call or provider-access check. The only network use in preparing this document was reading the provider's public documentation pages on 2026-10-16. The live comparison has not been started and needs your final authorization.
+Generated 2026-10-19T08:10:51.758Z by `npm run eval:plan`. **This script made no network request** (it replaces `fetch` with a function that throws) and no model call or provider-access check. The only network use in preparing this document was reading the provider's public documentation pages on 2026-10-16. The live comparison has not been started and needs your final authorization.
 
 ## 0. Approved settings
 
@@ -19,19 +19,22 @@ Generated 2026-10-19T07:46:35.871Z by `npm run eval:plan`. **This script made no
 | Service tier | explicitly `default` (standard), read back from every response |
 | Response storage | explicitly disabled (`store: false`) |
 
-## Status: 3 invocation(s) done, 1 remaining, two evaluator cohorts
+## Status: 4 invocation(s) done, 0 remaining, two evaluator cohorts
 
 | Invocation | State | Scored by | Cohort |
 | --- | --- | --- | --- |
 | `cmp-3-2-original-rep1` | DONE, 14 requests, 2122 µUSD recorded | campaign-evaluator/3.2.0 | A |
 | `cmp-3-2-current-rep1` | DONE, 14 requests, 7290 µUSD recorded | campaign-evaluator/3.2.0 | A |
 | `cmp-3-2-original-rep2` | DONE, 14 requests, 2133 µUSD recorded | campaign-evaluator/3.3.0 | B |
-| `cmp-3-2-current-rep2` | remaining | campaign-evaluator/3.3.0 | B |
+| `cmp-3-2-current-rep2` | DONE, 14 requests, 7553 µUSD recorded | campaign-evaluator/3.3.0 | B |
 
 - **Evaluator correction.** Repetition 1 was scored by `campaign-evaluator/3.2.0`, whose ownership rule read the word "generation" (as in "Lead Generation") and the phrases "your family" / "the family" as ownership or founding-history claims. `campaign-evaluator/3.3.0` narrows that rule to real claim contexts; nothing else changed. Every repetition-2 invocation uses campaign-evaluator/3.3.0.
 - **Cohorts are never pooled.** Repetition 1 (cohort A) keeps its original scores and evaluator version. Repetition 2 (cohort B) is scored by the corrected evaluator. They are reported side by side and are not averaged, summed or compared as one sample; the comparison tool refuses reports from different evaluators. Cohort A cannot be rescored, because the output text of its 28 requests was never saved (see `docs/eval/rescorability-cmp-3-2-rep1.md`), and it is not regenerated or reconstructed.
 - **Outputs are now saved.** Each remaining invocation writes `docs/eval/outputs/<label>-openai-gpt_6_luna.outputs.json` before scoring: case id, requested and returned model, prompt/schema versions and fingerprints, evaluator version, raw output text, the parsed object that was scored, validation errors, usage, request id, response id, service tier, cost and final scores. Inputs are the invented fixtures only; no key, header or prompt is stored. Any of it can be rescored offline with no model call.
-- **Remaining budget check.** Committed so far 11545 µUSD and 42 requests. Reserving the remaining invocation(s) at their full budgets (46500 = 46500 µUSD, 14 requests) would bring the worst case to 58045 µUSD of 156000 and 56 of 56 requests: **fits the existing ceiling and request cap**. Nothing about the model, cases, token cap, retries, repairs, tier, storage setting, ledger or ceiling changed.
+- **Remaining budget check.** Committed so far 19098 µUSD and 56 requests. Reserving the remaining invocation(s) at their full budgets ( = 0 µUSD, 0 requests) would bring the worst case to 19098 µUSD of 156000 and 56 of 56 requests: **fits the existing ceiling and request cap**. Nothing about the model, cases, token cap, retries, repairs, tier, storage setting, ledger or ceiling changed.
+
+- **Spend and remaining budget.** Committed (estimated) 19098 µUSD of 156000; 136902 µUSD of the aggregate ceiling and 0 of 56 requests remain; **no planned invocation remains and the request cap is used**, so no further live request can start under this plan. These are estimates from reported usage and the recorded price, not invoiced amounts.
+- **Billing is unresolved.** The OpenAI dashboard total and the exported request list have not been reconciled with these estimates (see `docs/eval/billing-reconciliation.md`). Nothing here claims billing has been reconciled.
 
 ## 1. What is compared
 
@@ -230,13 +233,12 @@ The repository had no Git history. The original implementation was rebuilt by re
 | More than 4 of the first 14 requests of an invocation produce nothing scorable | Stop and review before the next invocation | Procedure, after the first invocation |
 | Any sign that real customer data is in an input | Stop | Procedure; the fixtures are synthetic |
 
-## 10. Exact invocation (not run)
+## 10. Exact invocation (all planned invocations are done; nothing remains to run)
 
 Prerequisites, set in your shell or `.env.local` (never pasted into chat): `AI_PROVIDER_MODE=live`, `ALLOW_LIVE_PROVIDER_CALLS=true`, `OPENAI_API_KEY`. The command itself sets the service tier to `default` and response storage to disabled, and refuses to start if the environment says otherwise. Run each invocation first **without** `--yes-spend` to see its plan (no network request, no spend). If an invocation halts or is interrupted, the next one is refused until a person reconciles the ledger: `npm run eval:campaigns -- --reconcile "<what you reviewed and why it is safe to continue>" --ledger docs/eval/ledger-cmp-3-2.json --aggregate-ceiling-micros 156000 --max-total-requests 56`.
 
 ```
-# DONE (do not rerun): cmp-3-2-current-rep1, cmp-3-2-original-rep1, cmp-3-2-original-rep2
-npm run eval:campaigns -- --models openai/gpt-6-luna --max-output 2500 --repair 0 --retries 0 --ledger docs/eval/ledger-cmp-3-2.json --aggregate-ceiling-micros 156000 --max-total-requests 56 --prompt current --budget-micros 46500 --label cmp-3-2-current-rep2 --yes-spend
+# DONE (do not rerun): cmp-3-2-current-rep1, cmp-3-2-current-rep2, cmp-3-2-original-rep1, cmp-3-2-original-rep2
 ```
 
 Then, offline and free, per repetition:
