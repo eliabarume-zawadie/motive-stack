@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-19T07:10:18.262Z",
+  "generatedAt": "2026-10-19T07:46:35.871Z",
   "networkUsed": false,
   "status": "PLAN ONLY. Nothing here has been sent, and model access has not been checked.",
   "approvedSettings": {
@@ -540,8 +540,8 @@
     "B": {
       "evaluator": "campaign-evaluator/3.3.0",
       "invocations": [
-        "cmp-3-2-original-rep2",
-        "cmp-3-2-current-rep2"
+        "cmp-3-2-current-rep2",
+        "cmp-3-2-original-rep2"
       ],
       "note": "scored with the corrected evaluator; output text saved for offline rescoring"
     },
@@ -549,15 +549,14 @@
   },
   "remaining": {
     "commands": [
-      "npm run eval:campaigns -- --models openai/gpt-6-luna --max-output 2500 --repair 0 --retries 0 --ledger docs/eval/ledger-cmp-3-2.json --aggregate-ceiling-micros 156000 --max-total-requests 56 --prompt original --budget-micros 31500 --label cmp-3-2-original-rep2 --yes-spend",
       "npm run eval:campaigns -- --models openai/gpt-6-luna --max-output 2500 --repair 0 --retries 0 --ledger docs/eval/ledger-cmp-3-2.json --aggregate-ceiling-micros 156000 --max-total-requests 56 --prompt current --budget-micros 46500 --label cmp-3-2-current-rep2 --yes-spend"
     ],
-    "invocations": 2,
-    "requests": 28,
-    "reservedMicros": 78000,
-    "committedNowMicros": 9412,
-    "requestsNow": 28,
-    "committedAfterWorstCaseMicros": 87412,
+    "invocations": 1,
+    "requests": 14,
+    "reservedMicros": 46500,
+    "committedNowMicros": 11545,
+    "requestsNow": 42,
+    "committedAfterWorstCaseMicros": 58045,
     "requestsAfter": 56,
     "fitsCeiling": true
   },

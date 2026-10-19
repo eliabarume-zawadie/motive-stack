@@ -166,8 +166,8 @@ const plan = {
   commands,
   evaluator: EVALUATOR_VERSION,
   cohorts: {
-    A: { evaluator: EVALUATOR_PREVIOUS, invocations: [...doneLabels].sort(), note: "scored with the previous evaluator, which has a known ownership false positive; their output text was never saved, so they cannot be rescored" },
-    B: { evaluator: EVALUATOR_VERSION, invocations: remainingCommands.map((c) => /--label (\S+)/.exec(c)![1]), note: "scored with the corrected evaluator; output text saved for offline rescoring" },
+    A: { evaluator: EVALUATOR_PREVIOUS, invocations: commands.map((c) => /--label (\S+)/.exec(c)![1]!).filter((l) => l.endsWith("-rep1")).sort(), note: "scored with the previous evaluator, which has a known ownership false positive; their output text was never saved, so they cannot be rescored" },
+    B: { evaluator: EVALUATOR_VERSION, invocations: commands.map((c) => /--label (\S+)/.exec(c)![1]!).filter((l) => !l.endsWith("-rep1")).sort(), note: "scored with the corrected evaluator; output text saved for offline rescoring" },
     pooling: "prohibited: cohorts A and B are reported separately and never averaged or pooled",
   },
   remaining: { commands: remainingCommands, invocations: remainingCommands.length, requests: remainingRequests, reservedMicros: remainingBudget, committedNowMicros: committedNow, requestsNow, committedAfterWorstCaseMicros: committedNow + remainingBudget, requestsAfter: requestsNow + remainingRequests, fitsCeiling: remainingFits },
@@ -191,17 +191,17 @@ row("Maximum aggregate experimental spend", `${usd(CEILING)} (${CEILING} micro-U
 row("Service tier", `explicitly \`${SERVICE_TIER}\` (standard), read back from every response`); row("Response storage", "explicitly disabled (`store: false`)");
 L.push("");
 
-L.push("## Status: two invocations done, two remaining, two evaluator cohorts", "");
+L.push(`## Status: ${doneLabels.size} invocation(s) done, ${remainingCommands.length} remaining, two evaluator cohorts`, "");
 row("Invocation", "State", "Scored by", "Cohort"); row("---", "---", "---", "---");
 for (const c of commands) {
   const label = /--label (\S+)/.exec(c)![1]!;
   const e = ledgerNow.entries.find((x) => x.label === label);
-  row(`\`${label}\``, e ? `DONE, ${e.requests} requests, ${e.chargedMicros} µUSD recorded${e.halted ? ", HALTED" : ""}` : "remaining", e ? EVALUATOR_PREVIOUS : EVALUATOR_VERSION, e ? "A" : "B");
+  row(`\`${label}\``, e ? `DONE, ${e.requests} requests, ${e.chargedMicros} µUSD recorded${e.halted ? ", HALTED" : ""}` : "remaining", label.endsWith("-rep1") ? EVALUATOR_PREVIOUS : EVALUATOR_VERSION, label.endsWith("-rep1") ? "A" : "B");
 }
-L.push("", `- **Evaluator correction.** Repetition 1 was scored by \`${EVALUATOR_PREVIOUS}\`, whose ownership rule read the word "generation" (as in "Lead Generation") and the phrases "your family" / "the family" as ownership or founding-history claims. \`${EVALUATOR_VERSION}\` narrows that rule to real claim contexts; nothing else changed. The remaining two invocations use ${EVALUATOR_VERSION}.`);
+L.push("", `- **Evaluator correction.** Repetition 1 was scored by \`${EVALUATOR_PREVIOUS}\`, whose ownership rule read the word "generation" (as in "Lead Generation") and the phrases "your family" / "the family" as ownership or founding-history claims. \`${EVALUATOR_VERSION}\` narrows that rule to real claim contexts; nothing else changed. Every repetition-2 invocation uses ${EVALUATOR_VERSION}.`);
 L.push(`- **Cohorts are never pooled.** Repetition 1 (cohort A) keeps its original scores and evaluator version. Repetition 2 (cohort B) is scored by the corrected evaluator. They are reported side by side and are not averaged, summed or compared as one sample; the comparison tool refuses reports from different evaluators. Cohort A cannot be rescored, because the output text of its 28 requests was never saved (see \`docs/eval/rescorability-cmp-3-2-rep1.md\`), and it is not regenerated or reconstructed.`);
 L.push(`- **Outputs are now saved.** Each remaining invocation writes \`docs/eval/outputs/<label>-openai-gpt_6_luna.outputs.json\` before scoring: case id, requested and returned model, prompt/schema versions and fingerprints, evaluator version, raw output text, the parsed object that was scored, validation errors, usage, request id, response id, service tier, cost and final scores. Inputs are the invented fixtures only; no key, header or prompt is stored. Any of it can be rescored offline with no model call.`);
-L.push(`- **Remaining budget check.** Committed so far ${committedNow} µUSD and ${requestsNow} requests. Reserving the two remaining invocations at their full budgets (${remainingCommands.map((c) => /--budget-micros (\d+)/.exec(c)![1]).join(" + ")} = ${remainingBudget} µUSD, ${remainingRequests} requests) would bring the worst case to ${committedNow + remainingBudget} µUSD of ${CEILING} and ${requestsNow + remainingRequests} of ${requests} requests: **${remainingFits ? "fits the existing ceiling and request cap" : "DOES NOT FIT"}**. Nothing about the model, cases, token cap, retries, repairs, tier, storage setting, ledger or ceiling changed.`, "");
+L.push(`- **Remaining budget check.** Committed so far ${committedNow} µUSD and ${requestsNow} requests. Reserving the remaining invocation(s) at their full budgets (${remainingCommands.map((c) => /--budget-micros (\d+)/.exec(c)![1]).join(" + ")} = ${remainingBudget} µUSD, ${remainingRequests} requests) would bring the worst case to ${committedNow + remainingBudget} µUSD of ${CEILING} and ${requestsNow + remainingRequests} of ${requests} requests: **${remainingFits ? "fits the existing ceiling and request cap" : "DOES NOT FIT"}**. Nothing about the model, cases, token cap, retries, repairs, tier, storage setting, ledger or ceiling changed.`, "");
 L.push("## 1. What is compared", "");
 L.push(`- **Arm A, original:** the recovered pre-Milestone-3 prompt, brief contract and Business Brain fields.`, `- **Arm B, current:** the candidate prompt and brief contract, with the full Business Brain.`, `- **Cases:** the same ${EVAL_CASES.length} synthetic businesses for both arms. All data is invented.`, `- **Identical for both arms:** model \`${PROVIDER}/${MODEL}\`, max output ${MAX_OUT} tokens, repair 0, retries 0, provider-default sampling, reasoning effort \`${String(entry?.reasoningEffort ?? "registry default")}\`, service tier \`${SERVICE_TIER}\` (pinned in the request and checked in the response).`, `- **Repetitions:** ${REPS} per case per arm, so run-to-run variation is measured and not hidden.`, "");
 L.push("Cases: " + EVAL_CASES.map((c) => `\`${c.id}\``).join(", "), "");
@@ -335,7 +335,7 @@ L.push("");
 
 L.push("## 10. Exact invocation (not run)", "");
 L.push("Prerequisites, set in your shell or `.env.local` (never pasted into chat): `AI_PROVIDER_MODE=live`, `ALLOW_LIVE_PROVIDER_CALLS=true`, `OPENAI_API_KEY`. The command itself sets the service tier to `default` and response storage to disabled, and refuses to start if the environment says otherwise. Run each invocation first **without** `--yes-spend` to see its plan (no network request, no spend). If an invocation halts or is interrupted, the next one is refused until a person reconciles the ledger: `npm run eval:campaigns -- --reconcile \"<what you reviewed and why it is safe to continue>\" --ledger docs/eval/ledger-cmp-3-2.json --aggregate-ceiling-micros " + CEILING + " --max-total-requests " + requests + "`.", "", "```");
-L.push(`# DONE (do not rerun): ${[...doneLabels].sort().join(", ")}  (scored by ${EVALUATOR_PREVIOUS})`);
+L.push(`# DONE (do not rerun): ${[...doneLabels].sort().join(", ")}`);
 for (const c of remainingCommands) L.push(c);
 L.push("```", "", "Then, offline and free, per repetition:", "", "```");
 for (let r = 2; r <= REPS; r++) L.push(`npm run eval:campaigns -- --compare docs/eval/cmp-3-2-original-rep${r}-openai-gpt_6_luna.json docs/eval/cmp-3-2-current-rep${r}-openai-gpt_6_luna.json --names original,current --label cmp-3-2-rep${r}`);
