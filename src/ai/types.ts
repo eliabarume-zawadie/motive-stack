@@ -57,13 +57,18 @@ export class AiError extends Error {
   readonly meta?: ResponseMeta;
   /** The model's last output when it was received but failed validation. Model output, never a secret. */
   rawOutput?: unknown;
+  /**
+   * The output TEXT exactly as the provider returned it, present only when the caller asked for it (CallOptions.captureRawText).
+   * It is evaluation evidence: it is never written to the usage log and never attached to an error unless requested.
+   */
+  rawText?: string;
   /** Attempts made before this error surfaced (filled in by the gateway). */
   attempts: AttemptRecord[] = [];
 
   constructor(
     readonly kind: AiErrorKind,
     message: string,
-    opts: { retryable?: boolean; requestId?: string; retryAfterMs?: number; httpStatus?: number; usage?: Usage; truncated?: boolean; meta?: ResponseMeta } = {},
+    opts: { retryable?: boolean; requestId?: string; retryAfterMs?: number; httpStatus?: number; usage?: Usage; truncated?: boolean; meta?: ResponseMeta; rawText?: string } = {},
   ) {
     super(message);
     this.name = "AiError";
@@ -74,6 +79,7 @@ export class AiError extends Error {
     this.usage = opts.usage;
     this.truncated = opts.truncated;
     this.meta = opts.meta;
+    this.rawText = opts.rawText;
   }
 }
 
@@ -124,6 +130,8 @@ export interface ProviderResult {
   serviceTier?: string;
   /** Everything the provider returned about this response, captured before the content was parsed. */
   meta?: ResponseMeta;
+  /** The output text as returned, before parsing. The gateway passes it on only when asked (CallOptions.captureRawText). */
+  rawText?: string;
   simulated: boolean;
 }
 
@@ -185,4 +193,6 @@ export interface GatewayResult<T> {
   serviceTier?: string;
   /** What the provider returned about the final attempt's response. */
   meta?: ResponseMeta;
+  /** The output text as returned. Present only when the caller asked for it (CallOptions.captureRawText). */
+  rawText?: string;
 }

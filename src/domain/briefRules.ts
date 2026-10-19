@@ -89,8 +89,16 @@ interface ClaimPattern {
 /** license/licence/licensed, certified/certification, guarantee/guaranteed all share their first letters; compare on those. */
 const stem = (m: string) => m.slice(0, 5);
 
-/** Ownership, founding and size claims in the many ways an ad (or a model) words them. */
-const OWNERSHIP_RE = /\b(family[- ](?:owned|run|operated|founded|business|company|team)|(?:locally|independently|veteran|woman|women|minority|black|american)[- ](?:owned|operated|run)|owner[- ]operated|(?:run|owned|founded|operated|started) by (?:a |an |the |our |one )?(?:local |loving |proud )?(?:family|veterans?|locals?|neighbou?rs?)|our family|(?:first|second|third|fourth|fifth|\d+(?:st|nd|rd|th))[- ]generation|generations?|(?:a|your|the|local) family\b|mom[- ]and[- ]pop|small[- ](?:business|company|team)|locally[- ]based|home[- ]?grown|neighbou?rhood (?:business|company|team))\b/gi;
+/**
+ * Ownership, founding and size claims in the many ways an ad (or a model) words them.
+ *
+ * Corrected in evaluator 3.3.0. The word "generation" alone and the phrases "your family" / "the family" used to count as claims,
+ * so "Lead Generation", "next-generation service", "generation of new leads" and "keep your family comfortable" were all read as
+ * ownership or founding history. A "generation" now counts only in a claim context (an ordinal or "multi" before it, "for/over/across
+ * generations", "generations of experience/families/..."), and "family" only when it describes the business ("family-owned", "our
+ * family", "local family", "run by a family"...). The rule is narrowed, not removed: every real wording still has to be supported.
+ */
+const OWNERSHIP_RE = /\b(family[- ](?:owned|run|operated|founded|business|company|team)|(?:locally|independently|veteran|woman|women|minority|black|american)[- ](?:owned|operated|run)|owner[- ]operated|(?:run|owned|founded|operated|started) by (?:a |an |the |our |one )?(?:local |loving |proud )?(?:family|veterans?|locals?|neighbou?rs?)|our family|(?:first|second|third|fourth|fifth|sixth|\d+(?:st|nd|rd|th))[- ]generation|(?:multi|multiple)[- ]generation(?:al)?|generational (?:family|business|company)|(?:for|over|across|through|spanning|within) (?:several |many |multiple |two |three |four |five |\d+ )?generations|generations of (?:experience|famil(?:y|ies)|customers|craftsmanship|service|expertise|trust|homeowners|neighbou?rs)|local family\b|mom[- ]and[- ]pop|small[- ](?:business|company|team)|locally[- ]based|home[- ]?grown|neighbou?rhood (?:business|company|team))\b/gi;
 
 /** Order matters: the first concept that matches names the claim. A "family owned" fact does not support "third-generation". */
 const OWNERSHIP_CONCEPTS: Array<[string, RegExp]> = [

@@ -328,10 +328,34 @@ export function evaluateBrief(raw: unknown, c: EvalCase, meta?: RunMeta, schemaE
 /* -------------------------------------------------------------------------------------------------- runner */
 
 /** `schemaError`: the output was received but failed validation; its quality is still scored and the failure is recorded as a schema problem. `truncated`: cut off, nothing to score. */
-export type Generator = (c: EvalCase) => Promise<{ raw?: unknown; error?: string; meta?: RunMeta; schemaError?: string; truncated?: boolean }>;
+export interface GeneratorOutput {
+  raw?: unknown;
+  error?: string;
+  meta?: RunMeta;
+  schemaError?: string;
+  truncated?: boolean;
+  /** The output text exactly as returned, kept so the result can be re-scored later without a model call. */
+  rawText?: string;
+}
+export type Generator = (c: EvalCase) => Promise<GeneratorOutput>;
+
+/** Called around scoring. `onGenerated` runs BEFORE the output is scored, so the text is saved even if scoring fails. */
+export interface RunHooks {
+  onGenerated?: (c: EvalCase, out: GeneratorOutput) => void;
+  onScored?: (c: EvalCase, out: GeneratorOutput, result: CaseResult) => void;
+}
 
 /** Version of the scoring code and fixtures. Bump it whenever a check, a threshold or a fixture changes, so scores from different evaluators are never compared. */
-export const EVALUATOR_VERSION = "campaign-evaluator/3.2.0";
+export const EVALUATOR_VERSION = "campaign-evaluator/3.3.0";
+
+/**
+ * Evaluator history. A result is only comparable with results scored by the SAME version.
+ *   3.2.0  used for cmp-3-2-original-rep1 and cmp-3-2-current-rep1. Known defect: the ownership rule read the word "generation"
+ *          ("Lead Generation", "next-generation", "generation of leads") and the phrases "your family" / "the family" as ownership
+ *          or founding-history claims, producing false hard failures.
+ *   3.3.0  ownership rule narrowed to real claim contexts (see OWNERSHIP_RE in briefRules.ts). No other check, threshold or fixture changed.
+ */
+export const EVALUATOR_HISTORY = ["campaign-evaluator/3.2.0", "campaign-evaluator/3.3.0"] as const;
 
 /** What was run and how, so the result can be reproduced or compared like for like. */
 export interface RunInfo {
@@ -361,11 +385,14 @@ export function summarize(cases: CaseResult[]): EvalReport["aggregate"] {
   };
 }
 
-export async function runEvaluation(cases: EvalCase[], generate: Generator, label: string, source: string, run?: RunInfo): Promise<EvalReport> {
+export async function runEvaluation(cases: EvalCase[], generate: Generator, label: string, source: string, run?: RunInfo, hooks?: RunHooks): Promise<EvalReport> {
   const results: CaseResult[] = [];
   for (const c of cases) {
     const out = await generate(c);
-    results.push(out.raw === undefined ? failedGeneration(c, out.error ?? "no output", out.meta, out.truncated) : evaluateBrief(out.raw, c, out.meta, out.schemaError));
+    hooks?.onGenerated?.(c, out); // saved before scoring: the text must survive a scoring failure
+    const scored = out.raw === undefined ? failedGeneration(c, out.error ?? "no output", out.meta, out.truncated) : evaluateBrief(out.raw, c, out.meta, out.schemaError);
+    results.push(scored);
+    hooks?.onScored?.(c, out, scored);
   }
   return { label, generatedAt: new Date().toISOString(), source, ...(run ? { run } : {}), cases: results, aggregate: summarize(results) };
 }

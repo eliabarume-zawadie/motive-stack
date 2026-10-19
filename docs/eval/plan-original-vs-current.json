@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-16T14:08:16.364Z",
+  "generatedAt": "2026-10-19T07:10:18.262Z",
   "networkUsed": false,
   "status": "PLAN ONLY. Nothing here has been sent, and model access has not been checked.",
   "approvedSettings": {
@@ -73,25 +73,26 @@
       "original": "d4ca745fe5a8d1944e6bfb795959d24329f4c8393ca15d5afeccc0b632b2c385",
       "current": "d1c637fd379a3d3c4065c248f1e1828803fe3ef9ba5945b6868bee002a7b89c4"
     },
-    "evaluator": "campaign-evaluator/3.2.0",
+    "evaluator": "campaign-evaluator/3.3.0",
     "evaluatorSourceSha256": {
-      "src/eval/evaluate.ts": "947d88edc3d116748bc476b56fb2e779f99dbe3347a21768d3e8ac43b0cecd8c",
+      "src/eval/evaluate.ts": "277f9a6f3f6d22f3962cab7e75e51abdf5158d5bff340c89b2294db1ac4abb43",
       "src/eval/fixtures.ts": "4c11309b1d5a36c075fbfeffc34a5e9da544f91dc3725c0292185585e64c7ea3",
-      "src/eval/report.ts": "1f4d050b9e40520b1f19428b2ec87185a057aabe1aee98c3eac32ba54defd5bb",
-      "src/eval/liveRun.ts": "78f2fd454726f376a2e38487aa1f483561a8ef424cd87ca4a01c653bca6b1286",
+      "src/eval/report.ts": "9cf1ea33493d3e14bbe5884786601a49939d3b47f29cf668eb4d760cca8a1733",
+      "src/eval/liveRun.ts": "adabe9b955a76df26725d447eaa46591a9c5958ad8d8bd2f9b60967c9ed4dd7d",
       "src/eval/costBound.ts": "00d685c390783b19b01a98881ee40fd93f7e27a71e9fbe5f1a20bfbcebf5f7cd",
       "src/eval/ledger.ts": "4a27583a04cf814c0971a604a54d0749a9017551635599c476a021cabf32c033",
+      "src/eval/outputs.ts": "847fed928a21a878b4da1cf615123a1c027ec230d7b5fb4e9a9083c6f5d24a50",
       "src/eval/original.ts": "498db7b785d75ae17b6c0952453a767ba09a4fbae9737ca5366fc9d9c595cacb",
-      "src/domain/briefRules.ts": "2dcadbdd4ef4cd2f8bf4ee93c4ec91aaece3570ecdb6c8a307f7f01b4596049f",
+      "src/domain/briefRules.ts": "ec40acf0c654f02163fa993785361e3c7698e1859d4d2e844d114bee6a331ec7",
       "src/domain/facts.ts": "90294580c1602d7d317c742b745deb1e4c1af43b909800a9aea181c92b53ddac",
       "src/domain/schemas.ts": "8e7d25844a38273de942ca5f6e265c129fa7ab26da517d2b59505e760a06dc20",
       "src/domain/campaignJsonSchema.ts": "a5cef0d147aa586705cf6d6d5a8cce053dbb3724cd2b98dbac85a3714e240839",
       "src/app/campaignPrompt.ts": "bc037a3f00e8f61ee05f4caead2e10e2ba2f718babe89cfa38472a64e6baf57b",
-      "src/ai/openaiProvider.ts": "aa59df2dc33623168f1362ca9901dce8a2845de11bbf0645e6b63e84b32f0011",
+      "src/ai/openaiProvider.ts": "76a585ff34b76d36682053b8be62fae29e8df2d1916240d8e5f71edfb3d819fa",
       "src/ai/stack.ts": "8c97f374765aa4436c1980b171d64c65a4fccfd1404fe7cad43e8f447ae3afd1",
       "src/eval/evalPolicy.ts": "d53224bf6eb4b476ff7a1d2b5c7b334503dde6e97fdd4a7bbaeec5ff598b2dcc",
       "src/eval/tierDiagnostic.ts": "3217933bf223eec2affb13813eaad747aad250c6d0e3cf3c7a80c658b039a6ea",
-      "scripts/eval-campaigns.ts": "22bfa6bfda037a47db3a6d7b73f4e159b9ea7c1650789ba6c6d46eeb8bdeb703"
+      "scripts/eval-campaigns.ts": "dffbd9800cc020019a877ce5bfbb3e20443054c5a326beba5c312b72a2029482"
     },
     "fixturesSha256": "0c2fb7a3fc16c729d513332047a6ee248422ebc327588f87e3a1747fc89e659e",
     "configSha256": {
@@ -525,5 +526,46 @@
     "npm run eval:campaigns -- --models openai/gpt-6-luna --max-output 2500 --repair 0 --retries 0 --ledger docs/eval/ledger-cmp-3-2.json --aggregate-ceiling-micros 156000 --max-total-requests 56 --prompt current --budget-micros 46500 --label cmp-3-2-current-rep1 --yes-spend",
     "npm run eval:campaigns -- --models openai/gpt-6-luna --max-output 2500 --repair 0 --retries 0 --ledger docs/eval/ledger-cmp-3-2.json --aggregate-ceiling-micros 156000 --max-total-requests 56 --prompt original --budget-micros 31500 --label cmp-3-2-original-rep2 --yes-spend",
     "npm run eval:campaigns -- --models openai/gpt-6-luna --max-output 2500 --repair 0 --retries 0 --ledger docs/eval/ledger-cmp-3-2.json --aggregate-ceiling-micros 156000 --max-total-requests 56 --prompt current --budget-micros 46500 --label cmp-3-2-current-rep2 --yes-spend"
-  ]
+  ],
+  "evaluator": "campaign-evaluator/3.3.0",
+  "cohorts": {
+    "A": {
+      "evaluator": "campaign-evaluator/3.2.0",
+      "invocations": [
+        "cmp-3-2-current-rep1",
+        "cmp-3-2-original-rep1"
+      ],
+      "note": "scored with the previous evaluator, which has a known ownership false positive; their output text was never saved, so they cannot be rescored"
+    },
+    "B": {
+      "evaluator": "campaign-evaluator/3.3.0",
+      "invocations": [
+        "cmp-3-2-original-rep2",
+        "cmp-3-2-current-rep2"
+      ],
+      "note": "scored with the corrected evaluator; output text saved for offline rescoring"
+    },
+    "pooling": "prohibited: cohorts A and B are reported separately and never averaged or pooled"
+  },
+  "remaining": {
+    "commands": [
+      "npm run eval:campaigns -- --models openai/gpt-6-luna --max-output 2500 --repair 0 --retries 0 --ledger docs/eval/ledger-cmp-3-2.json --aggregate-ceiling-micros 156000 --max-total-requests 56 --prompt original --budget-micros 31500 --label cmp-3-2-original-rep2 --yes-spend",
+      "npm run eval:campaigns -- --models openai/gpt-6-luna --max-output 2500 --repair 0 --retries 0 --ledger docs/eval/ledger-cmp-3-2.json --aggregate-ceiling-micros 156000 --max-total-requests 56 --prompt current --budget-micros 46500 --label cmp-3-2-current-rep2 --yes-spend"
+    ],
+    "invocations": 2,
+    "requests": 28,
+    "reservedMicros": 78000,
+    "committedNowMicros": 9412,
+    "requestsNow": 28,
+    "committedAfterWorstCaseMicros": 87412,
+    "requestsAfter": 56,
+    "fitsCeiling": true
+  },
+  "outputs": {
+    "directory": "docs/eval/outputs",
+    "pattern": "<label>-openai-gpt_6_luna.outputs.json",
+    "artifactVersion": "campaign-eval-output/1",
+    "committed": "yes: synthetic inputs and model text only; no key, header or prompt",
+    "rescoring": "npm run eval:campaigns -- --rescore <file> --label <new-label> (offline)"
+  }
 }

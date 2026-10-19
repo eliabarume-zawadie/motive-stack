@@ -92,16 +92,16 @@ export class OpenAIProvider implements AiProvider {
     // Captured FIRST, before anything about the content is examined, so a cut-off, malformed or invalid answer still carries it.
     const meta = this.metaOf(resp, req.model);
     const usage = this.usage(resp);
-    this.rejectIncomplete(resp, true, meta, usage);
+    this.rejectIncomplete(resp, true, meta, usage, resp.output_text ?? undefined);
     const serviceTier = meta.returnedServiceTier ?? undefined;
     const text = resp.output_text ?? "";
     let raw: unknown;
     try {
       raw = JSON.parse(text);
     } catch {
-      throw new AiError("invalid_output", `${this.label} returned malformed JSON`, { requestId: meta.requestId ?? undefined, usage, meta });
+      throw new AiError("invalid_output", `${this.label} returned malformed JSON`, { requestId: meta.requestId ?? undefined, usage, meta, rawText: text });
     }
-    return { raw, model: req.model, simulated: false, usage, requestId: meta.requestId ?? undefined, meta, ...(serviceTier ? { serviceTier } : {}) };
+    return { raw, model: req.model, simulated: false, usage, requestId: meta.requestId ?? undefined, meta, rawText: text, ...(serviceTier ? { serviceTier } : {}) };
   }
 
   async generateText(req: GenerateTextRequest): Promise<ProviderResult> {
@@ -159,10 +159,10 @@ export class OpenAIProvider implements AiProvider {
     }
   }
 
-  private rejectIncomplete(r: ResponseLike, structured: boolean, meta: ResponseMeta, usage: Usage | undefined): void {
+  private rejectIncomplete(r: ResponseLike, structured: boolean, meta: ResponseMeta, usage: Usage | undefined, rawText?: string): void {
     const requestId = meta.requestId ?? undefined;
-    if (r.status === "incomplete") throw new AiError("invalid_output", `${this.label} output was cut off (${r.incomplete_details?.reason ?? "incomplete"})`, { requestId, usage, truncated: true, meta });
-    if (structured && r.output?.some((o) => o.content?.some((c) => c.type === "refusal"))) throw new AiError("invalid_output", `${this.label} declined to produce the requested output`, { requestId, usage, meta });
+    if (r.status === "incomplete") throw new AiError("invalid_output", `${this.label} output was cut off (${r.incomplete_details?.reason ?? "incomplete"})`, { requestId, usage, truncated: true, meta, rawText });
+    if (structured && r.output?.some((o) => o.content?.some((c) => c.type === "refusal"))) throw new AiError("invalid_output", `${this.label} declined to produce the requested output`, { requestId, usage, meta, rawText });
   }
 
   private usage(r: ResponseLike): Usage | undefined {

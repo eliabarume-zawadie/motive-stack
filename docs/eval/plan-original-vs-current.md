@@ -1,6 +1,6 @@
 # Evaluation plan and preflight: recovered original vs current candidate (NOTHING SENT)
 
-Generated 2026-10-16T14:08:16.364Z by `npm run eval:plan`. **This script made no network request** (it replaces `fetch` with a function that throws) and no model call or provider-access check. The only network use in preparing this document was reading the provider's public documentation pages on 2026-10-16. The live comparison has not been started and needs your final authorization.
+Generated 2026-10-19T07:10:18.262Z by `npm run eval:plan`. **This script made no network request** (it replaces `fetch` with a function that throws) and no model call or provider-access check. The only network use in preparing this document was reading the provider's public documentation pages on 2026-10-16. The live comparison has not been started and needs your final authorization.
 
 ## 0. Approved settings
 
@@ -18,6 +18,20 @@ Generated 2026-10-16T14:08:16.364Z by `npm run eval:plan`. **This script made no
 | Deployment | local only |
 | Service tier | explicitly `default` (standard), read back from every response |
 | Response storage | explicitly disabled (`store: false`) |
+
+## Status: two invocations done, two remaining, two evaluator cohorts
+
+| Invocation | State | Scored by | Cohort |
+| --- | --- | --- | --- |
+| `cmp-3-2-original-rep1` | DONE, 14 requests, 2122 µUSD recorded | campaign-evaluator/3.2.0 | A |
+| `cmp-3-2-current-rep1` | DONE, 14 requests, 7290 µUSD recorded | campaign-evaluator/3.2.0 | A |
+| `cmp-3-2-original-rep2` | remaining | campaign-evaluator/3.3.0 | B |
+| `cmp-3-2-current-rep2` | remaining | campaign-evaluator/3.3.0 | B |
+
+- **Evaluator correction.** Repetition 1 was scored by `campaign-evaluator/3.2.0`, whose ownership rule read the word "generation" (as in "Lead Generation") and the phrases "your family" / "the family" as ownership or founding-history claims. `campaign-evaluator/3.3.0` narrows that rule to real claim contexts; nothing else changed. The remaining two invocations use campaign-evaluator/3.3.0.
+- **Cohorts are never pooled.** Repetition 1 (cohort A) keeps its original scores and evaluator version. Repetition 2 (cohort B) is scored by the corrected evaluator. They are reported side by side and are not averaged, summed or compared as one sample; the comparison tool refuses reports from different evaluators. Cohort A cannot be rescored, because the output text of its 28 requests was never saved (see `docs/eval/rescorability-cmp-3-2-rep1.md`), and it is not regenerated or reconstructed.
+- **Outputs are now saved.** Each remaining invocation writes `docs/eval/outputs/<label>-openai-gpt_6_luna.outputs.json` before scoring: case id, requested and returned model, prompt/schema versions and fingerprints, evaluator version, raw output text, the parsed object that was scored, validation errors, usage, request id, response id, service tier, cost and final scores. Inputs are the invented fixtures only; no key, header or prompt is stored. Any of it can be rescored offline with no model call.
+- **Remaining budget check.** Committed so far 9412 µUSD and 28 requests. Reserving the two remaining invocations at their full budgets (31500 + 46500 = 78000 µUSD, 28 requests) would bring the worst case to 87412 µUSD of 156000 and 56 of 56 requests: **fits the existing ceiling and request cap**. Nothing about the model, cases, token cap, retries, repairs, tier, storage setting, ledger or ceiling changed.
 
 ## 1. What is compared
 
@@ -39,7 +53,7 @@ Cases: `plumbing-multi-differentiators`, `hvac-no-approved-pricing`, `roofing-ti
 | Contract sha256 | `d4ca745fe5a8d194…` | `d1c637fd379a3d3c…` |
 | Business Brain sent | 9 original fields only | full brain (facts projected into the fields the prompt names) |
 
-- **Evaluator:** `campaign-evaluator/3.2.0`; source fingerprints for 17 files and the fixtures fingerprint `0c2fb7a3fc16c729…` are in the JSON file. Re-run `npm run eval:plan` after any code change: the fingerprints and numbers here are only valid for the code they were generated from.
+- **Evaluator:** `campaign-evaluator/3.3.0`; source fingerprints for 18 files and the fixtures fingerprint `0c2fb7a3fc16c729…` are in the JSON file. Re-run `npm run eval:plan` after any code change: the fingerprints and numbers here are only valid for the code they were generated from.
 - **Model:** `openai/gpt-6-luna`. not pinned: the provider id is an alias with no dated snapshot listed; the response's model id and service tier are recorded per request.
 - **Config fingerprints:** models `d24ba36a913d…`, pricing `3242162bbc57…`.
 
@@ -166,6 +180,8 @@ Each output is scored on separate layers; none stands in for another.
 
 **Decision rule, fixed before any result exists.** The result is called an *indication of improvement* only if all hold: current's comparable overall is higher or equal in at least 10 of the 14 case means; current has no more hard failures than original; and there is no case where current hard-fails in every repetition while original never does. Otherwise it is reported as *mixed* or *no demonstrated improvement*. No result is described as statistically significant, and a favourable result is not evidence of marketing performance. The rule, the pass line and the evaluator version are recorded here and in the code; they cannot be changed after results are seen without a new evaluator version.
 
+**Cohorts and the decision rule.** The rule is applied within one evaluator cohort. Repetition 1 (cohort A, campaign-evaluator/3.2.0) and repetition 2 (cohort B, campaign-evaluator/3.3.0) are each reported on their own. A statement about "two repetitions" would require pooling, which is prohibited, so any combined claim is limited to what the two cohorts show side by side: for example whether the same direction appears in both. Cohort A contains two known evaluator false positives (one hard failure in each arm) that cannot be rescored; that is stated wherever cohort A is quoted.
+
 **Run order.** Invocations alternate by repetition (original 1, current 1, original 2, ...), so provider drift over the session affects both arms alike. The reported model id, service tier and request id are recorded for every request.
 
 ## 7. What depends on reconstructed historical artifacts
@@ -187,7 +203,7 @@ The repository had no Git history. The original implementation was rebuilt by re
 | --- | --- | --- |
 | Arms use their intended prompt and schema versions | Yes: the original arm sends the original prompt, JSON schema, hint and 9-field brain; the current arm the candidate. Versions and fingerprints are recorded in every report. | `test/versionsAndBaseline.test.ts`, `config/prompt-versions.json` |
 | Reconstruction limits disclosed | Yes: section 7, `src/eval/original.ts`, `docs/campaign-evaluation.md` | documents |
-| Rubric and decision rule fixed before results | Yes: section 6; evaluator version campaign-evaluator/3.2.0 with source fingerprints | this plan, committed before the run |
+| Rubric and decision rule fixed before results | Yes: section 6; evaluator version campaign-evaluator/3.3.0 with source fingerprints | this plan, committed before the run |
 | Fixtures contain no confidential information | Yes: invented names; a test checks the fixtures contain no email address, URL or phone number | `test/campaignQuality.test.ts` |
 | Schema validity, factual grounding and other dimensions reported separately | Yes: separate fields (`schemaValid`, `qualityPassed`), separate dimensions and a separate comparable view | `test/versionsAndBaseline.test.ts`, `test/factGrounding.test.ts` |
 | Repetitions identified individually and aggregated clearly | Yes: one report per repetition; aggregation rule in section 6 | plan, CLI `--compare` |
@@ -219,8 +235,7 @@ The repository had no Git history. The original implementation was rebuilt by re
 Prerequisites, set in your shell or `.env.local` (never pasted into chat): `AI_PROVIDER_MODE=live`, `ALLOW_LIVE_PROVIDER_CALLS=true`, `OPENAI_API_KEY`. The command itself sets the service tier to `default` and response storage to disabled, and refuses to start if the environment says otherwise. Run each invocation first **without** `--yes-spend` to see its plan (no network request, no spend). If an invocation halts or is interrupted, the next one is refused until a person reconciles the ledger: `npm run eval:campaigns -- --reconcile "<what you reviewed and why it is safe to continue>" --ledger docs/eval/ledger-cmp-3-2.json --aggregate-ceiling-micros 156000 --max-total-requests 56`.
 
 ```
-npm run eval:campaigns -- --models openai/gpt-6-luna --max-output 2500 --repair 0 --retries 0 --ledger docs/eval/ledger-cmp-3-2.json --aggregate-ceiling-micros 156000 --max-total-requests 56 --prompt original --budget-micros 31500 --label cmp-3-2-original-rep1 --yes-spend
-npm run eval:campaigns -- --models openai/gpt-6-luna --max-output 2500 --repair 0 --retries 0 --ledger docs/eval/ledger-cmp-3-2.json --aggregate-ceiling-micros 156000 --max-total-requests 56 --prompt current --budget-micros 46500 --label cmp-3-2-current-rep1 --yes-spend
+# DONE (do not rerun): cmp-3-2-current-rep1, cmp-3-2-original-rep1  (scored by campaign-evaluator/3.2.0)
 npm run eval:campaigns -- --models openai/gpt-6-luna --max-output 2500 --repair 0 --retries 0 --ledger docs/eval/ledger-cmp-3-2.json --aggregate-ceiling-micros 156000 --max-total-requests 56 --prompt original --budget-micros 31500 --label cmp-3-2-original-rep2 --yes-spend
 npm run eval:campaigns -- --models openai/gpt-6-luna --max-output 2500 --repair 0 --retries 0 --ledger docs/eval/ledger-cmp-3-2.json --aggregate-ceiling-micros 156000 --max-total-requests 56 --prompt current --budget-micros 46500 --label cmp-3-2-current-rep2 --yes-spend
 ```
@@ -228,9 +243,10 @@ npm run eval:campaigns -- --models openai/gpt-6-luna --max-output 2500 --repair 
 Then, offline and free, per repetition:
 
 ```
-npm run eval:campaigns -- --compare docs/eval/cmp-3-2-original-rep1-openai-gpt_6_luna.json docs/eval/cmp-3-2-current-rep1-openai-gpt_6_luna.json --names original,current --label cmp-3-2-rep1
 npm run eval:campaigns -- --compare docs/eval/cmp-3-2-original-rep2-openai-gpt_6_luna.json docs/eval/cmp-3-2-current-rep2-openai-gpt_6_luna.json --names original,current --label cmp-3-2-rep2
 ```
+
+Repetition 1's comparison (`docs/eval/cmp-3-2-rep1.md`) already exists and is from cohort A. The tool refuses to compare reports scored by different evaluators.
 
 ## 11. Remaining uncertainties for final authorization
 

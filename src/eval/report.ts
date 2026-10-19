@@ -113,6 +113,9 @@ export function renderConsole(r: EvalReport): string {
  */
 export function renderComparison(a: EvalReport, b: EvalReport, names: { a: string; b: string }): string {
   const cd = DIMENSIONS.filter((d) => d !== "schemaValidity");
+  const ea = a.run?.evaluator ?? "unknown";
+  const eb = b.run?.evaluator ?? "unknown";
+  if (ea !== eb) throw new Error(`these reports were scored by different evaluators (${names.a}: ${ea}, ${names.b}: ${eb}). Results from different evaluator versions are separate cohorts and are not compared or pooled. Rescore the earlier one from saved outputs if it has any, or report the cohorts separately.`);
   for (const [n, r] of [[names.a, a], [names.b, b]] as const) {
     if (r.cases.some((c) => !c.comparable)) throw new Error(`report "${n}" predates the comparable view (Milestone 3.1) and cannot be compared fairly; re-run it with the current harness`);
   }

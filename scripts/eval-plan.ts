@@ -118,15 +118,24 @@ const diag: DiagSummary | undefined = diagFile ? (() => {
   return { date: String(d.startedAt).slice(0, 10), maxOut: d.request.sent.max_output_tokens, http: d.http.status, requestId: d.http.requestId, tier: d.response.service_tier, model: d.response.model, input: d.response.usage.input_tokens, output: d.response.usage.output_tokens, reasoning: d.response.usage.output_tokens_details?.reasoning_tokens ?? 0, cost: d.calculatedCostMicros, passed: d.checks.filter((c: any) => c.pass).length, total: d.checks.length, file: "docs/live-verification/" + diagFile };
 })() : undefined;
 
-const sources = ["src/eval/evaluate.ts", "src/eval/fixtures.ts", "src/eval/report.ts", "src/eval/liveRun.ts", "src/eval/costBound.ts", "src/eval/ledger.ts", "src/eval/original.ts", "src/domain/briefRules.ts", "src/domain/facts.ts", "src/domain/schemas.ts", "src/domain/campaignJsonSchema.ts", "src/app/campaignPrompt.ts", "src/ai/openaiProvider.ts", "src/ai/stack.ts", "src/eval/evalPolicy.ts", "src/eval/tierDiagnostic.ts", "scripts/eval-campaigns.ts"];
+const sources = ["src/eval/evaluate.ts", "src/eval/fixtures.ts", "src/eval/report.ts", "src/eval/liveRun.ts", "src/eval/costBound.ts", "src/eval/ledger.ts", "src/eval/outputs.ts", "src/eval/original.ts", "src/domain/briefRules.ts", "src/domain/facts.ts", "src/domain/schemas.ts", "src/domain/campaignJsonSchema.ts", "src/app/campaignPrompt.ts", "src/ai/openaiProvider.ts", "src/ai/stack.ts", "src/eval/evalPolicy.ts", "src/eval/tierDiagnostic.ts", "scripts/eval-campaigns.ts"];
 const fingerprints = Object.fromEntries(sources.map((s) => [s, fileSha(s)]));
 const fixturesSha = sha(JSON.stringify(EVAL_CASES.map((c) => ({ id: c.id, brain: c.brain, expect: String(c.expect.mustNotContain ?? "") }))));
 const cur = currentGenerationIdentity();
 const orig = originalGenerationIdentity();
 
 const commands: string[] = [];
+const ledgerNow = existsSync("docs/eval/ledger-cmp-3-2.json") ? (JSON.parse(readFileSync("docs/eval/ledger-cmp-3-2.json", "utf8")) as { entries: Array<{ label: string; status: string; requests: number; chargedMicros?: number; halted?: string }> }) : { entries: [] };
+const doneLabels = new Set(ledgerNow.entries.filter((e) => e.status === "finished").map((e) => e.label));
 const common = `--models ${PROVIDER}/${MODEL} --max-output ${MAX_OUT} --repair 0 --retries 0 --ledger docs/eval/ledger-cmp-3-2.json --aggregate-ceiling-micros ${CEILING} --max-total-requests ${requests}`;
 for (let r = 1; r <= REPS; r++) for (const arm of ARMS) commands.push(`npm run eval:campaigns -- ${common} --prompt ${arm} --budget-micros ${budgets[arm]} --label cmp-3-2-${arm}-rep${r}${r === 1 && arm === "original" && checksAllowed > 0 ? " --check-access" : ""} --yes-spend`);
+const remainingCommands = commands.filter((c) => !doneLabels.has(/--label (\S+)/.exec(c)![1]!));
+const committedNow = ledgerNow.entries.reduce((s, e) => s + (e.chargedMicros ?? 0), 0);
+const requestsNow = ledgerNow.entries.reduce((s, e) => s + e.requests, 0);
+const remainingBudget = remainingCommands.reduce((s, c) => s + Number(/--budget-micros (\d+)/.exec(c)![1]), 0);
+const remainingRequests = remainingCommands.length * EVAL_CASES.length;
+const remainingFits = committedNow + remainingBudget <= CEILING && requestsNow + remainingRequests <= requests;
+const EVALUATOR_PREVIOUS = "campaign-evaluator/3.2.0";
 
 const plan = {
   generatedAt: new Date().toISOString(),
@@ -155,6 +164,14 @@ const plan = {
   calibration: { samples: calib, billedCostsMatchPriceTable: recomputedOk, billedToEstimatedInputRatio: { min: Math.min(...ratios), max: Math.max(...ratios) } },
   perCase,
   commands,
+  evaluator: EVALUATOR_VERSION,
+  cohorts: {
+    A: { evaluator: EVALUATOR_PREVIOUS, invocations: [...doneLabels].sort(), note: "scored with the previous evaluator, which has a known ownership false positive; their output text was never saved, so they cannot be rescored" },
+    B: { evaluator: EVALUATOR_VERSION, invocations: remainingCommands.map((c) => /--label (\S+)/.exec(c)![1]), note: "scored with the corrected evaluator; output text saved for offline rescoring" },
+    pooling: "prohibited: cohorts A and B are reported separately and never averaged or pooled",
+  },
+  remaining: { commands: remainingCommands, invocations: remainingCommands.length, requests: remainingRequests, reservedMicros: remainingBudget, committedNowMicros: committedNow, requestsNow, committedAfterWorstCaseMicros: committedNow + remainingBudget, requestsAfter: requestsNow + remainingRequests, fitsCeiling: remainingFits },
+  outputs: { directory: "docs/eval/outputs", pattern: "<label>-openai-gpt_6_luna.outputs.json", artifactVersion: "campaign-eval-output/1", committed: "yes: synthetic inputs and model text only; no key, header or prompt", rescoring: "npm run eval:campaigns -- --rescore <file> --label <new-label> (offline)" },
 };
 mkdirSync("docs/eval", { recursive: true });
 if (WRITE) writeFileSync("docs/eval/plan-original-vs-current.json", JSON.stringify(plan, null, 2) + "\n");
@@ -174,6 +191,17 @@ row("Maximum aggregate experimental spend", `${usd(CEILING)} (${CEILING} micro-U
 row("Service tier", `explicitly \`${SERVICE_TIER}\` (standard), read back from every response`); row("Response storage", "explicitly disabled (`store: false`)");
 L.push("");
 
+L.push("## Status: two invocations done, two remaining, two evaluator cohorts", "");
+row("Invocation", "State", "Scored by", "Cohort"); row("---", "---", "---", "---");
+for (const c of commands) {
+  const label = /--label (\S+)/.exec(c)![1]!;
+  const e = ledgerNow.entries.find((x) => x.label === label);
+  row(`\`${label}\``, e ? `DONE, ${e.requests} requests, ${e.chargedMicros} µUSD recorded${e.halted ? ", HALTED" : ""}` : "remaining", e ? EVALUATOR_PREVIOUS : EVALUATOR_VERSION, e ? "A" : "B");
+}
+L.push("", `- **Evaluator correction.** Repetition 1 was scored by \`${EVALUATOR_PREVIOUS}\`, whose ownership rule read the word "generation" (as in "Lead Generation") and the phrases "your family" / "the family" as ownership or founding-history claims. \`${EVALUATOR_VERSION}\` narrows that rule to real claim contexts; nothing else changed. The remaining two invocations use ${EVALUATOR_VERSION}.`);
+L.push(`- **Cohorts are never pooled.** Repetition 1 (cohort A) keeps its original scores and evaluator version. Repetition 2 (cohort B) is scored by the corrected evaluator. They are reported side by side and are not averaged, summed or compared as one sample; the comparison tool refuses reports from different evaluators. Cohort A cannot be rescored, because the output text of its 28 requests was never saved (see \`docs/eval/rescorability-cmp-3-2-rep1.md\`), and it is not regenerated or reconstructed.`);
+L.push(`- **Outputs are now saved.** Each remaining invocation writes \`docs/eval/outputs/<label>-openai-gpt_6_luna.outputs.json\` before scoring: case id, requested and returned model, prompt/schema versions and fingerprints, evaluator version, raw output text, the parsed object that was scored, validation errors, usage, request id, response id, service tier, cost and final scores. Inputs are the invented fixtures only; no key, header or prompt is stored. Any of it can be rescored offline with no model call.`);
+L.push(`- **Remaining budget check.** Committed so far ${committedNow} µUSD and ${requestsNow} requests. Reserving the two remaining invocations at their full budgets (${remainingCommands.map((c) => /--budget-micros (\d+)/.exec(c)![1]).join(" + ")} = ${remainingBudget} µUSD, ${remainingRequests} requests) would bring the worst case to ${committedNow + remainingBudget} µUSD of ${CEILING} and ${requestsNow + remainingRequests} of ${requests} requests: **${remainingFits ? "fits the existing ceiling and request cap" : "DOES NOT FIT"}**. Nothing about the model, cases, token cap, retries, repairs, tier, storage setting, ledger or ceiling changed.`, "");
 L.push("## 1. What is compared", "");
 L.push(`- **Arm A, original:** the recovered pre-Milestone-3 prompt, brief contract and Business Brain fields.`, `- **Arm B, current:** the candidate prompt and brief contract, with the full Business Brain.`, `- **Cases:** the same ${EVAL_CASES.length} synthetic businesses for both arms. All data is invented.`, `- **Identical for both arms:** model \`${PROVIDER}/${MODEL}\`, max output ${MAX_OUT} tokens, repair 0, retries 0, provider-default sampling, reasoning effort \`${String(entry?.reasoningEffort ?? "registry default")}\`, service tier \`${SERVICE_TIER}\` (pinned in the request and checked in the response).`, `- **Repetitions:** ${REPS} per case per arm, so run-to-run variation is measured and not hidden.`, "");
 L.push("Cases: " + EVAL_CASES.map((c) => `\`${c.id}\``).join(", "), "");
@@ -260,6 +288,7 @@ L.push(`3. **Comparable quality dimensions**, using only checks both contracts c
 L.push("4. **Current-only dimensions** (reasoning fields, differentiator decisions, variations, review flags, question impact) are reported for the current arm alone and never used to rank the arms.", "");
 L.push("**Repetitions.** Every repetition is its own report (`cmp-3-2-<arm>-rep<N>`), listed individually. Per case and arm the aggregate shows both values, the mean, the minimum and how many repetitions passed. The arms are compared case by case (paired), then counted: cases where current is higher, equal, lower on the comparable overall. Hard failures are counted per arm and per repetition.", "");
 L.push("**Decision rule, fixed before any result exists.** The result is called an *indication of improvement* only if all hold: current's comparable overall is higher or equal in at least 10 of the 14 case means; current has no more hard failures than original; and there is no case where current hard-fails in every repetition while original never does. Otherwise it is reported as *mixed* or *no demonstrated improvement*. No result is described as statistically significant, and a favourable result is not evidence of marketing performance. The rule, the pass line and the evaluator version are recorded here and in the code; they cannot be changed after results are seen without a new evaluator version.", "");
+L.push(`**Cohorts and the decision rule.** The rule is applied within one evaluator cohort. Repetition 1 (cohort A, ${EVALUATOR_PREVIOUS}) and repetition 2 (cohort B, ${EVALUATOR_VERSION}) are each reported on their own. A statement about "two repetitions" would require pooling, which is prohibited, so any combined claim is limited to what the two cohorts show side by side: for example whether the same direction appears in both. Cohort A contains two known evaluator false positives (one hard failure in each arm) that cannot be rescored; that is stated wherever cohort A is quoted.`, "");
 L.push("**Run order.** Invocations alternate by repetition (original 1, current 1, original 2, ...), so provider drift over the session affects both arms alike. The reported model id, service tier and request id are recorded for every request.", "");
 
 L.push("## 7. What depends on reconstructed historical artifacts", "");
@@ -306,10 +335,11 @@ L.push("");
 
 L.push("## 10. Exact invocation (not run)", "");
 L.push("Prerequisites, set in your shell or `.env.local` (never pasted into chat): `AI_PROVIDER_MODE=live`, `ALLOW_LIVE_PROVIDER_CALLS=true`, `OPENAI_API_KEY`. The command itself sets the service tier to `default` and response storage to disabled, and refuses to start if the environment says otherwise. Run each invocation first **without** `--yes-spend` to see its plan (no network request, no spend). If an invocation halts or is interrupted, the next one is refused until a person reconciles the ledger: `npm run eval:campaigns -- --reconcile \"<what you reviewed and why it is safe to continue>\" --ledger docs/eval/ledger-cmp-3-2.json --aggregate-ceiling-micros " + CEILING + " --max-total-requests " + requests + "`.", "", "```");
-for (const c of commands) L.push(c);
+L.push(`# DONE (do not rerun): ${[...doneLabels].sort().join(", ")}  (scored by ${EVALUATOR_PREVIOUS})`);
+for (const c of remainingCommands) L.push(c);
 L.push("```", "", "Then, offline and free, per repetition:", "", "```");
-for (let r = 1; r <= REPS; r++) L.push(`npm run eval:campaigns -- --compare docs/eval/cmp-3-2-original-rep${r}-openai-gpt_6_luna.json docs/eval/cmp-3-2-current-rep${r}-openai-gpt_6_luna.json --names original,current --label cmp-3-2-rep${r}`);
-L.push("```", "");
+for (let r = 2; r <= REPS; r++) L.push(`npm run eval:campaigns -- --compare docs/eval/cmp-3-2-original-rep${r}-openai-gpt_6_luna.json docs/eval/cmp-3-2-current-rep${r}-openai-gpt_6_luna.json --names original,current --label cmp-3-2-rep${r}`);
+L.push("```", "", "Repetition 1's comparison (`docs/eval/cmp-3-2-rep1.md`) already exists and is from cohort A. The tool refuses to compare reports scored by different evaluators.", "");
 
 L.push("## 11. Remaining uncertainties for final authorization", "");
 L.push("1. **Prices are the provider's published figures.** The plan cannot see what the account is billed. A per-request check after the first invocation (compare the account's usage page with the ledger) is recommended before the next.");

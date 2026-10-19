@@ -47,6 +47,11 @@ export interface CallOptions {
    * Because it runs first, a malformed or invalid answer cannot slip past it.
    */
   responseGuard?: (meta: ResponseMeta | undefined) => string | undefined;
+  /**
+   * Hand back the output TEXT as the provider returned it (on the result, or on the error when the answer was rejected), so an
+   * evaluation can keep it before scoring. Off by default: ordinary callers and the usage log never receive provider text.
+   */
+  captureRawText?: boolean;
 }
 
 const defaultSleep = (ms: number, signal?: AbortSignal) =>
@@ -151,9 +156,12 @@ export class AiGateway {
     let lastRaw: unknown;
     let lastTruncated = false;
     let lastMeta: ResponseMeta | undefined;
+    let lastText: string | undefined;
+    const keepText = call.captureRawText === true;
 
     const finish = (err: AiError): never => {
       err.attempts = attempts;
+      if (!keepText) err.rawText = undefined; // provider text leaves the gateway only when the caller asked for it
       throw err;
     };
     const record = (start: number, outcome: AttemptRecord["outcome"], usage: Usage | undefined, requestId: string | undefined, msg?: string, meta?: ResponseMeta): AttemptRecord => {
@@ -181,13 +189,15 @@ export class AiGateway {
       try {
         lastRaw = undefined;
         lastMeta = undefined;
+        lastText = undefined;
         res = await h.invoke(note, signal);
         lastRaw = res.raw;
         lastMeta = res.meta;
+        lastText = res.rawText;
         lastTruncated = false;
         // The response's own metadata is checked BEFORE its content is looked at, so nothing malformed can bypass it.
         const rejected = call.responseGuard?.(res.meta);
-        if (rejected) throw new AiError("response_rejected", rejected, { usage: res.usage, requestId: res.meta?.requestId ?? res.requestId, meta: res.meta });
+        if (rejected) throw new AiError("response_rejected", rejected, { usage: res.usage, requestId: res.meta?.requestId ?? res.requestId, meta: res.meta, rawText: res.rawText });
         verdict = h.interpret(res);
       } catch (e) {
         let err = e instanceof AiError ? e : new AiError("provider_unavailable", "Unexpected provider failure");
@@ -198,9 +208,10 @@ export class AiGateway {
         // An answer the adapter itself rejected (cut off, refused, malformed JSON) still arrived with metadata: check that too.
         if (err.kind === "invalid_output" && err.meta) {
           const rejected = call.responseGuard?.(err.meta);
-          if (rejected) err = new AiError("response_rejected", rejected, { usage: err.usage, requestId: err.requestId, meta: err.meta });
+          if (rejected) err = new AiError("response_rejected", rejected, { usage: err.usage, requestId: err.requestId, meta: err.meta, rawText: err.rawText });
         }
         lastMeta = err.meta;
+        lastText = err.rawText ?? lastText;
         if (err.kind === "invalid_output") {
           record(start, "invalid_output", err.usage, err.requestId, err.message, err.meta);
           verdict = { ok: false, issues: err.message };
@@ -225,7 +236,9 @@ export class AiGateway {
       if (verdict.ok) {
         const out = res as ProviderResult;
         record(start, "ok", out.usage, out.requestId, undefined, out.meta);
-        return this.build(p, model, out, verdict.value, attempts, t0, h.assign);
+        const built = this.build(p, model, out, verdict.value, attempts, t0, h.assign);
+        if (keepText && out.rawText !== undefined) built.rawText = out.rawText;
+        return built;
       }
 
       // Invalid output (failed validation, malformed, cut off). Record it if we have not already (validation case).
@@ -236,7 +249,7 @@ export class AiGateway {
         note = `Your previous output was rejected by validation: ${verdict.issues}.${verdict.previous ? `\nPrevious output:\n${verdict.previous}` : ""}\nReturn a corrected JSON object only. Do not invent facts you were not given; list missing facts in openQuestions.`;
         continue;
       }
-      const failure = new AiError("invalid_output", `Model output failed validation: ${verdict.issues}`, { truncated: lastTruncated, usage: attempts[attempts.length - 1]?.usage, requestId: lastMeta?.requestId ?? undefined, meta: lastMeta });
+      const failure = new AiError("invalid_output", `Model output failed validation: ${verdict.issues}`, { truncated: lastTruncated, usage: attempts[attempts.length - 1]?.usage, requestId: lastMeta?.requestId ?? undefined, meta: lastMeta, rawText: lastText });
       if (lastRaw !== undefined) failure.rawOutput = lastRaw;
       return finish(failure);
     }

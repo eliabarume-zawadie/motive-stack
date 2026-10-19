@@ -280,3 +280,17 @@ Invocation 1 (`cmp-3-2-original-rep1`) exposed two recording gaps, both now fixe
 **What this does not repair.** The 14 requests of invocation 1 were made before this change. Their report carries no response ids, request ids or returned model ids, and nothing has been back-filled. For `electrician-character-limits` the returned tier is **unknown** (13 of the 14 requests reported `default`); only the provider's own records could resolve it. A local server (Ollama) sends no request-id header, so its results now show the response id as the response id and the request id as absent, where before the response id had been passed off as a request id.
 
 Covered offline by `test/responseMetadata.test.ts` (the real SDK on a scripted transport; no live call was made to test the fix).
+
+## Milestone 3.3: evaluator correction and reproducibility
+
+**Evaluator `campaign-evaluator/3.3.0`** replaces `3.2.0` (history in `EVALUATOR_HISTORY`, `src/eval/evaluate.ts`). The ownership/history rule (`OWNERSHIP_RE`, `src/domain/briefRules.ts`) no longer treats the bare word "generation(s)" or the phrases "your family" / "the family" as an ownership or founding claim. It still matches real claims: "family-owned", "third-generation business", "multi-generational", "for three generations", "generations of experience", "established in 1998". These claims still go through the claim-grounding rules, so a claim with no supporting, or a contradicted, ownership fact still fails. "Lead generation", "Next-generation service" and "Generation of new leads" no longer trigger it. All other dimensions are unchanged. Regression tests: `test/evaluatorCorrection.test.ts`.
+
+**Saved outputs.** Every future live invocation writes `docs/eval/outputs/<label>-openai-gpt_6_luna.outputs.json` before scoring (`src/eval/outputs.ts`): case id, requested and returned model, prompt/schema versions and fingerprints, evaluator version, raw output text, parsed output and validation errors, usage, request id, response id, service tier, cost and final scores. The files hold only invented fixtures and model text, with no key, header or prompt, so they are committed. Existing files are never overwritten. Rescore offline, with no model call:
+
+    npm run eval:campaigns -- --rescore docs/eval/outputs/<file> --label <new-label>
+
+**Rescorability of repetition 1.** The output text of the 28 requests in invocations 1 and 2 was never persisted, so they cannot be rescored. They are not regenerated or reconstructed; see `docs/eval/rescorability-cmp-3-2-rep1.md` (`--rescorability` reproduces it).
+
+**Cohorts.** A = repetition 1, scored by 3.2.0 (known ownership false positive, one hard failure per arm). B = repetition 2, scored by 3.3.0. They are never pooled or averaged, and the comparison tool refuses reports from different evaluators.
+
+**Remaining limitations.** Rep-1 false positives stay in the record. Ownership detection is still pattern-based (unusual phrasings may be missed or over-matched; "first-generation" product wording is ambiguous). Billing reconciliation is unresolved: ledger costs are estimates from reported usage and the recorded price. Two invocations remain (`cmp-3-2-original-rep2`, `cmp-3-2-current-rep2`) and need explicit authorization.

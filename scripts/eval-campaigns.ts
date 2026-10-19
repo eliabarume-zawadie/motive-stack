@@ -23,6 +23,7 @@ import { config as loadEnv } from "dotenv";
 import { MockAiProvider } from "../src/ai/mockProvider.js";
 import { CAMPAIGN_BRIEF_HINT, CAMPAIGN_BRIEF_JSON_SCHEMA } from "../src/domain/campaignJsonSchema.js";
 import { absoluteInputTokens, estimatedInputTokens, requestText, reserveWithUplift, worstCaseMicros } from "../src/eval/costBound.js";
+import { OutputStore, loadArtifact, recordFromGeneration, rescoreArtifact, rescorability, scoredBlock } from "../src/eval/outputs.js";
 import { canStart, closeEntry, committedMicros, committedRequests, loadLedger, reconcile, saveLedger, type Ledger, type LedgerEntry } from "../src/eval/ledger.js";
 import { buildAiStack } from "../src/ai/stack.js";
 import { EVAL_SERVICE_TIER, evaluationEnv, verifiedRatesProblem } from "../src/eval/evalPolicy.js";
@@ -67,6 +68,37 @@ if (flag("reconcile") || arg("reconcile") !== undefined) {
     console.log(`Reconciled: ${cleared.join(", ")}. Note recorded: "${note.trim()}". Committed now ${committedMicros(l)} of ${l.aggregateCeilingMicros} micro-USD. Nothing was sent.`);
     process.exit(0);
   } catch (e) { console.error((e as Error).message); process.exit(1); }
+}
+
+/* ------------------------------------------------------------------------------------- rescore and rescorability */
+if (arg("rescore") !== undefined) {
+  // npm run eval:campaigns -- --rescore docs/eval/outputs/<name>.outputs.json --label <new-label>   (offline; no model is called)
+  const from = arg("rescore") as string;
+  const a = loadArtifact(from);
+  const { report, skipped, comparison } = rescoreArtifact(a, label);
+  if (existsSync(`docs/eval/${label}.json`)) { console.error(`refusing to overwrite docs/eval/${label}.json: use a new --label`); process.exit(1); }
+  writeFileSync(`docs/eval/${label}.json`, JSON.stringify({ ...report, rescoredFrom: from, skipped, comparison }, null, 2) + "\n");
+  writeFileSync(`docs/eval/${label}.md`, renderMarkdown(report));
+  console.log(renderConsole(report));
+  for (const c of comparison) console.log(`  ${c.caseId.padEnd(40)} original ${c.original ? `${c.original.evaluator} ${Math.round(c.original.overall * 100)}%${c.original.hardFail ? " HARD" : ""}` : "not scored"}  ->  rescored ${c.rescored.evaluator} ${Math.round(c.rescored.overall * 100)}%${c.rescored.hardFail ? " HARD" : ""}`);
+  for (const k of skipped) console.log(`  SKIPPED ${k.caseId}: ${k.reason}`);
+  console.log(`\nRescored ${comparison.length} saved output(s) offline; no model was called. Wrote docs/eval/${label}.{json,md}. The saved outputs and their original scores were not modified.`);
+  process.exit(0);
+}
+if (arg("rescorability") !== undefined) {
+  // npm run eval:campaigns -- --rescorability <report.json> [<report2.json> ...] --label <name>
+  const i = process.argv.indexOf("--rescorability");
+  const paths: string[] = [];
+  for (let k = i + 1; k < process.argv.length && !process.argv[k]!.startsWith("--"); k++) paths.push(process.argv[k]!);
+  if (paths.length === 0) { console.error("usage: --rescorability <report.json> [more reports] --label <name>"); process.exit(1); }
+  const rows = paths.map((p) => rescorability(p));
+  const md = ["# Can the existing results be rescored?", "", "A result can be rescored only if the model's output text was saved. These reports hold scores and check details, not output text.", "",
+    "| Report | Scored by | Cases | Output text saved | Rescorable | Why |", "|---|---|---|---|---|---|",
+    ...rows.map((r) => `| \`${r.report}\` | ${r.evaluatorThatScoredIt ?? "unknown"} | ${r.cases} | ${r.rawOutputsPersisted ? "yes" : "**no**"} | ${r.rescorable ? "yes" : "**no**"} | ${r.reason} |`), ""].join("\n");
+  writeFileSync(`docs/eval/${label}.json`, JSON.stringify({ generatedAt: new Date().toISOString(), rows }, null, 2) + "\n");
+  writeFileSync(`docs/eval/${label}.md`, md + "\n");
+  for (const r of rows) console.log(`${r.report}: scored by ${r.evaluatorThatScoredIt ?? "unknown"}; rescorable: ${r.rescorable ? "yes" : "NO"} - ${r.reason}`);
+  process.exit(0);
 }
 
 /* ----------------------------------------------------------------------------------------------- compare */
@@ -184,6 +216,9 @@ if (!startCheck.ok) fail(startCheck.reason);
 
 const reports: EvalReport[] = [];
 for (const p of plans.filter((x) => x.ok)) {
+  // The saved-outputs file is created first: if it already exists the invocation is refused BEFORE anything is sent.
+  const name = `${label}-${p.provider}-${p.model.replace(/[^a-z0-9.]+/gi, "_")}`;
+  const store = new OutputStore(`docs/eval/outputs/${name}.outputs.json`, { label, source: `LIVE ${p.provider}/${p.model} | prompt ${variant} | synthetic data` });
   let entry: LedgerEntry | undefined;
   if (ledger && ledgerPath) {
     entry = { label, arm: variant, startedAt: new Date().toISOString(), status: "started", reservedMicros: reservedForThis, requests: cases.length };
@@ -194,7 +229,6 @@ for (const p of plans.filter((x) => x.ok)) {
     gateway: stack.gateway, provider: p.provider, model: p.model, prompt: variant, budgetMicros: budget, maxOutputTokens: maxOut,
     reserveForCase: p.reserveFor, maxAttemptsPerRequest: 1, haltOnUnknownCost: true, expectedServiceTier: p.provider === "openai" ? serviceTier : undefined,
   });
-  const name = `${label}-${p.provider}-${p.model.replace(/[^a-z0-9.]+/gi, "_")}`;
   let report: EvalReport | undefined;
   let failure: unknown;
   const httpBefore = transport.sent();
@@ -203,6 +237,11 @@ for (const p of plans.filter((x) => x.ok)) {
       evaluator: EVALUATOR_VERSION, identity: identityOf(variant), model: `${p.provider}/${p.model}`,
       params: { maxOutputTokens: maxOut, repairAttempts: Number(repair), maxRetries: retries, serviceTier, store: false, budgetMicros: budget, cases: cases.length },
       note: variant === "legacy" ? "DEPRECATED arm: the original prompt text with the CURRENT output contract. Not a faithful baseline." : variant === "original" ? "Faithful baseline: the recovered original prompt, output contract and Business Brain fields. Compare with the comparable view only." : undefined,
+    }, {
+      // Saved BEFORE scoring and rewritten after every request: the output text survives a crash or a scoring failure, and the
+      // scores are attached afterwards. The record holds synthetic text and identifiers only, never a key or a header.
+      onGenerated: (c, out) => store.add(recordFromGeneration(name, c, out)),
+      onScored: (c, _out, scored) => store.attachScore(c.id, scoredBlock(scored)),
     });
   } catch (e) {
     failure = e; // recorded in the ledger below, then re-thrown: an invocation that ends in an error never looks like a normal one

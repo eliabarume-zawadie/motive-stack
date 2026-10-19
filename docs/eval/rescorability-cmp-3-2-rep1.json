@@ -1,0 +1,23 @@
+{
+  "generatedAt": "2026-10-19T07:04:41.019Z",
+  "rows": [
+    {
+      "report": "docs/eval/cmp-3-2-original-rep1-openai-gpt_6_luna.json",
+      "evaluatorThatScoredIt": "campaign-evaluator/3.2.0",
+      "cases": 14,
+      "rawOutputsPersisted": false,
+      "outputsFileLookedFor": "docs/eval/outputs/cmp-3-2-original-rep1-openai-gpt_6_luna.outputs.json",
+      "rescorable": false,
+      "reason": "the model's output text was never persisted (the report holds scores and check details only), so it cannot be rescored. It is not regenerated or reconstructed, because that would be a different result."
+    },
+    {
+      "report": "docs/eval/cmp-3-2-current-rep1-openai-gpt_6_luna.json",
+      "evaluatorThatScoredIt": "campaign-evaluator/3.2.0",
+      "cases": 14,
+      "rawOutputsPersisted": false,
+      "outputsFileLookedFor": "docs/eval/outputs/cmp-3-2-current-rep1-openai-gpt_6_luna.outputs.json",
+      "rescorable": false,
+      "reason": "the model's output text was never persisted (the report holds scores and check details only), so it cannot be rescored. It is not regenerated or reconstructed, because that would be a different result."
+    }
+  ]
+}

@@ -135,7 +135,7 @@ export function makeLiveGenerator(o: LiveOptions): { generate: Generator; spent:
         // The original system could only hold, and was only ever given, the original Business Brain fields.
         context: original ? projectToOriginalBrain(c.brain) : c.brain, schema: original ? OriginalCampaignBriefSchema : CampaignBriefSchema,
         model: o.model, maxOutputTokens: o.maxOutputTokens,
-      }, { responseGuard: guard });
+      }, { responseGuard: guard, captureRawText: true });
       consecutiveProviderErrors = 0;
       if (r.estimatedCostMicros === null || r.estimatedCostMicros === undefined) {
         spent += caseReserve; // unmeasured spend is charged at the worst-case reserve, never counted as free
@@ -149,7 +149,7 @@ export function makeLiveGenerator(o: LiveOptions): { generate: Generator; spent:
         costMicros: r.estimatedCostMicros, attempts: r.attempts.length, identity, ...(r.serviceTier ? { serviceTier: r.serviceTier } : {}),
         provider: evidenceOf(r.meta, r.attempts[r.attempts.length - 1], requested),
       };
-      return { raw: r.structuredOutput, meta };
+      return { raw: r.structuredOutput, meta, ...(r.rawText !== undefined ? { rawText: r.rawText } : {}) };
     } catch (e) {
       const err = e as AiError;
       // Failed attempts can still be billed (a cut-off response is). Count the reported cost; an attempt that reported
@@ -180,8 +180,9 @@ export function makeLiveGenerator(o: LiveOptions): { generate: Generator; spent:
       }
       // Repeated failures that are not a bad answer (outages, timeouts, rate limits) mean the run is not working; do not keep sending.
       if (err.kind !== "invalid_output" && ++consecutiveProviderErrors >= 3) halted ??= "stopped: 3 consecutive requests failed at the provider; the run is not working and nothing more will be sent";
-      if (err.rawOutput !== undefined) return { raw: err.rawOutput, schemaError: message, meta };
-      return { error: message, truncated: err.truncated === true, meta };
+      const text = err.rawText !== undefined ? { rawText: err.rawText } : {};
+      if (err.rawOutput !== undefined) return { raw: err.rawOutput, schemaError: message, meta, ...text };
+      return { error: message, truncated: err.truncated === true, meta, ...text };
     }
   };
   return { generate, spent: () => spent, halted: () => halted };
