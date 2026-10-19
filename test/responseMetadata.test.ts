@@ -323,8 +323,8 @@ describe("the sanitised evidence reaches the report, and previous results are un
     expect(e.meta.serviceTier).toBeUndefined();
     for (const x of r.cases) expect(x.meta.provider, x.caseId).toBeUndefined();
     const ledger = JSON.parse(readFileSync("docs/eval/ledger-cmp-3-2.json", "utf8")) as Ledger;
-    expect(ledger.entries).toHaveLength(1);
-    expect(ledger.entries[0]).toMatchObject({ label: "cmp-3-2-original-rep1", status: "finished", requests: 14, chargedMicros: 2_122 });
+    // later invocations append entries; invocation 1's entry must stay exactly as it was
+    expect(ledger.entries[0]).toMatchObject({ label: "cmp-3-2-original-rep1", status: "finished", requests: 14, chargedMicros: 2_122, reservedMicros: 31_500 });
   });
 });
 
