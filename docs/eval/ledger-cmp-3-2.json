@@ -24,6 +24,17 @@
       "chargedMicros": 7290,
       "accessCheckChargedMicros": 0,
       "finishedAt": "2026-10-16T15:25:10.410Z"
+    },
+    {
+      "label": "cmp-3-2-original-rep2",
+      "arm": "original",
+      "startedAt": "2026-10-19T07:32:26.994Z",
+      "status": "finished",
+      "reservedMicros": 31500,
+      "requests": 14,
+      "chargedMicros": 2133,
+      "accessCheckChargedMicros": 0,
+      "finishedAt": "2026-10-19T07:33:48.588Z"
     }
   ]
 }
