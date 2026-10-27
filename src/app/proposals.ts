@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { audit, iso } from "./core.js";
 import type { AppContext } from "./context.js";
-import { AppError, conflict, notFound } from "./errors.js";
+import { AppError, conflict, forbidden, notFound } from "./errors.js";
 import { enqueueJob } from "./jobs.js";
 import { getCampaignRecord, getCampaignRow } from "./campaigns.js";
 import { newId, sha256, stableStringify } from "./util.js";
@@ -107,7 +107,10 @@ export function createProposal(c: AppContext, wsId: string, campaignId: string, 
   if (open) throw conflict("proposal_exists", "There is already an open proposal for this campaign");
 
   const meta = c.metaFor(wsId);
-  if (!meta.accountId) throw conflict("meta_account_required", "Set the workspace's Meta ad account before proposing a live action");
+  if (!meta.accountId) {
+    if (meta.configuredAccountId) throw conflict("meta_account_not_authorized", "The workspace's Meta ad account is not currently authorized; an owner must authorize it before proposing a live action");
+    throw conflict("meta_account_required", "Set the workspace's Meta ad account before proposing a live action");
+  }
 
   const id = newId("prp");
   const payload: ProposalPayload = {
@@ -138,7 +141,15 @@ export function decideProposal(
   wsId: string,
   proposalId: string,
   decision: "approve" | "reject",
-  by: { decidedBy: string; reason?: string; acknowledgedReview?: boolean },
+  by: {
+    /** The server-derived actor label ("user:<id>" or "workspace-token:<id>"). Trusted callers (tests, system) may pass any label; it is then recorded as 'unverified'. */
+    decidedBy: string;
+    /** Who signed this decision. Absent = 'unverified'. The executor refuses to rely on an unverified approver for a live write. */
+    approver?: { kind: "user"; userId: string } | { kind: "legacy_token" };
+    claimedLabel?: string;
+    reason?: string;
+    acknowledgedReview?: boolean;
+  },
 ): ProposalRow {
   const p = getProposalRow(c, wsId, proposalId);
   if (p.status === "stale") throw conflict("stale", "The campaign changed after this proposal; create a new proposal");
@@ -155,9 +166,14 @@ export function decideProposal(
   const campaign = getCampaignRow(c, wsId, p.campaign_id);
   const mode = c.metaFor(wsId).mode;
   if (campaign.current_version !== p.campaign_version || mode !== p.integration_mode) {
-    c.db.prepare("UPDATE action_proposals SET status = 'stale', updated_at = ? WHERE id = ?").run(iso(c), p.id);
+    c.db.prepare("UPDATE action_proposals SET status = 'stale', updated_at = ? WHERE id = ? AND workspace_id = ?").run(iso(c), p.id, wsId);
     audit(c, wsId, by.decidedBy, "proposal.stale", "proposal", p.id, { campaignChanged: campaign.current_version !== p.campaign_version, modeChanged: mode !== p.integration_mode });
     throw conflict("stale", "The proposal is out of date; create a new proposal");
+  }
+
+  // A live (real, external) action can only be approved by a signed-in person; the executor enforces the same rule again at execution time.
+  if (decision === "approve" && mode === "live" && by.approver?.kind !== "user") {
+    throw forbidden("live_requires_signed_in_approver", "A real (live) action must be approved by a signed-in person; the workspace token can only approve simulated actions");
   }
 
   if (decision === "approve") assertBriefPassesGate(c, wsId, p.campaign_id, by.decidedBy, "approval");
@@ -166,12 +182,12 @@ export function decideProposal(
   c.db.transaction(() => {
     c.db
       .prepare(
-        `INSERT INTO approvals (id, workspace_id, proposal_id, decision, decided_by, payload_hash, campaign_version, integration_mode, reason, decided_at, expires_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO approvals (id, workspace_id, proposal_id, decision, decided_by, payload_hash, campaign_version, integration_mode, reason, decided_at, expires_at, claimed_label, approver_kind, approver_user_id)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       )
-      .run(newId("apr"), wsId, p.id, decision, by.decidedBy, p.payload_hash, p.campaign_version, mode, by.reason ?? null, at, new Date(c.now().getTime() + APPROVAL_TTL_MS).toISOString());
-    c.db.prepare("UPDATE action_proposals SET status = ?, updated_at = ? WHERE id = ?").run(decision === "approve" ? "approved" : "rejected", at, p.id);
-    audit(c, wsId, by.decidedBy, decision === "approve" ? "proposal.approved" : "proposal.rejected", "proposal", p.id, { mode, reason: by.reason ?? null });
+      .run(newId("apr"), wsId, p.id, decision, by.decidedBy, p.payload_hash, p.campaign_version, mode, by.reason ?? null, at, new Date(c.now().getTime() + APPROVAL_TTL_MS).toISOString(), by.claimedLabel ?? null, by.approver?.kind ?? "unverified", by.approver?.kind === "user" ? by.approver.userId : null);
+    c.db.prepare("UPDATE action_proposals SET status = ?, updated_at = ? WHERE id = ? AND workspace_id = ?").run(decision === "approve" ? "approved" : "rejected", at, p.id, wsId);
+    audit(c, wsId, by.decidedBy, decision === "approve" ? "proposal.approved" : "proposal.rejected", "proposal", p.id, { mode, reason: by.reason ?? null, ...(by.claimedLabel ? { claimedLabel: by.claimedLabel, claimedLabelVerified: false } : {}) });
     if (decision === "approve") enqueueJob(c, wsId, "execute_proposal", { proposalId: p.id }, `exec:${p.id}`);
   })();
   return getProposalRow(c, wsId, p.id);

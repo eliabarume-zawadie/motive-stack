@@ -8,14 +8,14 @@ import { APPLICABLE_TARGETING_NOTE, metaValidation, specialAdCategoryHints } fro
 
 export function proposalView(c: AppContext, wsId: string, p: ProposalRow) {
   const approval = c.db
-    .prepare("SELECT decision, decided_by, reason, decided_at, expires_at, integration_mode FROM approvals WHERE proposal_id = ?")
-    .get(p.id) as Record<string, string> | undefined;
+    .prepare("SELECT decision, decided_by, claimed_label, reason, decided_at, expires_at, integration_mode FROM approvals WHERE proposal_id = ? AND workspace_id = ?")
+    .get(p.id, wsId) as Record<string, string> | undefined;
   const attempts = c.db
-    .prepare("SELECT attempt_no, status, dispatched, error_kind, error_message, started_at, finished_at FROM execution_attempts WHERE proposal_id = ? ORDER BY attempt_no")
-    .all(p.id);
+    .prepare("SELECT attempt_no, status, dispatched, error_kind, error_message, started_at, finished_at FROM execution_attempts WHERE proposal_id = ? AND workspace_id = ? ORDER BY attempt_no")
+    .all(p.id, wsId);
   const external = c.db
-    .prepare("SELECT platform, kind, external_id, verified_state, verified_at, simulated FROM external_resources WHERE proposal_id = ?")
-    .get(p.id) as { platform: string; kind: string; external_id: string; verified_state: string; verified_at: string; simulated: number } | undefined;
+    .prepare("SELECT platform, kind, external_id, verified_state, verified_at, simulated FROM external_resources WHERE proposal_id = ? AND workspace_id = ?")
+    .get(p.id, wsId) as { platform: string; kind: string; external_id: string; verified_state: string; verified_at: string; simulated: number } | undefined;
   return {
     id: p.id,
     campaignId: p.campaign_id,
@@ -55,7 +55,7 @@ export function leadsView(c: AppContext, wsId: string) {
       .prepare(
         `SELECT l.id, l.campaign_id, l.full_name, l.email, l.phone, l.simulated, l.crm_status, l.crm_error, l.created_at,
                 s.contact_id, s.created_contact
-         FROM leads l LEFT JOIN crm_syncs s ON s.lead_id = l.id
+         FROM leads l LEFT JOIN crm_syncs s ON s.lead_id = l.id AND s.workspace_id = l.workspace_id
          WHERE l.workspace_id = ? ORDER BY l.created_at DESC, l.id`,
       )
       .all(wsId) as Array<Record<string, unknown>>
@@ -92,7 +92,9 @@ export function jobsView(c: AppContext, wsId: string) {
 
 export function workspaceView(c: AppContext, wsId: string) {
   const ws = getWorkspace(c, wsId);
-  return { ...ws, mode: c.metaFor(wsId).mode, metaAccountId: c.metaFor(wsId).accountId };
+  const meta = c.metaFor(wsId);
+  // metaAccountId is what the workspace chose; metaAccountAuthorized says whether it can be used right now (null: simulated, nothing to authorize).
+  return { ...ws, mode: meta.mode, metaAccountId: meta.configuredAccountId, metaAccountAuthorized: meta.mode === "mock" ? null : meta.accountId !== null };
 }
 
 export { getProposalRow };

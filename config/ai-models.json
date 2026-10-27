@@ -24,7 +24,8 @@
       "tasks": [
         "campaign_brief",
         "connection_test",
-        "live_probe"
+        "live_probe",
+        "website_analysis"
       ],
       "capabilities": {
         "text": true,
@@ -41,7 +42,8 @@
       "tasks": [
         "campaign_brief",
         "connection_test",
-        "live_probe"
+        "live_probe",
+        "website_analysis"
       ],
       "capabilities": {
         "text": true,
@@ -58,7 +60,8 @@
       "tasks": [
         "campaign_brief",
         "connection_test",
-        "live_probe"
+        "live_probe",
+        "website_analysis"
       ],
       "capabilities": {
         "text": true,
@@ -75,7 +78,8 @@
       "tasks": [
         "campaign_brief",
         "connection_test",
-        "live_probe"
+        "live_probe",
+        "website_analysis"
       ],
       "capabilities": {
         "text": true,
@@ -92,7 +96,8 @@
       "tasks": [
         "campaign_brief",
         "connection_test",
-        "live_probe"
+        "live_probe",
+        "website_analysis"
       ],
       "capabilities": {
         "text": true,
@@ -108,7 +113,8 @@
       "label": "Ollama llama3.1 8B (local)",
       "tasks": [
         "campaign_brief",
-        "connection_test"
+        "connection_test",
+        "website_analysis"
       ],
       "capabilities": {
         "text": true,

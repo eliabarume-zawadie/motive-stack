@@ -1,4 +1,9 @@
 import { initAi } from "./ai.js";
+import { initAiTest } from "./aitest.js";
+import { initClaimsReview } from "./claims.js";
+import { initDashboard } from "./dashboard.js";
+import { initOnboarding } from "./onboarding.js";
+import { DEMO_BUSINESS, formatRecoveryCode, parseRecoveryCode } from "./recovery.js";
 
 // MotiveStack local UI. Talks only to this server's API. Uses textContent everywhere (no innerHTML),
 // and holds no provider credentials: the only secret here is this workspace's own access token.
@@ -16,7 +21,7 @@ const h = (tag, attrs = {}, ...kids) => {
 };
 const lines = (s) => s.split("\n").map((x) => x.trim()).filter(Boolean);
 
-const state = { config: null, sessions: [], current: null, campaigns: [], campaign: null, campaignId: null };
+const state = { config: null, sessions: [], current: null, campaigns: [], campaign: null, campaignId: null, dash: null, workspace: null, analysis: null, brainVersion: 0 };
 
 // ---- session storage (workspace id + token live only in this browser) ----
 const SKEY = "ms_sessions", CKEY = "ms_current";
@@ -29,20 +34,65 @@ function saveSessions() {
 }
 const session = () => state.sessions.find((s) => s.id === state.current) ?? null;
 
+// ---- authentication boundary ----
+// Workspace routes are authenticated by the workspace token today (a documented, temporary mechanism). OpenID Connect sign-in
+// is NOT implemented in this UI: it needs an identity provider that has not been selected or deployed (docs/milestone-4-auth.md).
+// When it is, the sign-in flow and the bearer header for a signed-in person belong in this one object, the workspace token and its
+// localStorage copy are removed, and nothing else in this file changes. The server already reports its mode at /api/config (auth.mode).
+const Auth = {
+  header: (session) => `Bearer ${session.token}`,
+};
+
 // ---- API ----
 function showError(msg) {
   const box = $("errors");
   box.hidden = !msg;
   box.textContent = msg || "";
 }
+// ---- pending actions: the same action cannot be started twice while it is running ----
+const busy = new Set();
+function setBusy(controls, on) {
+  for (const el of controls) {
+    if (!el) continue;
+    el.disabled = on;
+    el.setAttribute("aria-busy", on ? "true" : "false");
+    if (el.dataset.idleLabel === undefined) el.dataset.idleLabel = el.textContent;
+    if (el.dataset.busyLabel) el.textContent = on ? el.dataset.busyLabel : el.dataset.idleLabel;
+  }
+}
+async function once(key, controls, fn) {
+  if (busy.has(key)) return undefined; // already running: a repeat click or Enter does nothing
+  busy.add(key);
+  setBusy(controls, true);
+  try { return await fn(); } finally {
+    busy.delete(key); setBusy(controls, false);
+    // A redraw during the action rebuilt the card while the key was still busy (its buttons were drawn disabled); draw it again now that the action is over.
+    if (state.campaign) renderProposals();
+  }
+}
+
+// Informational and success messages (errors use showError). Text comes from what the server answered, never from an assumption.
+let noticeTimer;
+function showNotice(msg) {
+  const box = $("notice");
+  box.textContent = msg || "";
+  box.hidden = !msg;
+  clearTimeout(noticeTimer);
+  if (msg) noticeTimer = setTimeout(() => { box.hidden = true; }, 7000);
+}
+
 async function api(path, { method = "GET", body, scoped = true, quiet = false } = {}) {
   const s = session();
   const headers = { "content-type": "application/json" };
   let url = path;
   if (scoped) {
-    if (!s) throw new Error("Create or select a workspace first");
+    if (!s) {
+      const msg = "Create or select a workspace first";
+      if (!quiet) showError(msg); // callers swallow this error on the assumption it was already shown
+      throw new Error(msg);
+    }
     url = `/api/workspaces/${s.id}${path}`;
-    headers.authorization = `Bearer ${s.token}`;
+    headers.authorization = Auth.header(s);
   }
   const res = await fetch(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
   const data = await res.json().catch(() => ({}));
@@ -88,7 +138,9 @@ function renderWorkspaces() {
 
 function fillBrainForm(brain, version) {
   const f = $("brain-form");
+  state.brainVersion = brain ? version : 0;
   if (!brain) { $("brain-version").textContent = "Not saved yet"; return; }
+  $("brain-details").open = true; // there is something to review
   for (const k of ["businessName", "industry", "serviceArea", "targetCustomer", "offer", "tone", "maxDailyBudgetCents"]) f.elements[k].value = brain[k];
   f.elements.services.value = brain.services.join("\n");
   f.elements.differentiators.value = brain.differentiators.join("\n");
@@ -98,6 +150,7 @@ function fillBrainForm(brain, version) {
   f.elements.prohibitedClaims.value = (brain.prohibitedClaims || []).join("\n");
   f.elements.description.value = brain.description || "";
   state.brainFacts = brain.facts || []; // records with provenance are not editable in this form, but must survive a save
+  claimsUi?.render();
   $("brain-version").textContent = `Saved (version ${version})`;
 }
 
@@ -109,13 +162,18 @@ function fillEditForm(c) {
   f.elements.primaryTexts.value = c.brief.primaryTexts.join("\n");
 }
 
-let lastCampaignListKey = "";
-function renderCampaignList() {
-  const sel = $("campaign-select");
-  const key = JSON.stringify([state.campaigns, state.campaignId]);
-  if (key === lastCampaignListKey) return; // unchanged: keep the open dropdown stable
-  lastCampaignListKey = key;
-  sel.replaceChildren(...(state.campaigns.length ? state.campaigns.map((c) => h("option", { value: c.id, selected: c.id === state.campaignId }, `${c.name} (${c.status.replace("_", " ")})`)) : [h("option", { value: "" }, "No campaigns yet")]));
+// Dashboard, campaign list, operations and integrations are re-drawn only when their data changed, so a click or keyboard focus is not lost on every poll.
+let lastViewsKey = "";
+function renderDashboardViews() {
+  const key = JSON.stringify([state.dash, state.campaignId, state.workspace?.id, state.config?.mode, state.brainVersion, state.analysis?.id, state.analysis?.status, state.current], (k, v) => (k === "generatedAt" ? undefined : v));
+  if (key === lastViewsKey) return;
+  lastViewsKey = key;
+  updateGenHint();
+  dashUi.renderPath(state);
+  dashUi.renderDashboard(state.dash);
+  dashUi.renderCampaignList(state.dash);
+  dashUi.renderOps(state.dash);
+  dashUi.renderIntegrations(state.dash, state.workspace);
 }
 
 const usd = (cents) => "$" + (cents / 100).toFixed(2);
@@ -143,6 +201,7 @@ function renderCampaign() {
     ["What is not known", list(t.uncertainties, "Nothing stated")],
     ["Restrictions", list(t.restrictions, "None stated")],
     ["Needed from you", list(t.needsFromOwner, "Nothing")],
+    ...(t.basis !== "owner_provided" && !(t.needsFromOwner && t.needsFromOwner.length) ? [["Tip", "To narrow who sees your ads, describe your best customers under My business > Target customer (for example, homeowners aged 35 to 65 in these towns). Until then targeting stays broad."]] : []),
     ["Settings the platform can apply", b.audience.locations.join(", ") + ", ages " + b.audience.ageMin + "-" + b.audience.ageMax + (b.audience.interests.length ? "; interests: " + b.audience.interests.join(", ") : "; no interest targeting")],
   ];
 
@@ -182,7 +241,9 @@ function renderProposals() {
   const open = c.proposals.find((p) => ["proposed", "approved", "executing"].includes(p.status));
   const nodes = [];
   if (c.status === "draft" && !open) {
-    nodes.push(h("button", { onclick: () => act(() => api(`/campaigns/${c.id}/proposals`, { method: "POST", body: {} })) }, "Propose a paused draft on the ad platform"));
+    const key = `propose:${c.id}`;
+    const propose = h("button", { type: "button", disabled: busy.has(key), onclick: () => once(key, [propose], () => act(() => api(`/campaigns/${c.id}/proposals`, { method: "POST", body: {} }))) }, "Propose a paused draft on the ad platform");
+    nodes.push(propose);
     nodes.push(h("p", { class: "hint" }, "Proposing changes nothing outside this app. An explicit approval is required before any simulated platform write."));
   }
   for (const p of c.proposals) nodes.push(proposalCard(p));
@@ -193,12 +254,18 @@ function proposalCard(p) {
   const by = h("input", { id: `by-${p.id}`, value: localStorage.getItem("ms_by") || "", placeholder: "Your name", maxlength: "100" });
   const flags = (p.payload && p.payload.reviewFlags) || [];
   const ack = h("input", { type: "checkbox", id: "ack-" + p.id });
+  const key = `decide:${p.id}`;
+  let approveBtn, rejectBtn;
   const decide = (d) => () => {
     if (!by.value.trim()) { showError("Enter your name to record the decision"); return; }
     try { localStorage.setItem("ms_by", by.value.trim()); } catch { /* ignore */ }
+    // The proposal list is not redrawn while an input in it has focus (so typing is never clobbered). A decision is done typing: release the focus,
+    // otherwise the card would keep showing the old status in browsers that do not move focus to a clicked button (Safari).
+    by.blur();
+    ack.blur();
     const body = { decidedBy: by.value.trim() };
     if (d === "approve" && flags.length) body.acknowledgedReview = ack.checked;
-    act(() => api(`/proposals/${p.id}/${d}`, { method: "POST", body }));
+    return once(key, [approveBtn, rejectBtn], () => act(() => api(`/proposals/${p.id}/${d}`, { method: "POST", body })));
   };
   const pay = p.payload;
   const card = h("div", { class: "card" },
@@ -211,9 +278,9 @@ function proposalCard(p) {
   if (flags.length) card.append(h("div", { class: "card" }, pill("NEEDS REVIEW", "warn"), h("ul", { class: "plain" }, flags.map((f) => h("li", {}, f)))));
   if (p.status === "proposed") {
     if (flags.length) card.append(h("label", { class: "chk" }, ack, "I read the review reasons above"));
-    card.append(h("div", { class: "actions" }, h("label", {}, "Approver", by), h("button", { onclick: decide("approve") }, "Approve"), h("button", { class: "danger", onclick: decide("reject") }, "Reject")));
+    card.append(h("div", { class: "actions" }, h("label", {}, "Approver (a typed note; the server records who actually signed in)", by), (approveBtn = h("button", { type: "button", disabled: busy.has(key), onclick: decide("approve") }, "Approve")), (rejectBtn = h("button", { type: "button", class: "danger", disabled: busy.has(key), onclick: decide("reject") }, "Reject"))));
   }
-  if (p.approval) card.append(h("p", { class: "hint" }, `${p.approval.decision === "approve" ? "Approved" : "Rejected"} by ${p.approval.decided_by} at ${p.approval.decided_at}`));
+  if (p.approval) card.append(h("p", { class: "hint" }, `${p.approval.decision === "approve" ? "Approved" : "Rejected"} by ${p.approval.decided_by}${p.approval.claimed_label ? ` (typed name, not verified: ${p.approval.claimed_label})` : ""} at ${p.approval.decided_at}`));
   if (p.attempts.length) {
     card.append(h("table", {}, h("thead", {}, h("tr", {}, ...["Attempt", "Result", "Error"].map((x) => h("th", {}, x)))),
       h("tbody", {}, p.attempts.map((a) => h("tr", {}, h("td", {}, a.attempt_no), h("td", {}, a.status), h("td", {}, a.error_kind ? `${a.error_kind}: ${a.error_message ?? ""}` : "-"))))));
@@ -230,7 +297,7 @@ function proposalCard(p) {
 function renderLeads(leads) {
   const v = $("leads-view");
   const launched = state.campaign?.status === "launched_paused";
-  $("lead-btn").disabled = !launched || !!state.config?.live.meta;
+  $("lead-btn").disabled = !launched || !!state.config?.live.meta || busy.has("lead");
   $("lead-hint").textContent = state.config?.live.meta ? "Disabled: synthetic leads are not allowed when Meta is live." : launched ? "" : "Available after the paused draft exists.";
   if (!leads.length) { v.replaceChildren(h("p", { class: "hint" }, "No leads yet.")); return; }
   v.replaceChildren(h("table", {}, h("thead", {}, h("tr", {}, ...["Lead", "Contact", "CRM sync", "CRM contact"].map((x) => h("th", {}, x)))),
@@ -249,11 +316,12 @@ function renderActivity(items) {
 async function act(fn) { try { await fn(); } catch { /* error already shown */ } await refresh(); }
 
 async function refresh({ fillForms = false } = {}) {
-  if (!session()) { renderCampaign(); renderProposals(); renderLeads([]); renderActivity([]); return; }
+  if (!session()) { state.dash = null; state.campaigns = []; renderDashboardViews(); renderCampaign(); renderProposals(); renderLeads([]); renderActivity([]); return; }
   try {
-    state.campaigns = await api("/campaigns", { quiet: true });
+    state.dash = await api("/dashboard", { quiet: true }); // one summary: campaigns, approvals, failures, jobs, usage, integrations
+    state.campaigns = state.dash.campaigns.list;
     if (!state.campaigns.find((c) => c.id === state.campaignId)) state.campaignId = state.campaigns[0]?.id ?? null;
-    renderCampaignList();
+    renderDashboardViews();
     state.campaign = state.campaignId ? await api(`/campaigns/${state.campaignId}`, { quiet: true }) : null;
     if (fillForms && state.campaign) fillEditForm(state.campaign);
     renderCampaign(); renderProposals();
@@ -263,30 +331,155 @@ async function refresh({ fillForms = false } = {}) {
   } catch (e) { showError(e.message); }
 }
 
+// Scrolling is a convenience: where the browser cannot do it, the action still completes.
+function scrollToEl(el, block) { if (typeof el.scrollIntoView === "function") el.scrollIntoView({ behavior: "smooth", block }); }
+
 async function selectWorkspace(id) {
-  state.current = id || null; saveSessions(); state.campaignId = null; state.campaign = null;
+  state.current = id || null; saveSessions(); state.campaignId = null; state.campaign = null; state.dash = null; state.workspace = null; state.brainVersion = 0;
   $("brain-form").reset();
+  claimsUi.render();
+  $("brain-details").open = false;
   if (session()) {
     state.brainFacts = [];
+    try { state.workspace = await api("", { quiet: true }); } catch { /* shown by the next call if the session is bad */ }
     try { const b = await api("/brain", { quiet: true }); fillBrainForm(b.brain, b.version); } catch (e) { showError(e.message); }
     try { await aiUi.load({ refillForm: true }); } catch (e) { showError(e.message); }
   }
+  await onboardUi.load();
+  if (session()) aiTestUi.load();
   await refresh({ fillForms: true });
 }
 
-const aiUi = initAi({ $, h, api, state, session, pill, simBadge, showError });
+async function openCampaign(id) {
+  state.campaignId = id;
+  await refresh({ fillForms: true });
+  scrollToEl($("campaign-view"), "start");
+}
+async function goProposal(id) {
+  state.campaignId = id;
+  await refresh({ fillForms: true });
+  scrollToEl($("s-launch"), "start");
+}
+const dashUi = initDashboard({ $, h, pill, simBadge, usd, state, openCampaign, goProposal });
+const aiUi = initAi({ $, h, api, state, session, pill, simBadge, showError, once });
+const claimsUi = initClaimsReview({ $, h, pill });
+const onboardUi = initOnboarding({ $, h, api, state, showNotice, once, pill, simBadge, onFormChanged: () => claimsUi.render() });
+const aiTestUi = initAiTest({ $, h, api, once, pill, simBadge });
+$("dev-mode").addEventListener("toggle", () => { if ($("dev-mode").open && session()) aiTestUi.load(); });
+
+// ---- navigation: highlights the section being read (links are plain in-page anchors, so they work without this) ----
+function initNav() {
+  const links = [...document.querySelectorAll("#main-nav a")];
+  const ids = links.map((a) => a.getAttribute("href").slice(1));
+  const mark = (id) => links.forEach((a) => a.setAttribute("aria-current", a.getAttribute("href") === `#${id}` ? "true" : "false"));
+  mark(ids[0]);
+  if (!("IntersectionObserver" in window)) return;
+  const inBand = new Set();
+  const io = new IntersectionObserver((entries) => {
+    for (const en of entries) (en.isIntersecting ? inBand.add(en.target.id) : inBand.delete(en.target.id));
+    const current = ids.filter((id) => inBand.has(id)).at(-1);
+    if (current) mark(current);
+  }, { rootMargin: "-130px 0px -65% 0px", threshold: 0 });
+  for (const id of ids) { const el = document.getElementById(id); if (el) io.observe(el); }
+  for (const a of links) a.addEventListener("click", () => mark(a.getAttribute("href").slice(1)));
+}
 
 // ---- events ----
 $("ws-select").addEventListener("change", (e) => selectWorkspace(e.target.value));
-$("campaign-select").addEventListener("change", (e) => { state.campaignId = e.target.value; refresh({ fillForms: true }); });
+
+// The recovery code is shown once, in this panel, and removed from the page when dismissed. It is never logged and never put in an address.
+function showRecoveryCode(code) {
+  const input = $("token-code");
+  input.value = code;
+  input.type = "password";
+  $("token-show").textContent = "Show";
+  $("token-status").textContent = "";
+  $("token-panel").hidden = false;
+  scrollToEl($("token-panel"), "nearest");
+}
+function dismissRecoveryCode() {
+  $("token-code").value = "";
+  $("token-code").type = "password";
+  $("token-status").textContent = "";
+  $("token-panel").hidden = true;
+}
+$("token-show").addEventListener("click", () => {
+  const input = $("token-code");
+  const hide = input.type === "text";
+  input.type = hide ? "password" : "text";
+  $("token-show").textContent = hide ? "Show" : "Hide";
+});
+$("token-copy").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText($("token-code").value);
+    $("token-status").textContent = "Copied to the clipboard. Paste it somewhere safe.";
+  } catch {
+    $("token-status").textContent = "Could not copy automatically. Press Show, then select the code and copy it yourself.";
+  }
+});
+$("token-dismiss").addEventListener("click", dismissRecoveryCode);
 
 $("ws-create").addEventListener("submit", async (e) => {
   e.preventDefault();
-  try {
-    const r = await api("/api/workspaces", { method: "POST", body: { name: e.target.elements.name.value }, scoped: false });
-    state.sessions.push({ id: r.workspace.id, name: r.workspace.name, token: r.token });
-    e.target.reset(); renderWorkspaces(); await selectWorkspace(r.workspace.id); renderWorkspaces();
-  } catch { /* shown */ }
+  const form = e.target;
+  await once("ws-create", [form.querySelector("button[type=submit]")], async () => {
+    try {
+      const r = await api("/api/workspaces", { method: "POST", body: { name: form.elements.name.value }, scoped: false });
+      state.sessions.push({ id: r.workspace.id, name: r.workspace.name, token: r.token });
+      form.reset();
+      renderWorkspaces();
+      showRecoveryCode(formatRecoveryCode(r.workspace.id, r.token));
+      await selectWorkspace(r.workspace.id);
+      renderWorkspaces();
+    } catch { /* shown */ }
+  });
+});
+
+// Open an existing workspace from its recovery code. The server decides: a wrong code and an unknown workspace get the same answer.
+$("ws-open").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const field = form.elements.code;
+  await once("ws-open", [form.querySelector("button[type=submit]")], async () => {
+    const parsed = parseRecoveryCode(field.value);
+    if (!parsed) { showError("That recovery code is not in the right format. It looks like ws_...:msw_... and is shown once when a workspace is created."); return; }
+    let res;
+    try { res = await fetch(`/api/workspaces/${parsed.workspaceId}`, { headers: { authorization: Auth.header({ token: parsed.token }) } }); } catch { showError("Could not reach the server."); return; }
+    if (!res.ok) { showError("That recovery code was not accepted by this server."); return; }
+    const w = await res.json();
+    const existing = state.sessions.find((x) => x.id === parsed.workspaceId);
+    if (existing) existing.token = parsed.token; else state.sessions.push({ id: parsed.workspaceId, name: w.name, token: parsed.token });
+    field.value = "";
+    showError("");
+    renderWorkspaces();
+    await selectWorkspace(parsed.workspaceId);
+    renderWorkspaces();
+    showNotice(`Opened workspace “${w.name}”.`);
+  });
+});
+
+// Demo data fills the FORM only; nothing is saved until the person presses Save.
+let demoArmed = false;
+$("brain-demo").addEventListener("click", () => {
+  const f = $("brain-form").elements;
+  const btn = $("brain-demo");
+  const hasOwnText = ["businessName", "industry", "services", "serviceArea", "targetCustomer", "offer"].some((k) => f[k].value.trim()) && f.businessName.value !== DEMO_BUSINESS.businessName;
+  if (hasOwnText && !demoArmed) {
+    demoArmed = true;
+    btn.textContent = "Click again to replace the form with demo data";
+    setTimeout(() => { demoArmed = false; btn.textContent = "Load demo business"; }, 6000);
+    return;
+  }
+  demoArmed = false;
+  btn.textContent = "Load demo business";
+  const d = DEMO_BUSINESS;
+  for (const k of ["businessName", "industry", "serviceArea", "targetCustomer", "offer", "tone", "approvedPricing", "description"]) f[k].value = d[k];
+  for (const k of ["services", "differentiators", "verifiedFacts", "unverifiedClaims", "prohibitedClaims"]) f[k].value = d[k].join("\n");
+  f.maxDailyBudgetCents.value = String(d.maxDailyBudgetCents);
+  $("brain-details").open = true;
+  claimsUi.render();
+  $("brain-version").textContent = "Demo data loaded: review it, then press Save Business Brain.";
+  showNotice(session() ? "Demo business loaded into the form. It is fictional and is not saved until you press Save." : "Demo business loaded into the form. Create or open a workspace before you save it.");
 });
 
 $("brain-form").addEventListener("submit", async (e) => {
@@ -301,52 +494,96 @@ $("brain-form").addEventListener("submit", async (e) => {
   body.facts = state.brainFacts || [];
   if (f.approvedPricing.value.trim()) body.approvedPricing = f.approvedPricing.value.trim();
   if (f.description.value.trim()) body.description = f.description.value.trim();
-  try { const r = await api("/brain", { method: "PUT", body }); fillBrainForm(r.brain, r.version); await refresh(); } catch { /* shown */ }
+  await once("brain", [e.target.querySelector("button[type=submit]")], async () => {
+    try { const r = await api("/brain", { method: "PUT", body }); fillBrainForm(r.brain, r.version); showNotice(`Business Brain saved (version ${r.version}).`); await refresh(); } catch { /* shown */ }
+  });
 });
+
+/** The Business Brain field that holds a line the campaign checker quoted, so the person knows what to fix. */
+function whereInBrain(message) {
+  const quoted = [...message.matchAll(/\("([^"]{8,300})"\)/g)].map((m) => m[1].trim().toLowerCase().replace(/\s+/g, " "));
+  if (!quoted.length) return "";
+  const labels = { businessName: "Business name", industry: "Industry", services: "Services", serviceArea: "Service area", targetCustomer: "Target customer", offer: "Offer", tone: "Tone", differentiators: "Approved differentiators", verifiedFacts: "Other verified facts", approvedPricing: "Approved pricing statement", unverifiedClaims: "Claims you have not verified", prohibitedClaims: "Things ads must never say", description: "Business description" };
+  const f = $("brain-form").elements;
+  const found = new Set();
+  for (const [k, label] of Object.entries(labels)) {
+    const v = String(f[k]?.value || "").toLowerCase().replace(/\s+/g, " ");
+    if (quoted.some((q) => v.includes(q.replace(/[.]+$/, "")))) found.add(label);
+  }
+  if ((state.brainFacts || []).some((x) => quoted.some((q) => String(x.text).toLowerCase().includes(q.replace(/[.]+$/, ""))))) found.add("the saved website records (press Fill my Business Brain from these findings again to rebuild them)");
+  return [...found].join(", ");
+}
+
+// Shown next to the button, so it is clear why a draft cannot be created yet
+function updateGenHint() { $("gen-hint").hidden = !session() || state.brainVersion > 0; }
 
 $("gen-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const status = $("gen-status");
   const btn = e.target.querySelector("button[type=submit]");
-  status.textContent = state.config?.ai?.local
-    ? "Generating with the local model. On a CPU this can take a few minutes; keep this page open."
-    : "Generating...";
-  btn.disabled = true;
-  try {
-    const c = await api("/campaigns/generate", { method: "POST", body: aiUi.generateBody() });
-    state.campaignId = c.id;
-    await refresh({ fillForms: true });
-  } catch { /* shown */ } finally {
-    status.textContent = "";
-    btn.disabled = false;
-  }
+  $("gen-error").textContent = "";
+  if (!session()) { $("gen-error").textContent = "Create or open a workspace first (on Home)."; return; }
+  await once("generate", [btn], async () => {
+    status.textContent = state.config?.ai?.local
+      ? "Generating with the local model. On a CPU this can take a few minutes; keep this page open."
+      : "Generating...";
+    try {
+      const c = await api("/campaigns/generate", { method: "POST", body: aiUi.generateBody() });
+      state.campaignId = c.id;
+      await refresh({ fillForms: true });
+      showNotice("Your campaign draft was created. It is only a plan: nothing is sent anywhere until you approve it.");
+      scrollToEl($("campaign-view"), "start");
+    } catch (err) {
+      // the server's answer, next to the button (and in the top bar). A missing Business Brain is the usual reason: say where to fix it.
+      const missingBrain = /Save the Business Brain before/i.test(err.message);
+      const grounding = /grounding_ambiguous|failed validation/i.test(err.message);
+      const where = grounding ? whereInBrain(err.message) : "";
+      $("gen-error").textContent = missingBrain ? "Your Business Brain is not saved yet. Review it under My business and press Save Business Brain first, then try again."
+        : grounding ? `${err.message}\n\n${where ? `The text it objects to is in: ${where}. Remove or reword that line, then press Save Business Brain and try again.` : "What to do: open My business and check that Offer is a short offer such as “Free estimate” (not a whole sentence), and that each strength or fact is something you can stand behind. Press Save Business Brain, then try again."}` : err.message;
+      if (missingBrain) { $("brain-details").open = true; scrollToEl($("s-brain"), "start"); }
+    } finally {
+      status.textContent = "";
+    }
+  });
 });
 
 $("edit-form").addEventListener("submit", async (e) => {
   e.preventDefault();
-  if (!state.campaign) return;
+  if (!state.campaign) { showError("Select a campaign first"); return; }
   const f = e.target.elements;
   const brief = { ...state.campaign.brief, name: f.name.value, dailyBudgetCents: Number(f.dailyBudgetCents.value), headlines: lines(f.headlines.value), primaryTexts: lines(f.primaryTexts.value) };
-  try { await api(`/campaigns/${state.campaign.id}/brief`, { method: "PUT", body: brief }); await refresh({ fillForms: true }); } catch { /* shown */ }
+  await once("edit", [e.target.querySelector("button[type=submit]")], async () => {
+    $("edit-status").textContent = "";
+    try {
+      const saved = await api(`/campaigns/${state.campaign.id}/brief`, { method: "PUT", body: brief });
+      await refresh({ fillForms: true });
+      $("edit-status").textContent = `Saved as version ${saved.currentVersion}.`;
+    } catch { /* shown */ }
+  });
 });
 
 $("lead-form").addEventListener("submit", async (e) => {
   e.preventDefault();
-  if (!state.campaign) return;
+  if (!state.campaign) { showError("Select a campaign first"); return; }
   const f = e.target.elements;
   const body = { fullName: f.fullName.value };
   if (f.email.value.trim()) body.email = f.email.value.trim();
   if (f.phone.value.trim()) body.phone = f.phone.value.trim();
   if (f.eventId.value.trim()) body.eventId = f.eventId.value.trim();
-  try {
-    const r = await api(`/campaigns/${state.campaign.id}/simulate-lead`, { method: "POST", body });
-    if (r.duplicate) showError("Duplicate event: ignored, no second lead or CRM contact was created.");
-    await refresh();
-  } catch { /* shown */ }
+  await once("lead", [$("lead-btn")], async () => {
+    try {
+      const r = await api(`/campaigns/${state.campaign.id}/simulate-lead`, { method: "POST", body });
+      showNotice(r.duplicate
+        ? "Duplicate event: ignored. No second lead or CRM contact was created."
+        : "Lead received. The simulated CRM sync runs in the background; its status appears in the table.");
+      await refresh();
+    } catch { /* shown */ }
+  });
 });
 
 // ---- boot ----
 async function boot() {
+  initNav();
   try { state.config = await api("/api/config", { scoped: false, quiet: true }); } catch (e) { showError(`Cannot reach the server: ${e.message}`); return; }
   renderBanner(); aiUi.renderBanner();
   loadSessions(); renderWorkspaces();

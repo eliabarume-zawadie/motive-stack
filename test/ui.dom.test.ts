@@ -13,8 +13,10 @@ import { getBrain, putBrain } from "../src/app/workspaces.js";
 import { BRAIN } from "./fixtures.js";
 
 const HTML = readFileSync("public/index.html", "utf8");
-const AI_JS = readFileSync("public/ai.js", "utf8").replace("export function initAi", "function initAi");
-const APP_JS = readFileSync("public/app.js", "utf8").replace(/^import \{ initAi \} from "\.\/ai\.js";\n/m, "");
+// The page is a set of ES modules; the test evaluates them as one script in jsdom, so `export` and `import` lines are removed (names are unique across the files).
+const asScript = (f: string) => readFileSync(`public/${f}`, "utf8").replace(/^export /gm, "").replace(/^import .*\n/gm, "");
+const AI_JS = [asScript("recovery.js"), asScript("dashboard.js"), asScript("claims.js"), asScript("onboarding.js"), asScript("aitest.js"), asScript("ai.js")].join("\n");
+const APP_JS = asScript("app.js");
 const FAKE_KEYS = { OPENAI_API_KEY: "sk-FAKE-OPENAI-DOM-TEST", ANTHROPIC_API_KEY: "sk-ant-FAKE-DOM-TEST", META_ACCESS_TOKEN: "EAA-FAKE-META-DOM-TEST" };
 
 const open: Array<() => void> = [];
@@ -413,9 +415,12 @@ describe("campaign view shows budget, targeting, decisions, questions and platfo
 
     (ui.$("proposal-view").querySelector("input[placeholder='Your name']") as HTMLInputElement).value = "Elia";
     const approve = Array.from(ui.$("proposal-view").querySelectorAll("button")).find((b) => b.textContent === "Approve") as HTMLButtonElement;
+    const activityLoads = () => ui.requests.filter((r) => r.endsWith("/activity")).length;
+    const before = activityLoads();
     approve.click(); // without ticking the acknowledgement
     await vi.waitFor(() => expect($text(ui, "errors")).toMatch(/needs review before approval/), { timeout: 4000 });
     expect($text(ui, "proposal-view")).toMatch(/proposed/); // still pending: nothing was approved
+    await vi.waitFor(() => expect(activityLoads()).toBeGreaterThan(before), { timeout: 4000 }); // the screen redraws after a refused decision: tick the box on the redrawn card
 
     (ui.$("proposal-view").querySelector("input[type=checkbox]") as HTMLInputElement).checked = true;
     (Array.from(ui.$("proposal-view").querySelectorAll("button")).find((b) => b.textContent === "Approve") as HTMLButtonElement).click();

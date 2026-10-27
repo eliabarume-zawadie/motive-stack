@@ -37,12 +37,14 @@ const entry = (provider: string, model: string, costTier: ModelEntry["costTier"]
 const PRICE = { inputPerMTokMicros: 3_000_000, outputPerMTokMicros: 15_000_000, appliesTo: "test fixture", asOf: "2026-01-01", source: "https://example.com/pricing" };
 const rl = () => new AiError("rate_limit", "rl", { retryable: true });
 
-const LIVE_ENV = { AI_PROVIDER_MODE: "live", ALLOW_LIVE_PROVIDER_CALLS: "true" };
+// Live requests now need the server's own spending ceiling (AI_LIVE_BUDGET_MICROS) and a price for the model. These fixtures set a large ceiling
+// and price every fake model, so the tests below keep exercising the behavior they were written for; the ceiling itself is tested in liveCeiling.test.ts.
+const LIVE_ENV = { AI_PROVIDER_MODE: "live", ALLOW_LIVE_PROVIDER_CALLS: "true", AI_LIVE_BUDGET_MICROS: "1000000000000" };
 
 function liveApp(providers: AiProvider[], opts: { priced?: string[]; start?: string } = {}) {
   const core = makeCore(opts.start);
   const registry = new ModelRegistry(providers.flatMap((p) => p.models.map((m) => entry(p.id, m))));
-  const pricing = new PricingTable("USD", (opts.priced ?? []).map((id) => ({ provider: id, model: "m", ...PRICE })));
+  const pricing = new PricingTable("USD", (opts.priced ?? providers.map((p) => p.id)).map((id) => ({ provider: id, model: "m", ...PRICE })));
   const ctx = buildContext({ db: core.db, now: core.now, env: LIVE_ENV, aiProviders: providers, registry, pricing, gateway: { sleep: async () => {} } });
   const ws = createWorkspace(ctx, "Acme").workspace;
   putBrain(ctx, ws.id, BRAIN);
@@ -136,11 +138,13 @@ describe("live-mode usage and cost (fake providers, no network)", () => {
     expect(listUsage(ctx, ws.id)[0]).toMatchObject({ mode: "live", simulated: false, inputTokens: 1000, outputTokens: 500, usageSource: "provider", estimatedCostMicros: 10500, costStatus: "estimated", currency: "USD", requestId: "fa-req" });
   });
 
-  it("records unknown cost explicitly (not zero) when no price exists, keeping provider usage", async () => {
-    const { ctx, ws } = liveApp([new Fake("fa", ["m"], [])]);
-    await run(ctx, ws.id);
-    expect(listUsage(ctx, ws.id)[0]).toMatchObject({ costStatus: "unknown_no_pricing", estimatedCostMicros: null, inputTokens: 1000 });
-    expect(usageSummary(ctx, ws.id).today).toMatchObject({ liveRequests: 1, knownCostMicros: 0, requestsWithUnknownCost: 1 });
+  it("a model with no configured price is refused before any live request (its cost cannot be limited), and the refusal is recorded as blocked", async () => {
+    // Previously such a request went through and was recorded with an unknown cost. With the server's mandatory spending ceiling it cannot be bounded, so it is not sent.
+    const a = new Fake("fa", ["m"], []);
+    const { ctx, ws } = liveApp([a], { priced: [] });
+    await expect(run(ctx, ws.id)).rejects.toMatchObject({ kind: "budget_unverifiable" });
+    expect(a.calls).toBe(0);
+    expect(listUsage(ctx, ws.id)[0]).toMatchObject({ attemptKind: "blocked", outcome: "budget_unverifiable" });
   });
 
   it("records unknown token usage as NULL, not zero", async () => {
@@ -237,7 +241,7 @@ describe("usage limits are enforced before billable requests", () => {
 
   it("refuses a cost ceiling it cannot verify (no configured price) rather than guessing", async () => {
     const a = new Fake("fa", ["m"], []);
-    const { ctx, ws } = liveApp([a]);
+    const { ctx, ws } = liveApp([a], { priced: [] });
     putAiSettings(ctx, ws.id, { routingMode: "automatic", monthlyBudgetMicros: 1_000_000 });
     await expect(run(ctx, ws.id)).rejects.toMatchObject({ kind: "budget_unverifiable" });
     expect(a.calls).toBe(0);
@@ -413,7 +417,7 @@ describe("output-token ceiling", () => {
     const core = makeCore();
     const p = new Fake("fa", ["m"], []);
     const registry = new ModelRegistry([entry("fa", "m")]);
-    const ctx = buildContext({ db: core.db, now: core.now, env: { ...LIVE_ENV, AI_MAX_OUTPUT_TOKENS: "300" }, aiProviders: [p], registry, pricing: PricingTable.empty(), gateway: { sleep: async () => {} } });
+    const ctx = buildContext({ db: core.db, now: core.now, env: { ...LIVE_ENV, AI_MAX_OUTPUT_TOKENS: "300" }, aiProviders: [p], registry, pricing: new PricingTable("USD", [{ provider: "fa", model: "m", ...PRICE }]), gateway: { sleep: async () => {} } });
     const ws = createWorkspace(ctx, "Acme").workspace;
     putBrain(ctx, ws.id, BRAIN);
     await runAiTask(ctx, ws.id, TASK(ctx));

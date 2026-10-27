@@ -64,9 +64,9 @@ export async function processLeadEvent(
       "INSERT OR IGNORE INTO leads (id, workspace_id, campaign_id, lead_event_id, full_name, email, phone, simulated, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
     )
     .run(newId("lead"), wsId, ev.campaign_id, ev.id, p.fullName, normalizeEmail(p.email), normalizePhone(p.phone), ev.simulated, iso(c));
-  const lead = c.db.prepare("SELECT id FROM leads WHERE lead_event_id = ?").get(ev.id) as { id: string };
+  const lead = c.db.prepare("SELECT id FROM leads WHERE lead_event_id = ? AND workspace_id = ?").get(ev.id, wsId) as { id: string };
 
-  if (c.db.prepare("SELECT 1 FROM crm_syncs WHERE lead_id = ?").get(lead.id)) return; // already synced
+  if (c.db.prepare("SELECT 1 FROM crm_syncs WHERE lead_id = ? AND workspace_id = ?").get(lead.id, wsId)) return; // already synced
 
   const crm = c.crmFor(wsId);
   try {
@@ -75,7 +75,7 @@ export async function processLeadEvent(
       c.db
         .prepare("INSERT OR IGNORE INTO crm_syncs (id, workspace_id, lead_id, platform, contact_id, created_contact, simulated, synced_at) VALUES (?,?,?,?,?,?,?,?)")
         .run(newId("syn"), wsId, lead.id, crm.platform, out.contactId, out.created ? 1 : 0, crm.simulated ? 1 : 0, iso(c));
-      c.db.prepare("UPDATE leads SET crm_status = 'synced', crm_error = NULL WHERE id = ?").run(lead.id);
+      c.db.prepare("UPDATE leads SET crm_status = 'synced', crm_error = NULL WHERE id = ? AND workspace_id = ?").run(lead.id, wsId);
       audit(c, wsId, "system", "lead.crm_synced", "lead", lead.id, { contactId: out.contactId, createdContact: out.created, simulated: crm.simulated });
     })();
   } catch (e) {
@@ -83,10 +83,10 @@ export async function processLeadEvent(
     const transient = e instanceof CrmError && e.kind === "transient";
     const exhausted = attempt.attempts >= attempt.maxAttempts;
     if (transient && !exhausted) {
-      c.db.prepare("UPDATE leads SET crm_status = 'retrying', crm_error = ? WHERE id = ?").run(msg, lead.id);
+      c.db.prepare("UPDATE leads SET crm_status = 'retrying', crm_error = ? WHERE id = ? AND workspace_id = ?").run(msg, lead.id, wsId);
       throw new RetryableError(msg);
     }
-    c.db.prepare("UPDATE leads SET crm_status = 'failed', crm_error = ? WHERE id = ?").run(msg, lead.id);
+    c.db.prepare("UPDATE leads SET crm_status = 'failed', crm_error = ? WHERE id = ? AND workspace_id = ?").run(msg, lead.id, wsId);
     audit(c, wsId, "system", "lead.crm_failed", "lead", lead.id, { error: msg, kind: e instanceof CrmError ? e.kind : "unknown" });
   }
 }

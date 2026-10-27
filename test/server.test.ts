@@ -1,4 +1,5 @@
 import { mkdtempSync, rmSync } from "node:fs";
+import { PricingTable } from "../src/ai/pricing.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { FastifyInstance } from "fastify";
@@ -359,7 +360,9 @@ describe("AI endpoints", () => {
       const db = openDb(":memory:");
       migrate(db);
       const registry = new ModelRegistry([{ provider: "fx", model: "m", label: "fx", enabled: true, tasks: ["campaign_brief", "connection_test"], capabilities: { text: true, structuredOutput: true }, costTier: "low" }]);
-      const ctx = buildContext({ db, env: { AI_PROVIDER_MODE: "live", ALLOW_LIVE_PROVIDER_CALLS: "true" }, aiProviders: [failing(kind)], registry, gateway: { sleep: async () => {}, maxRetries: 0 } });
+      // live requests need the server's spending ceiling and a price for the model
+      const pricing = new PricingTable("USD", [{ provider: "fx", model: "m", inputPerMTokMicros: 1_000_000, outputPerMTokMicros: 1_000_000, appliesTo: "test", asOf: "2026-01-01", source: "https://example.com/p" }]);
+      const ctx = buildContext({ db, env: { AI_PROVIDER_MODE: "live", ALLOW_LIVE_PROVIDER_CALLS: "true", AI_LIVE_BUDGET_MICROS: "1000000000" }, aiProviders: [failing(kind)], registry, pricing, gateway: { sleep: async () => {}, maxRetries: 0 } });
       const app = buildServer(ctx);
       const w = await signup(app);
       await call(app, "PUT", `/api/workspaces/${w.id}/brain`, w.token, BRAIN);

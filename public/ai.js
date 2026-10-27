@@ -1,7 +1,7 @@
 // AI settings, model list, usage and connection test. Uses textContent only (via h()).
 // The browser only ever sees mode flags and usage metadata: never provider keys, prompts or responses.
 
-export function initAi({ $, h, api, state, session, pill, simBadge, showError }) {
+export function initAi({ $, h, api, state, session, pill, simBadge, showError, once }) {
   const key = (p, m) => `${p}|${m}`;
   const unkey = (k) => { const i = k.indexOf("|"); return { provider: k.slice(0, i), model: k.slice(i + 1) }; };
   const ai = { models: [], settings: null };
@@ -124,12 +124,14 @@ export function initAi({ $, h, api, state, session, pill, simBadge, showError })
     };
     if (mode !== "automatic") { const p = unkey(f.primary.value); body.provider = p.provider; body.model = p.model; }
     if (mode === "preferred_with_fallback" && f.fallback.value) { const fb = unkey(f.fallback.value); body.fallbackProvider = fb.provider; body.fallbackModel = fb.model; }
-    try {
-      const r = await api("/ai/settings", { method: "PUT", body });
-      ai.models = r.models; ai.settings = r.settings;
-      fillForm(); renderModelTable();
-      $("ai-saved").textContent = "Saved";
-    } catch { $("ai-saved").textContent = ""; }
+    await once("ai-save", [e.target.querySelector("button[type=submit]")], async () => {
+      try {
+        const r = await api("/ai/settings", { method: "PUT", body });
+        ai.models = r.models; ai.settings = r.settings;
+        fillForm(); renderModelTable();
+        $("ai-saved").textContent = "Saved";
+      } catch { $("ai-saved").textContent = ""; }
+    });
   });
 
   $("ai-test-btn").addEventListener("click", async () => {
@@ -138,6 +140,7 @@ export function initAi({ $, h, api, state, session, pill, simBadge, showError })
     const live = !!state.config?.ai?.live;
     if (live && !confirm("This makes one real request to the provider and may be billed. Continue?")) return;
     const out = $("ai-test-result");
+    await once("ai-test", [$("ai-test-btn")], async () => {
     out.textContent = "Testing...";
     try {
       const { provider, model } = unkey(v);
@@ -149,6 +152,7 @@ export function initAi({ $, h, api, state, session, pill, simBadge, showError })
           : `NOT connected: ${r.message} (${r.errorKind})`;
       await load();
     } catch (e) { out.textContent = `Test could not run: ${e.message}`; }
+    });
   });
 
   return { load, generateBody, renderBanner };

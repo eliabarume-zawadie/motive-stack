@@ -142,12 +142,12 @@ export function getCampaignRow(c: Core, wsId: string, campaignId: string): Campa
 export function getCampaignRecord(c: Core, wsId: string, campaignId: string): CampaignRecord {
   const r = getCampaignRow(c, wsId, campaignId);
   const v = c.db
-    .prepare("SELECT brief FROM campaign_versions WHERE campaign_id = ? AND version = ?")
-    .get(campaignId, r.current_version) as { brief: string };
+    .prepare("SELECT brief FROM campaign_versions WHERE campaign_id = ? AND version = ? AND workspace_id = ?")
+    .get(campaignId, r.current_version, wsId) as { brief: string };
   const versions = (
     c.db
-      .prepare("SELECT version, source, ai_provider, ai_model, created_at, prompt_version, prompt_sha256, schema_version, schema_sha256, generation_params FROM campaign_versions WHERE campaign_id = ? ORDER BY version")
-      .all(campaignId) as Array<{ version: number; source: "ai" | "human"; ai_provider: string | null; ai_model: string | null; created_at: string; prompt_version: string | null; prompt_sha256: string | null; schema_version: string | null; schema_sha256: string | null; generation_params: string | null }>
+      .prepare("SELECT version, source, ai_provider, ai_model, created_at, prompt_version, prompt_sha256, schema_version, schema_sha256, generation_params FROM campaign_versions WHERE campaign_id = ? AND workspace_id = ? ORDER BY version")
+      .all(campaignId, wsId) as Array<{ version: number; source: "ai" | "human"; ai_provider: string | null; ai_model: string | null; created_at: string; prompt_version: string | null; prompt_sha256: string | null; schema_version: string | null; schema_sha256: string | null; generation_params: string | null }>
   ).map((x) => ({
     version: x.version, source: x.source, aiProvider: x.ai_provider, aiModel: x.ai_model, createdAt: x.created_at,
     generation: x.prompt_version && x.prompt_sha256 && x.schema_version && x.schema_sha256
@@ -155,8 +155,8 @@ export function getCampaignRecord(c: Core, wsId: string, campaignId: string): Ca
       : null,
   }));
   const assets = c.db
-    .prepare("SELECT kind, position, content FROM campaign_assets WHERE campaign_id = ? AND version = ? ORDER BY kind, position")
-    .all(campaignId, r.current_version) as Array<{ kind: string; position: number; content: string }>;
+    .prepare("SELECT kind, position, content FROM campaign_assets WHERE campaign_id = ? AND version = ? AND workspace_id = ? ORDER BY kind, position")
+    .all(campaignId, r.current_version, wsId) as Array<{ kind: string; position: number; content: string }>;
   return {
     id: r.id,
     workspaceId: r.workspace_id,

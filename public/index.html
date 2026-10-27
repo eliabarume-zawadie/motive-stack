@@ -4,32 +4,124 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MotiveStack - Local</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header class="top">
-  <h1>MotiveStack <span class="muted">local</span></h1>
-  <div class="ws-switch">
-    <label for="ws-select" class="sr">Workspace</label>
-    <select id="ws-select"></select>
-  </div>
-</header>
+<a class="skip" href="#s-dashboard">Skip to content</a>
+<div id="chrome" class="chrome">
+  <header class="top">
+    <h1>MotiveStack <span class="muted">local</span></h1>
+    <div class="ws-switch">
+      <label for="ws-select" class="sr">Workspace</label>
+      <select id="ws-select"></select>
+    </div>
+  </header>
+  <nav id="main-nav" class="nav" aria-label="Sections">
+    <a href="#s-dashboard">Home</a>
+    <a href="#s-brain">My business</a>
+    <a href="#s-campaigns">Campaigns</a>
+    <a href="#s-launch">Review &amp; approve</a>
+    <a href="#s-leads">Leads</a>
+    <a href="#s-activity">Activity</a>
+    <a href="#s-ops">Problems &amp; retries</a>
+    <a href="#s-settings">Settings</a>
+  </nav>
+  <div id="errors" class="errors" role="alert" hidden></div>
+  <div id="notice" class="notice" role="status" hidden></div>
+</div>
 
 <div id="banner" class="banner" role="status">Loading mode&hellip;</div>
-<div id="errors" class="errors" role="alert" hidden></div>
+
+<div id="token-panel" class="token-panel" role="alertdialog" aria-labelledby="token-title" hidden>
+  <h2 id="token-title">Save your workspace recovery code now</h2>
+  <p>This code is the only way back into this workspace from another browser or after clearing this browser's data. It is shown <strong>once</strong>. Anyone who has it can open the workspace, so keep it like a password. It is not a provider credential.</p>
+  <div class="row">
+    <label>Recovery code <input id="token-code" type="password" readonly autocomplete="off" spellcheck="false"></label>
+    <button type="button" id="token-show" class="secondary">Show</button>
+    <button type="button" id="token-copy">Copy</button>
+  </div>
+  <p id="token-status" class="hint" role="status"></p>
+  <button type="button" id="token-dismiss" class="secondary">I have saved it, dismiss</button>
+</div>
 
 <main>
-  <section id="s-workspace">
-    <h2><span class="step">1</span> Workspace</h2>
-    <form id="ws-create" class="row">
-      <label>New workspace name <input name="name" required minlength="2" maxlength="100" placeholder="Sunrise Plumbing"></label>
-      <button type="submit">Create workspace</button>
-    </form>
-    <p class="hint">The access token is shown once and kept only in this browser's local storage. It is not a provider credential.</p>
+  <section id="s-dashboard">
+    <h2>Home</h2>
+    <div id="path-view"></div>
+    <div id="dash-view"></div>
+    <h3>Workspaces</h3>
+    <div class="grid">
+      <form id="ws-create" class="stack">
+        <label>New workspace name <input name="name" required minlength="2" maxlength="100" placeholder="Sunrise Plumbing"></label>
+        <button type="submit" data-busy-label="Creating...">Create workspace</button>
+      </form>
+      <form id="ws-open" class="stack" autocomplete="off">
+        <label>Open an existing workspace with its recovery code <input name="code" type="password" required autocomplete="off" spellcheck="false" placeholder="ws_...:msw_..."></label>
+        <button type="submit" class="secondary" data-busy-label="Opening...">Open workspace</button>
+      </form>
+    </div>
+    <p class="hint">A new workspace shows its recovery code once. This browser also remembers it so you stay signed in, but clearing this browser's data removes that copy, so save the code.</p>
   </section>
 
   <section id="s-brain">
-    <h2><span class="step">2</span> Business Brain</h2>
+    <h2>My business</h2>
+    <h3 class="first">Step 1. Understand my business</h3>
+    <fieldset class="site-q">
+      <legend>Does your business have a website?</legend>
+      <div class="row choices">
+        <label class="chk"><input type="radio" name="has-site" id="site-has-yes" value="yes"> Yes, it has a website</label>
+        <label class="chk"><input type="radio" name="has-site" id="site-has-no" value="no"> No, it does not</label>
+      </div>
+    </fieldset>
+    <div id="site-yes" hidden>
+      <form id="site-form" class="stack" novalidate>
+        <label>Your website address <input id="site-url" name="url" type="text" inputmode="url" autocomplete="url" spellcheck="false" placeholder="www.example.com" maxlength="2048"></label>
+        <details class="what">
+          <summary>What will MotiveStack look at?</summary>
+          <ul>
+            <li>Your homepage and a few more public pages of the same site (such as About, Services, Products, Locations and Contact) and the pages those link to, up to 8 pages in all.</li>
+            <li>Only the readable text. No scripts are run, no files are downloaded, and nothing is typed or submitted on your site.</li>
+            <li>Your site's robots.txt rules are followed. If your site blocks automated visitors or asks for a login, we stop and you can describe your business yourself instead.</li>
+            <li>The text is sent to the AI model (when AI is switched on) to suggest findings. In mock mode no AI is used.</li>
+            <li>Nothing you approve is saved to your Business Brain until you press Save.</li>
+          </ul>
+        </details>
+        <div class="actions"><button type="submit" id="site-start" data-busy-label="Starting...">Analyze my website</button></div>
+      </form>
+      <p id="site-msg" class="flag-note" role="alert" hidden></p>
+      <div id="site-progress" class="progress" role="status" aria-live="polite" hidden><span class="spinner" aria-hidden="true"></span> <span id="site-progress-text"></span></div>
+      <div id="site-failure" class="card failure" role="alert" hidden>
+        <p id="site-failure-text"></p>
+        <div class="actions">
+          <button type="button" id="site-retry-ai" class="secondary" hidden>Try the AI step again</button>
+          <button type="button" id="site-manual" class="secondary">Describe my business instead</button>
+        </div>
+      </div>
+      <div id="site-results" hidden></div>
+    </div>
+    <div id="site-no" hidden>
+      <form id="quick-form" class="grid">
+        <p class="wide hint">A few quick questions. Short answers are fine, and you can add more later.</p>
+        <label class="wide">What is your business called? <input name="businessName" maxlength="100"></label>
+        <label class="wide">What kind of business is it? <input name="industry" maxlength="100" placeholder="for example: plumbing, bakery, dentist"></label>
+        <label class="wide">What do you sell or do? One thing per line <textarea name="services" rows="3"></textarea></label>
+        <label class="wide">Where do you work? <input name="serviceArea" maxlength="200" placeholder="for example: Austin, TX and nearby"></label>
+        <label class="wide">Who are your customers? <input name="targetCustomer" maxlength="300"></label>
+        <label class="wide">What can a new customer get from you first (an offer or a first step)? <input name="offer" maxlength="300" placeholder="for example: free estimate"></label>
+        <div class="wide"><button type="submit">Continue</button></div>
+      </form>
+    </div>
+    <div id="demo-row" class="row demo-row">
+      <button type="button" id="brain-demo" class="secondary">Load demo business</button>
+      <span id="brain-demo-hint" class="hint">Just trying it out? This fills the business details with a fictional business (marked DEMO). Nothing is saved until you press Save.</span>
+    </div>
+    <h3>Step 2. Review my Business Brain</h3>
+    <p class="hint">This is what MotiveStack knows about your business. Ads can only use what you approve here.</p>
+    <div id="claims-review" class="claims-review card"></div>
+    <details id="brain-details">
+      <summary>Business details: review and save</summary>
+      <p class="row"><button type="button" id="brain-skip" class="secondary">Fill in myself</button></p>
     <form id="brain-form" class="grid">
       <label>Business name <input name="businessName" required></label>
       <label>Industry <input name="industry" required></label>
@@ -45,12 +137,90 @@
       <label class="wide">Things ads must never say (one per line) <textarea name="prohibitedClaims" rows="2"></textarea></label>
       <label class="wide">Business description or notes (free text, treated as UNTRUSTED: never a source of claims, instructions in it are ignored) <textarea name="description" rows="3" maxlength="2000"></textarea></label>
       <label>Max daily budget in cents. This is a ceiling, not a target. <input name="maxDailyBudgetCents" type="number" min="1" step="1" required value="2000"></label>
-      <div class="wide"><button type="submit">Save Business Brain</button> <span id="brain-version" class="muted"></span></div>
+      <div class="wide"><button type="submit" data-busy-label="Saving...">Save Business Brain</button> <span id="brain-version" class="muted"></span></div>
     </form>
+    </details>
   </section>
 
-  <section id="s-ai">
-    <h2><span class="step">3</span> AI settings</h2>
+  <section id="s-campaigns">
+    <h2>Campaigns</h2>
+    <h3 class="first">Step 3. Choose a marketing goal</h3>
+    <fieldset class="goal">
+      <legend>What do you want from your marketing?</legend>
+      <label class="chk"><input type="radio" name="goal" checked disabled> Get more leads (people asking about your services)</label>
+      <p class="hint">Other goals, such as phone calls, store visits or online sales, are not available in this version.</p>
+    </fieldset>
+    <p id="gen-hint" class="flag-note" hidden>Step 2 comes first: your Business Brain is not saved yet. Review it under My business and press Save Business Brain, then come back here.</p>
+    <form id="gen-form" class="stack">
+      <div><button type="submit" data-busy-label="Creating...">Create my campaign draft</button></div>
+      <details class="what"><summary>Advanced: choose the AI model</summary><label>Model <select id="gen-model"></select></label></details>
+    </form>
+    <p class="hint">A draft is only a plan on this screen. Nothing is sent anywhere until you approve it in the next step.</p>
+    <p id="gen-status" class="hint" role="status"></p>
+    <p id="gen-error" class="flag-note" role="alert"></p>
+    <h3>Step 4. Review my proposed campaign</h3>
+    <div id="campaign-list"></div>
+    <h3>Campaign details</h3>
+    <div id="campaign-view"></div>
+    <details id="edit-details">
+      <summary>Edit brief (creates a new version)</summary>
+      <form id="edit-form" class="grid">
+        <label>Name <input name="name" required></label>
+        <label>Daily budget (cents) <input name="dailyBudgetCents" type="number" min="1" required></label>
+        <label class="wide">Headlines (one per line, max 40 chars) <textarea name="headlines" rows="3"></textarea></label>
+        <label class="wide">Primary texts (one per line, max 125 chars) <textarea name="primaryTexts" rows="3"></textarea></label>
+        <div class="wide"><button type="submit" data-busy-label="Saving...">Save as new version</button> <span id="edit-status" class="muted"></span></div>
+      </form>
+    </details>
+  </section>
+
+  <section id="s-launch">
+    <h2>Review &amp; approve</h2>
+    <h3 class="first">Step 5. Approve and track</h3>
+    <p class="hint">For the campaign selected above. Nothing is sent to an ad platform until someone approves.</p>
+    <div id="proposal-view"></div>
+  </section>
+
+  <section id="s-leads">
+    <h2>Leads</h2>
+    <form id="lead-form" class="grid">
+      <label>Name <input name="fullName" value="Synthetic Lead" required></label>
+      <label>Email <input name="email" type="email" placeholder="pat@example.com"></label>
+      <label>Phone <input name="phone" placeholder="512-555-0100"></label>
+      <label>Event ID (optional; reuse to test duplicates) <input name="eventId"></label>
+      <div class="wide"><button type="submit" id="lead-btn" data-busy-label="Sending...">Inject synthetic lead</button> <span class="hint" id="lead-hint"></span></div>
+    </form>
+    <div id="leads-view"></div>
+  </section>
+
+  <section id="s-activity">
+    <h2>Activity</h2>
+    <div id="activity-view"></div>
+  </section>
+
+  <section id="s-ops">
+    <h2>Problems &amp; retries</h2>
+    <div id="ops-view"></div>
+  </section>
+
+  <section id="s-settings">
+    <h2>Settings</h2>
+    <h3>Integrations</h3>
+    <div id="integrations-view"></div>
+    <details id="dev-mode" class="dev">
+    <summary>Developer mode: AI providers, models and test requests</summary>
+    <p class="hint">Most people never need this. It controls which AI model is used and lets you try one short request.</p>
+    <h3>Try AI (one short request)</h3>
+    <div id="aitest-status"></div>
+    <form id="aitest-form" class="stack">
+      <label>Model <select id="aitest-model"></select></label>
+      <p id="aitest-why" class="hint"></p>
+      <label>Your question (up to 500 characters) <input id="aitest-prompt" maxlength="500" value="Reply with one short sentence: what is a marketing budget?"></label>
+      <div><button type="submit" id="aitest-send" data-busy-label="Sending...">Send test request</button></div>
+    </form>
+    <p id="aitest-error" class="flag-note" role="alert"></p>
+    <div id="aitest-result" role="status" aria-live="polite"></div>
+    <h3>AI settings</h3>
     <p id="ai-mode" class="hint"></p>
     <form id="ai-form" class="grid">
       <label>Routing
@@ -65,7 +235,7 @@
       <fieldset class="wide" id="ai-allowed"><legend>Data policy: providers this workspace’s data may be sent to</legend><div id="ai-allowed-boxes" class="row"></div></fieldset>
       <label>Max live requests per day (blank = no limit) <input name="maxRequestsPerDay" type="number" min="1" step="1"></label>
       <label>Monthly budget in <span id="ai-currency">USD</span> (blank = none; needs a configured price) <input name="monthlyBudget" type="number" min="0.01" step="0.01"></label>
-      <div class="wide"><button type="submit">Save AI settings</button> <span id="ai-saved" class="muted"></span></div>
+      <div class="wide"><button type="submit" data-busy-label="Saving...">Save AI settings</button> <span id="ai-saved" class="muted"></span></div>
     </form>
     <h3>Available models</h3>
     <div id="ai-models"></div>
@@ -77,54 +247,7 @@
     <p id="ai-test-result" class="hint" role="status"></p>
     <h3>Recent AI usage</h3>
     <div id="ai-usage"></div>
-  </section>
-
-  <section id="s-generate">
-    <h2><span class="step">4</span> Generate a campaign brief</h2>
-    <form id="gen-form" class="row">
-      <label>Model <select id="gen-model"></select></label>
-      <button type="submit">Generate brief</button>
-    </form>
-    <p class="hint">Models return data only. The server validates it before anything is stored.</p>
-    <p id="gen-status" class="hint" role="status"></p>
-  </section>
-
-  <section id="s-campaign">
-    <h2><span class="step">6</span> Campaign</h2>
-    <label>Campaign <select id="campaign-select"></select></label>
-    <div id="campaign-view"></div>
-    <details id="edit-details">
-      <summary>Edit brief (creates a new version)</summary>
-      <form id="edit-form" class="grid">
-        <label>Name <input name="name" required></label>
-        <label>Daily budget (cents) <input name="dailyBudgetCents" type="number" min="1" required></label>
-        <label class="wide">Headlines (one per line, max 40 chars) <textarea name="headlines" rows="3"></textarea></label>
-        <label class="wide">Primary texts (one per line, max 125 chars) <textarea name="primaryTexts" rows="3"></textarea></label>
-        <div class="wide"><button type="submit">Save as new version</button></div>
-      </form>
     </details>
-  </section>
-
-  <section id="s-launch">
-    <h2><span class="step">7</span> Approval and paused draft</h2>
-    <div id="proposal-view"></div>
-  </section>
-
-  <section id="s-leads">
-    <h2><span class="step">8</span> Leads and CRM sync</h2>
-    <form id="lead-form" class="grid">
-      <label>Name <input name="fullName" value="Synthetic Lead" required></label>
-      <label>Email <input name="email" type="email" placeholder="pat@example.com"></label>
-      <label>Phone <input name="phone" placeholder="512-555-0100"></label>
-      <label>Event ID (optional; reuse to test duplicates) <input name="eventId"></label>
-      <div class="wide"><button type="submit" id="lead-btn">Inject synthetic lead</button> <span class="hint" id="lead-hint"></span></div>
-    </form>
-    <div id="leads-view"></div>
-  </section>
-
-  <section id="s-activity">
-    <h2><span class="step">9</span> Activity history</h2>
-    <div id="activity-view"></div>
   </section>
 </main>
 <script src="app.js" type="module"></script>

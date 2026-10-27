@@ -45,16 +45,16 @@ export function getWorkspace(c: Core, id: string): Workspace {
 /** True only if the token belongs to exactly this workspace. */
 export function authenticate(c: Core, workspaceId: string, token: string | undefined): boolean {
   if (!token) return false;
-  const r = c.db.prepare("SELECT token_hash FROM workspaces WHERE id = ?").get(workspaceId) as
-    | { token_hash: string }
+  const r = c.db.prepare("SELECT token_hash, legacy_token_disabled_at d FROM workspaces WHERE id = ?").get(workspaceId) as
+    | { token_hash: string; d: string | null }
     | undefined;
-  return !!r && safeEqual(r.token_hash, sha256(token));
+  return !!r && r.d === null && safeEqual(r.token_hash, sha256(token)); // a disabled token never authenticates
 }
 
-export function setMetaAccount(c: Core, workspaceId: string, accountId: string | null): Workspace {
+export function setMetaAccount(c: Core, workspaceId: string, accountId: string | null, actor = "owner"): Workspace {
   getWorkspace(c, workspaceId);
   c.db.prepare("UPDATE workspaces SET meta_account_id = ? WHERE id = ?").run(accountId, workspaceId);
-  audit(c, workspaceId, "owner", "workspace.meta_account_set", "workspace", workspaceId, { accountId });
+  audit(c, workspaceId, actor, "workspace.meta_account_set", "workspace", workspaceId, { accountId });
   return getWorkspace(c, workspaceId);
 }
 
@@ -67,7 +67,7 @@ export function getBrain(c: Core, workspaceId: string): { brain: BusinessBrain; 
 }
 
 /** Validates and stores the Business Brain; each save bumps the version. */
-export function putBrain(c: Core, workspaceId: string, input: unknown): { brain: BusinessBrain; version: number } {
+export function putBrain(c: Core, workspaceId: string, input: unknown, actor = "owner"): { brain: BusinessBrain; version: number } {
   getWorkspace(c, workspaceId);
   const brain = BusinessBrainSchema.parse(input);
   const existing = getBrain(c, workspaceId);
@@ -78,6 +78,6 @@ export function putBrain(c: Core, workspaceId: string, input: unknown): { brain:
        ON CONFLICT(workspace_id) DO UPDATE SET data = excluded.data, version = excluded.version, updated_at = excluded.updated_at`,
     )
     .run(workspaceId, JSON.stringify(brain), version, iso(c));
-  audit(c, workspaceId, "owner", "brain.saved", "business_brain", workspaceId, { version });
+  audit(c, workspaceId, actor, "brain.saved", "business_brain", workspaceId, { version });
   return { brain, version };
 }

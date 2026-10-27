@@ -7,7 +7,7 @@ import { BRAIN, makeCore } from "./fixtures.js";
 describe("migrations", () => {
   it("apply once and are idempotent", () => {
     const db = openDb(":memory:");
-    expect(migrate(db)).toEqual(["001_init.sql", "002_ai.sql", "003_generation_identity.sql"]);
+    expect(migrate(db)).toEqual(["001_init.sql", "002_ai.sql", "003_generation_identity.sql", "004_users.sql", "005_memberships.sql", "006_meta_accounts.sql", "007_credentials.sql", "008_drop_credential_hint.sql", "009_website_analysis.sql", "010_website_content_hash.sql"]);
     expect(migrate(db)).toEqual([]);
   });
 });
