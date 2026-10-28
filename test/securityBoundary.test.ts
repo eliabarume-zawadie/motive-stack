@@ -382,7 +382,7 @@ describe("the bundled UI and the policy", () => {
     expect(html).not.toMatch(/https?:\/\//i);
     const css = read("style.css");
     expect(css).not.toMatch(/@import|url\(\s*["']?(?:https?:|\/\/|data:)/i);
-    for (const f of ["app.js", "ai.js", "dashboard.js", "recovery.js", "onboarding.js", "aitest.js", "claims.js", "activity.js", "provenance.js", "goal.js", "leads.js", "workspace.js", "brand.js", "plans.js", "creative.js", "team.js"]) {
+    for (const f of ["app.js", "ai.js", "dashboard.js", "recovery.js", "onboarding.js", "aitest.js", "claims.js", "activity.js", "provenance.js", "goal.js", "leads.js", "workspace.js", "brand.js", "plans.js", "creative.js", "team.js", "intake.js", "results.js", "learning.js"]) {
       const js = read(f);
       expect(js, f).not.toMatch(/\beval\s*\(|new\s+Function\b|document\.write\b|\.innerHTML\b|\.outerHTML\b|insertAdjacentHTML|setAttribute\(\s*["']style|\.style\.cssText|createElement\(\s*["'](?:script|iframe|object)/);
       expect(js, f).not.toMatch(/https?:\/\//);
@@ -401,7 +401,7 @@ describe("the bundled UI and the policy", () => {
     expect(html).toContain('<link rel="icon" href="favicon.svg" type="image/svg+xml">');
     expect(readFileSync("public/favicon.svg", "utf8")).toMatch(/^<svg /);
     const targets = [...html.matchAll(/<a href="#([\w-]+)">/g)].map((m) => m[1]);
-    expect(targets.length).toBe(11);
+    expect(targets.length).toBe(13);
     for (const t of targets) expect(html, `nav link #${t} must reach a section`).toMatch(new RegExp(`<section[^>]*id="${t}"`));
   });
 

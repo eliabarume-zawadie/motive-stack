@@ -7,7 +7,7 @@ import { BRAIN, makeCore } from "./fixtures.js";
 describe("migrations", () => {
   it("apply once and are idempotent", () => {
     const db = openDb(":memory:");
-    expect(migrate(db)).toEqual(["001_init.sql", "002_ai.sql", "003_generation_identity.sql", "004_users.sql", "005_memberships.sql", "006_meta_accounts.sql", "007_credentials.sql", "008_drop_credential_hint.sql", "009_website_analysis.sql", "010_website_content_hash.sql", "011_ai_reservations.sql", "012_reservation_state_and_fill_ledger.sql", "013_campaign_plans.sql", "014_lead_status_job_retries.sql", "015_organizations_permissions.sql", "016_brand_kit_assets.sql", "017_plans_lifecycle.sql", "018_creative_studio.sql", "019_team_operations.sql"]);
+    expect(migrate(db)).toEqual(["001_init.sql", "002_ai.sql", "003_generation_identity.sql", "004_users.sql", "005_memberships.sql", "006_meta_accounts.sql", "007_credentials.sql", "008_drop_credential_hint.sql", "009_website_analysis.sql", "010_website_content_hash.sql", "011_ai_reservations.sql", "012_reservation_state_and_fill_ledger.sql", "013_campaign_plans.sql", "014_lead_status_job_retries.sql", "015_organizations_permissions.sql", "016_brand_kit_assets.sql", "017_plans_lifecycle.sql", "018_creative_studio.sql", "019_team_operations.sql", "020_lead_lineage_forms.sql", "021_experiments_learnings.sql"]);
     expect(migrate(db)).toEqual([]);
   });
 });

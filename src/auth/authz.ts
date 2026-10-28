@@ -48,6 +48,18 @@
  *   creatives.read               x        x        x      x     creatives, their pictures, checks and history
  *   creatives.write                       x        x      x     make, edit and archive a creative, make or cancel pictures, attach an approved image, send for review
  *   creatives.review                               x      x     approve or reject a creative version
+ *   experiments.read             x        x        x      x     experiment plans, variants, recorded results and their analysis
+ *   experiments.write                     x        x      x     plan and start experiments, record which variant was used and the results entered
+ *   experiments.decide                             x      x     conclude or abandon an experiment (records a decision; changes nothing else)
+ *   learnings.read               x        x        x      x     the Marketing Brain: reviewed learnings and suggestions
+ *   learnings.write                       x        x      x     write a learning, generate suggested learnings
+ *   learnings.confirm                              x      x     confirm, reject or retire a learning
+ *   recommendations.read         x        x        x      x     recommendations with their evidence and uncertainty
+ *   recommendations.decide                         x      x     accept or dismiss a recommendation (records the decision; acts on nothing)
+ *   leads.import                          x        x      x     bring in leads from elsewhere (labelled IMPORTED; never sent to a CRM)
+ *   forms.read                   x        x        x      x     lead form definitions
+ *   forms.write                           x        x      x     define lead forms (definitions only: nothing is published)
+ *   analytics.read               x        x        x      x     the reporting view (counts by origin; what is not measured)
  *   tasks.read                   x        x        x      x     the inbox, the calendar, tasks and who owns what
  *   tasks.write                           x        x      x     create and update tasks and dated milestones
  *   assignments.manage                             x      x     set the owner and reviewer of a campaign or creative (coordination only: grants nothing)
@@ -109,6 +121,18 @@ export const PERMISSION_MIN_ROLE = {
   "creatives.read": "viewer",
   "creatives.write": "operator",
   "creatives.review": "admin",
+  "leads.import": "operator",
+  "experiments.read": "viewer",
+  "experiments.write": "operator",
+  "experiments.decide": "admin",
+  "learnings.read": "viewer",
+  "learnings.write": "operator",
+  "learnings.confirm": "admin",
+  "recommendations.read": "viewer",
+  "recommendations.decide": "admin",
+  "forms.read": "viewer",
+  "forms.write": "operator",
+  "analytics.read": "viewer",
   "tasks.read": "viewer",
   "tasks.write": "operator",
   "assignments.manage": "admin",
@@ -205,6 +229,33 @@ export const ROUTE_PERMISSIONS: Readonly<Record<string, Permission>> = {
   "GET /api/workspaces/:wid/creatives/:crid/versions/:v/pictures/:ratio/file": "creatives.read",
   "POST /api/workspaces/:wid/renders/:rid/cancel": "creatives.write",
   "POST /api/workspaces/:wid/renders/:rid/retry": "creatives.write",
+  "POST /api/workspaces/:wid/leads/import": "leads.import",
+  "GET /api/workspaces/:wid/lead-imports": "leads.read",
+  "PUT /api/workspaces/:wid/leads/:lid/follow-up": "leads.update",
+  "GET /api/workspaces/:wid/campaigns/:cid/forms": "forms.read",
+  "POST /api/workspaces/:wid/campaigns/:cid/forms": "forms.write",
+  "GET /api/workspaces/:wid/forms/:fid": "forms.read",
+  "POST /api/workspaces/:wid/forms/:fid/versions": "forms.write",
+  "POST /api/workspaces/:wid/forms/:fid/test-submission": "leads.simulate",
+  "GET /api/workspaces/:wid/analytics": "analytics.read",
+  "GET /api/workspaces/:wid/experiments": "experiments.read",
+  "POST /api/workspaces/:wid/experiments": "experiments.write",
+  "GET /api/workspaces/:wid/experiments/:eid": "experiments.read",
+  "PUT /api/workspaces/:wid/experiments/:eid": "experiments.write",
+  "POST /api/workspaces/:wid/experiments/:eid/start": "experiments.write",
+  "POST /api/workspaces/:wid/experiments/:eid/usage": "experiments.write",
+  "POST /api/workspaces/:wid/experiments/:eid/observations": "experiments.write",
+  "GET /api/workspaces/:wid/experiments/:eid/analysis": "experiments.read",
+  "POST /api/workspaces/:wid/experiments/:eid/conclude": "experiments.decide",
+  "POST /api/workspaces/:wid/experiments/:eid/abandon": "experiments.decide",
+  "GET /api/workspaces/:wid/learnings": "learnings.read",
+  "POST /api/workspaces/:wid/learnings": "learnings.write",
+  "POST /api/workspaces/:wid/learnings/suggest": "learnings.write",
+  "POST /api/workspaces/:wid/learnings/:lid/confirm": "learnings.confirm",
+  "POST /api/workspaces/:wid/learnings/:lid/reject": "learnings.confirm",
+  "POST /api/workspaces/:wid/learnings/:lid/retire": "learnings.confirm",
+  "GET /api/workspaces/:wid/recommendations": "recommendations.read",
+  "POST /api/workspaces/:wid/recommendations/decide": "recommendations.decide",
   "GET /api/workspaces/:wid/inbox": "tasks.read",
   "GET /api/workspaces/:wid/calendar": "tasks.read",
   "GET /api/workspaces/:wid/assignees": "tasks.read",

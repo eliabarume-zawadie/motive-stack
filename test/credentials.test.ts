@@ -616,7 +616,7 @@ describe("migration 007", () => {
     const db = oldDb();
     db.prepare("INSERT INTO workspaces (id, name, token_hash, meta_account_id, created_at) VALUES ('ws_old','Old Co','h','act_111','t')").run();
     const before = db.prepare("SELECT * FROM workspaces").all();
-    expect(migrate(db)).toEqual(["007_credentials.sql", "008_drop_credential_hint.sql", "009_website_analysis.sql", "010_website_content_hash.sql", "011_ai_reservations.sql", "012_reservation_state_and_fill_ledger.sql", "013_campaign_plans.sql", "014_lead_status_job_retries.sql", "015_organizations_permissions.sql", "016_brand_kit_assets.sql", "017_plans_lifecycle.sql", "018_creative_studio.sql", "019_team_operations.sql"]);
+    expect(migrate(db)).toEqual(["007_credentials.sql", "008_drop_credential_hint.sql", "009_website_analysis.sql", "010_website_content_hash.sql", "011_ai_reservations.sql", "012_reservation_state_and_fill_ledger.sql", "013_campaign_plans.sql", "014_lead_status_job_retries.sql", "015_organizations_permissions.sql", "016_brand_kit_assets.sql", "017_plans_lifecycle.sql", "018_creative_studio.sql", "019_team_operations.sql", "020_lead_lineage_forms.sql", "021_experiments_learnings.sql"]);
     // later migrations only ADD to this table: every original value is unchanged, and the one new column holds the workspace's own personal organization
     expect(db.prepare("SELECT * FROM workspaces").all()).toEqual(before.map((w) => ({ ...(w as object), organization_id: `org_${(w as { id: string }).id}` })));
     expect(count(db, "SELECT COUNT(*) n FROM workspace_credentials")).toBe(0);

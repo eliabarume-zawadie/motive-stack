@@ -3,6 +3,9 @@
 
 const LEAD_STATUS_LABEL = { new: "New", contacted: "Contacted", qualified: "Qualified", won: "Won", lost: "Lost" };
 const LEAD_STATUSES = Object.keys(LEAD_STATUS_LABEL);
+const LEAD_ORIGIN = { synthetic: ["SYNTHETIC", "sim", "A test lead made by this app. Not a real person."], imported: ["IMPORTED", "warn", "Brought in by a person from somewhere else. Its source is their word, not a verified integration."], real: ["REAL", "ok", "Captured by a verified integration."], unknown: ["UNCLASSIFIED", "", "An older record that cannot be classified."] };
+const LEAD_ATTRIBUTION = { observed: "attribution observed", inferred: "attribution inferred", unknown: "attribution unknown" };
+const LEAD_NOT_SYNCED = "not_synced";
 
 export function initLeads({ $, h, api, pill, simBadge, can, once, showNotice, state, reload }) {
   const stamp = (iso) => (iso ? iso.replace("T", " ").slice(0, 16) + " UTC" : "-");
@@ -27,6 +30,16 @@ export function initLeads({ $, h, api, pill, simBadge, can, once, showNotice, st
     return sel;
   }
 
+  function followUpEditor(d) {
+    const date = h("input", { type: "date", value: d.followUp.dueDate || "", "aria-label": "Follow-up date", disabled: !can("leads.update") });
+    const note = h("input", { value: d.followUp.note || "", maxlength: "300", placeholder: "What to do", "aria-label": "Follow-up note", disabled: !can("leads.update") });
+    const save = (body, msg) => once("lead-fu-" + d.id, [], async () => { try { await api(`/leads/${d.id}/follow-up`, { method: "PUT", body }); showNotice(msg); } catch { /* shown */ } await reload(); });
+    return h("div", {}, h("div", { class: "actions" }, date, note,
+      h("button", { type: "button", class: "secondary", disabled: !can("leads.update"), onclick: () => (date.value ? save({ dueDate: date.value, note: note.value.trim() }, "Reminder saved.") : showNotice("Choose a date first.")) }, "Save reminder"),
+      d.followUp.dueDate && !d.followUp.done ? h("button", { type: "button", class: "secondary", disabled: !can("leads.update"), onclick: () => save({ done: true }, "Marked done.") }, "Mark done") : null),
+      h("p", { class: "hint" }, d.followUp.done ? "Done. " : "", "A reminder for your team only: this app does not send any message to a lead."));
+  }
+
   async function showDetail(id) {
     openId = id;
     const box = $("lead-detail");
@@ -36,15 +49,25 @@ export function initLeads({ $, h, api, pill, simBadge, can, once, showNotice, st
       const d = await api(`/leads/${id}`, { quiet: true });
       const row = (k, v) => h("div", {}, h("strong", {}, k + ": "), v);
       box.replaceChildren(
-        h("h3", {}, d.fullName, " ", d.simulated ? simBadge() : null, " ", pill(LEAD_STATUS_LABEL[d.status] || d.status)),
+        h("h3", {}, d.fullName, " ", pill(...(LEAD_ORIGIN[d.origin] || LEAD_ORIGIN.unknown).slice(0, 2)), " ", pill(LEAD_STATUS_LABEL[d.status] || d.status)),
         row("Contact", [d.email, d.phone].filter(Boolean).join(" / ") || "none given"),
-        row("Campaign", d.campaignName || "unknown"),
-        row("Source", d.source === "simulated" ? "Synthetic test lead (not a real person)" : d.source),
-        row("Captured", stamp(d.capturedAt)),
+        row("What it is", (LEAD_ORIGIN[d.origin] || LEAD_ORIGIN.unknown)[2]),
+        row("Campaign", d.campaignName ? `${d.campaignName}, ${d.campaignVersion ? "version " + d.campaignVersion : "version not recorded"}` : "unknown"),
+        row("How sure the campaign link is", [pill(LEAD_ATTRIBUTION[d.attribution.status] || d.attribution.status, d.attribution.status === "unknown" ? "bad" : ""), " ", d.attribution.basisText || "No basis recorded"]),
+        h("p", { class: "hint" }, "Arriving after a campaign is not proof the campaign caused it. Only a verified integration can observe attribution, and none exists yet."),
+        d.creative ? row("Creative", `${d.creative.id} version ${d.creative.version}${d.creative.ratio ? ", " + d.creative.ratio : ""}`) : null,
+        d.form ? row("Form", `${d.form.id} version ${d.form.version}`) : null,
+        row("UTM tags", ["source", "medium", "campaign", "content", "term"].filter((k) => d.utm[k]).map((k) => `${k}=${d.utm[k]}`).join(", ") || "none recorded"),
+        row("Consent", `${d.consent.status === "given" ? "recorded as given" : "not recorded"}${d.consent.note ? ". " + d.consent.note : ""}`),
+        row("Captured at its source", d.capturedAt ? stamp(d.capturedAt) : "not recorded"),
+        row("Stored here", stamp(d.storedAt)),
+        d.sameContact.length ? h("div", { class: "flag-note" }, "The same email or phone appears on another lead: ", d.sameContact.map((x) => `${x.name} (${(LEAD_ORIGIN[x.origin] || LEAD_ORIGIN.unknown)[0].toLowerCase()})`).join(", "), ". They are kept as separate records, never merged.") : null,
         row("Event id", h("span", { class: "muted" }, d.eventId)),
         row("Repeated events ignored", d.duplicateEventsIgnored ? `${d.duplicateEventsIgnored} (the same event id was sent again and not stored twice)` : "none"),
         row("CRM", [pill(d.crm.status, d.crm.status === "synced" ? "ok" : d.crm.status === "failed" ? "bad" : "warn"), " ", simBadge(), d.crm.contactId ? ` contact ${d.crm.contactId} (${d.crm.contactCreated ? "created" : "matched existing"})` : "", d.crm.error ? ` ${d.crm.error}` : ""]),
         h("p", { class: "hint" }, "The CRM is a built-in stand-in: no real contact was created and no email or text was sent."),
+        h("h4", {}, "Follow-up reminder"),
+        followUpEditor(d),
         h("h4", {}, "Status history"),
         d.history.length
           ? h("ul", { class: "plain" }, d.history.map((x) => h("li", {}, `${stamp(x.at)}: ${LEAD_STATUS_LABEL[x.from] || x.from} → ${LEAD_STATUS_LABEL[x.to] || x.to} by ${x.by}`, x.note ? h("div", { class: "muted" }, x.note) : null)))
@@ -59,7 +82,7 @@ export function initLeads({ $, h, api, pill, simBadge, can, once, showNotice, st
     if (!leads.length) { v.replaceChildren(h("p", { class: "hint" }, "No leads yet.")); $("lead-detail").hidden = true; return; }
     v.replaceChildren(h("table", {}, h("thead", {}, h("tr", {}, ...["Lead", "Contact", "Status", "CRM sync", ""].map((x) => h("th", {}, x)))),
       h("tbody", {}, leads.map((l) => h("tr", {},
-        h("td", {}, l.fullName, " ", l.simulated ? simBadge() : null, h("div", { class: "muted" }, stamp(l.createdAt))),
+        h("td", {}, l.fullName, " ", pill(...(LEAD_ORIGIN[l.origin] || LEAD_ORIGIN.unknown).slice(0, 2)), h("div", { class: "muted" }, stamp(l.createdAt), " ", LEAD_ATTRIBUTION[l.attributionStatus] || "", l.campaignVersion ? `, campaign v${l.campaignVersion}` : ", version not recorded", l.sameContact ? `, same contact on ${l.sameContact} other lead${l.sameContact === 1 ? "" : "s"}` : ""), l.followUpDue && !l.followUpDone ? h("div", { class: "muted" }, "Follow up by " + l.followUpDue) : null),
         h("td", {}, [l.email, l.phone].filter(Boolean).join(" / ")),
         h("td", {}, statusSelect(l)),
         h("td", {}, pill(l.crmStatus, l.crmStatus === "synced" ? "ok" : l.crmStatus === "failed" ? "bad" : "warn"), l.crmError ? ` ${l.crmError}` : ""),

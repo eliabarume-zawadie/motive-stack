@@ -818,7 +818,7 @@ describe("migration 008 removes the stored hint and keeps everything else", () =
     }
     db.prepare("INSERT INTO workspaces (id, name, token_hash, created_at) VALUES ('w','W','h','t')").run();
     db.prepare("INSERT INTO workspace_credentials (id, workspace_id, kind, version, status, last4, sealed, wrapped_dek, key_id, created_at, created_by, updated_at, updated_by) VALUES ('c','w','openai',1,'active','Zq9X', x'0102', x'0304', 'k1', 't','x','t','x')").run();
-    expect(migrate(db)).toEqual(["008_drop_credential_hint.sql", "009_website_analysis.sql", "010_website_content_hash.sql", "011_ai_reservations.sql", "012_reservation_state_and_fill_ledger.sql", "013_campaign_plans.sql", "014_lead_status_job_retries.sql", "015_organizations_permissions.sql", "016_brand_kit_assets.sql", "017_plans_lifecycle.sql", "018_creative_studio.sql", "019_team_operations.sql"]);
+    expect(migrate(db)).toEqual(["008_drop_credential_hint.sql", "009_website_analysis.sql", "010_website_content_hash.sql", "011_ai_reservations.sql", "012_reservation_state_and_fill_ledger.sql", "013_campaign_plans.sql", "014_lead_status_job_retries.sql", "015_organizations_permissions.sql", "016_brand_kit_assets.sql", "017_plans_lifecycle.sql", "018_creative_studio.sql", "019_team_operations.sql", "020_lead_lineage_forms.sql", "021_experiments_learnings.sql"]);
     db.pragma("wal_checkpoint(TRUNCATE)");
     db.close();
     for (const f of readdirSync(dir)) expect(readFileSync(join(dir, f)).includes(Buffer.from("Zq9X")), f).toBe(false);

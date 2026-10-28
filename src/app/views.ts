@@ -66,7 +66,8 @@ export function leadsView(c: AppContext, wsId: string) {
     c.db
       .prepare(
         `SELECT l.id, l.campaign_id, l.full_name, l.email, l.phone, l.simulated, l.status, l.crm_status, l.crm_error, l.created_at,
-                s.contact_id, s.created_contact
+                s.contact_id, s.created_contact, l.origin, l.campaign_version, l.attribution_status, l.attribution_basis, l.follow_up_due, l.follow_up_done_at,
+                (SELECT COUNT(*) FROM leads o WHERE o.workspace_id = l.workspace_id AND o.id != l.id AND ((l.email IS NOT NULL AND o.email = l.email) OR (l.phone IS NOT NULL AND o.phone = l.phone))) AS same_contact
          FROM leads l LEFT JOIN crm_syncs s ON s.lead_id = l.id AND s.workspace_id = l.workspace_id
          WHERE l.workspace_id = ? ORDER BY l.created_at DESC, l.id`,
       )
@@ -84,6 +85,8 @@ export function leadsView(c: AppContext, wsId: string) {
     crmContactId: r.contact_id ?? null,
     crmContactCreated: r.created_contact === null || r.created_contact === undefined ? null : r.created_contact === 1,
     createdAt: r.created_at,
+    origin: r.origin, campaignVersion: r.campaign_version ?? null, attributionStatus: r.attribution_status, attributionBasis: r.attribution_basis ?? null,
+    followUpDue: r.follow_up_due ?? null, followUpDone: r.follow_up_done_at != null, sameContact: r.same_contact,
   }));
 }
 

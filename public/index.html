@@ -27,6 +27,8 @@
     <a href="#s-creative">Creative</a>
     <a href="#s-launch">Review &amp; approve</a>
     <a href="#s-leads">Leads</a>
+    <a href="#s-results">Results</a>
+    <a href="#s-learning">Learning</a>
     <a href="#s-activity">Activity</a>
     <a href="#s-ops">Problems &amp; retries</a>
     <a href="#s-settings">Settings</a>
@@ -292,6 +294,31 @@
     <ul id="cr-list" class="plain"></ul>
   </section>
 
+  <section id="s-learning">
+    <h2>Learning</h2>
+    <p class="hint">Experiments, what the team has learned, and recommendations. These are <strong>records and decisions only</strong>: nothing here changes a budget, edits a campaign, switches a creative or publishes anything. Results are entered or imported by people and labelled with where they came from; this app measures no performance, and synthetic data never supports a decision.</p>
+    <p id="ln-error" class="flag-note" role="alert"></p>
+    <h3>Recommendations</h3>
+    <div id="ln-recs"></div>
+    <h3>Experiments</h3>
+    <p class="flag-note role-note" data-for="experiments.write" hidden></p>
+    <div id="ln-experiments"></div>
+    <details><summary>Plan a new experiment</summary><div id="ln-exp-form-box"></div></details>
+    <h3>What the team has learned</h3>
+    <p class="flag-note role-note" data-for="learnings.write" hidden></p>
+    <div class="actions"><button type="button" id="ln-suggest" class="secondary" data-needs="learnings.write">Generate suggested learnings from records</button> <span class="hint">By plain rules, not AI. Suggestions are low confidence and wait for a person.</span></div>
+    <div id="ln-learnings"></div>
+    <details><summary>Write a learning</summary>
+      <form id="ln-learn-form" class="grid">
+        <label class="wide">What was learned <textarea name="statement" rows="2" maxlength="300" required></textarea></label>
+        <label>Kind <select id="ln-kind" name="kind"></select></label>
+        <label>Observed on <input type="date" name="observedOn" required></label>
+        <label>Confidence <select name="confidence"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label>
+        <label class="wide">What this does NOT show (required) <input name="limitations" maxlength="300" required></label>
+        <div class="wide"><button type="submit" data-needs="learnings.write">Save as a suggestion</button> <span class="hint">A learning is a note, never a business fact: it cannot make an ad claim usable. A different person confirms it.</span></div>
+      </form></details>
+  </section>
+
   <section id="s-launch">
     <h2>Review &amp; approve</h2>
     <p class="flag-note role-note" data-for="proposals.decide" hidden></p>
@@ -312,6 +339,39 @@
     </form>
     <div id="leads-view"></div>
     <div id="lead-detail" class="panel" hidden></div>
+    <h3>Bring in leads from elsewhere</h3>
+    <p class="hint">Leads you already have (a trade-show list, an old spreadsheet). They are labelled <strong>IMPORTED</strong>, kept apart from synthetic and real data, never sent to a CRM and never contacted. Say where they came from: that is recorded, and it is your word, not a verified source. A lead needs a campaign here; one with no campaign cannot be stored yet.</p>
+    <p class="flag-note role-note" data-for="leads.import" hidden></p>
+    <label>Campaign <select id="in-campaign"></select></label>
+    <form id="in-import-form" class="grid">
+      <label class="wide">Where did these leads come from? <input name="sourceNote" maxlength="300" placeholder="e.g. Trade show list, March"></label>
+      <label>Consent <select name="consent"><option value="not_recorded">Not recorded</option><option value="given">The people agreed to be contacted (my statement)</option></select></label>
+      <label class="wide">Paste CSV with a header row (fullName, email, phone, externalId, capturedAt, utm_source, utm_medium, utm_campaign, utm_content, utm_term) or a JSON list. At most 200 per batch. <textarea name="rows" rows="5" spellcheck="false"></textarea></label>
+      <div class="wide"><button type="submit" id="in-import-btn" data-needs="leads.import" data-busy-label="Importing...">Import as IMPORTED leads</button></div>
+    </form>
+    <p id="in-error" class="flag-note" role="alert"></p>
+    <div id="in-result" role="status"></div>
+    <div id="in-batches"></div>
+    <h3>Lead forms (definitions only)</h3>
+    <p class="hint">A form here is a definition: which details it asks for, the privacy notice, the consent wording, why the data is collected and how long it is kept. It is <strong>not published or hosted</strong>: there is no public page, no tracking pixel and nothing is sent. You can submit it as a clearly labelled test.</p>
+    <p class="flag-note role-note" data-for="forms.write" hidden></p>
+    <form id="in-form-define" class="grid">
+      <label>Form name <input name="name" maxlength="80" value="Quote request"></label>
+      <label>Email <select id="in-form-email" name="email"></select></label>
+      <label>Phone <select id="in-form-phone" name="phone"></select></label>
+      <label class="wide">Privacy notice shown to the visitor <textarea name="privacyNotice" rows="2" maxlength="600">We use your details only to reply to your request.</textarea></label>
+      <label class="wide">Consent wording <input name="consentText" maxlength="300" value="I agree to be contacted about my request."></label>
+      <label>Why the data is collected <input name="purpose" maxlength="300" value="Reply to quote requests"></label>
+      <label>How long it is kept <input name="retentionNote" maxlength="300" value="Deleted after 12 months"></label>
+      <div class="wide"><button type="submit" id="in-form-btn" data-needs="forms.write" data-busy-label="Saving...">Save form definition</button></div>
+    </form>
+    <div id="in-forms"></div>
+  </section>
+
+  <section id="s-results">
+    <h2>Results</h2>
+    <p class="hint">What this workspace can and cannot measure. Counts come only from records held here and are labelled by source. Nothing is estimated, and a figure that cannot be known is shown as not measured, never as zero.</p>
+    <div id="rs-view"></div>
   </section>
 
   <section id="s-activity">

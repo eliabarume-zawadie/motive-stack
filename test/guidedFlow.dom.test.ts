@@ -22,7 +22,7 @@ import { decideProposal, requestExecution } from "../src/app/proposals.js";
 
 const HTML = readFileSync("public/index.html", "utf8");
 const asScript = (f: string) => readFileSync(`public/${f}`, "utf8").replace(/^export /gm, "").replace(/^import .*\n/gm, "");
-const SCRIPT = [asScript("recovery.js"), asScript("dashboard.js"), asScript("activity.js"), asScript("claims.js"), asScript("onboarding.js"), asScript("provenance.js"), asScript("goal.js"), asScript("leads.js"), asScript("workspace.js"), asScript("brand.js"), asScript("plans.js"), asScript("creative.js"), asScript("team.js"), asScript("aitest.js"), asScript("ai.js"), asScript("app.js")].join("\n");
+const SCRIPT = [asScript("recovery.js"), asScript("dashboard.js"), asScript("activity.js"), asScript("claims.js"), asScript("onboarding.js"), asScript("provenance.js"), asScript("goal.js"), asScript("leads.js"), asScript("workspace.js"), asScript("brand.js"), asScript("plans.js"), asScript("creative.js"), asScript("team.js"), asScript("intake.js"), asScript("results.js"), asScript("learning.js"), asScript("aitest.js"), asScript("ai.js"), asScript("app.js")].join("\n");
 
 const cleanup: Array<() => void> = [];
 afterEach(() => { while (cleanup.length) cleanup.pop()?.(); });
@@ -578,9 +578,9 @@ describe("Phase 1: permission-denied, loading and error states, and a readable A
       return res;
     }) as never;
   }
-  const VIEWER = ["workspace.read", "brain.read", "campaigns.read", "proposals.read", "leads.read", "activity.read", "ai.settings.read", "ai.usage.read", "brandkit.read", "assets.read", "plans.read", "creatives.read", "tasks.read"];
-  const OPERATOR = [...VIEWER, "jobs.read", "campaigns.generate", "campaigns.edit", "proposals.create", "leads.simulate", "leads.update", "brandkit.write", "assets.write", "plans.write", "creatives.write", "tasks.write"];
-  const ADMIN = [...OPERATOR, "proposals.decide", "proposals.execute", "brain.write", "workspace.update", "ai.settings.write", "ai.connection_test", "jobs.retry", "brandkit.approve", "assets.review", "assets.archive", "plans.review", "campaigns.archive", "creatives.review", "assignments.manage"];
+  const VIEWER = ["workspace.read", "brain.read", "campaigns.read", "proposals.read", "leads.read", "activity.read", "ai.settings.read", "ai.usage.read", "brandkit.read", "assets.read", "plans.read", "creatives.read", "tasks.read", "forms.read", "analytics.read", "experiments.read", "learnings.read", "recommendations.read"];
+  const OPERATOR = [...VIEWER, "jobs.read", "campaigns.generate", "campaigns.edit", "proposals.create", "leads.simulate", "leads.update", "brandkit.write", "assets.write", "plans.write", "creatives.write", "tasks.write", "leads.import", "forms.write", "experiments.write", "learnings.write"];
+  const ADMIN = [...OPERATOR, "proposals.decide", "proposals.execute", "brain.write", "workspace.update", "ai.settings.write", "ai.connection_test", "jobs.retry", "brandkit.approve", "assets.review", "assets.archive", "plans.review", "campaigns.archive", "creatives.review", "assignments.manage", "experiments.decide", "learnings.confirm", "recommendations.decide"];
   const disabled = (ui: UI, sel: string) => (ui.doc.querySelector(sel) as HTMLButtonElement).disabled;
 
   it("a viewer sees what their role is, every control they cannot use is disabled, and each section says why", async () => {
@@ -592,7 +592,7 @@ describe("Phase 1: permission-denied, loading and error states, and a readable A
       expect(disabled(ui, sel), sel).toBe(true);
     }
     const notes = Array.from(ui.doc.querySelectorAll(".role-note")).filter((n) => !(n as HTMLElement).hidden).map((n) => n.textContent);
-    expect(notes).toHaveLength(11); // the five from before, plus the Brand Kit, the assets, the plans and the Creative section
+    expect(notes).toHaveLength(15); // the five from before, plus the Brand Kit, the assets, the plans and the Creative section
     expect(notes.join(" ")).toMatch(/can look at plans, but your role does not allow asking for one/);
     expect(notes.join(" ")).toMatch(/can read the Brand Kit, but your role does not allow changing it/);
     expect(notes.join(" ")).toMatch(/can look at the assets, but your role does not allow uploading them/);
@@ -1085,4 +1085,120 @@ describe("Phase 1: permission-denied, loading and error states, and a readable A
     expect(ui.text("tm-cal")).toMatch(/Nothing is scheduled on any ad platform/);
     expect((s.db.prepare("SELECT COUNT(*) n FROM work_items").get() as { n: number }).n).toBe(2);
   }, 30000);
+
+  it("Leads and Results: paste a CSV, see IMPORTED leads kept apart from synthetic data, define a form that is not published, and see what is NOT measured", async () => {
+    const s = server();
+    const ui = await openPage(s);
+    await ui.createWorkspace();
+    ui.click(ui.$("brain-demo"));
+    ui.submit(ui.$("brain-form"));
+    await vi.waitFor(() => expect(ui.text("brain-version")).toMatch(/Saved \(version 1\)/), { timeout: 4000 });
+    const wsId = (ui.$("ws-select") as HTMLSelectElement).value;
+    await generateCampaign(s.ctx, wsId, { providerId: "mock", model: "mock-deterministic-1" });
+    ui.$("ws-select").dispatchEvent(new ui.w.Event("change", { bubbles: true }));
+    await vi.waitFor(() => expect((ui.$("in-campaign") as HTMLSelectElement).value).toMatch(/^[a-z]+_/), { timeout: 5000 });
+
+    const form = ui.$("in-import-form") as HTMLFormElement;
+    (form.elements.namedItem("sourceNote") as HTMLInputElement).value = "Trade show list";
+    (form.elements.namedItem("rows") as HTMLTextAreaElement).value = "fullName,email,phone,utm_source\nAda Lovelace,ada@example.com,512-555-0101,fair\nNo Contact,,,\nBo Bell,bo@example.com,,";
+    ui.submit(form);
+    await vi.waitFor(() => expect(ui.text("in-result")).toMatch(/3 rows read: 2 imported, 0 already here \(skipped\), 1 rejected/), { timeout: 5000 });
+    expect(ui.text("in-result")).toMatch(/Row 2: .*email or phone is required/);
+    expect(ui.text("in-result")).toMatch(/not sent to any CRM/);
+    await vi.waitFor(() => expect(ui.text("leads-view")).toMatch(/IMPORTED/), { timeout: 5000 });
+    expect(ui.text("leads-view")).toMatch(/attribution inferred/);
+    expect(ui.text("leads-view")).toMatch(/version not recorded/);
+    expect(ui.text("in-batches")).toMatch(/2 of 3 imported .* Source: Trade show list\. Consent not recorded/);
+
+    // a malformed paste is explained, not guessed
+    (form.elements.namedItem("rows") as HTMLTextAreaElement).value = "email\nx@y.com";
+    ui.submit(form);
+    await vi.waitFor(() => expect(ui.text("in-error")).toMatch(/header with a fullName/), { timeout: 3000 });
+
+    // the lead detail says what it is and how sure the link is
+    ui.click(Array.from(ui.$("leads-view").querySelectorAll("button")).find((b) => b.textContent === "Details") as HTMLElement);
+    await vi.waitFor(() => expect(ui.text("lead-detail")).toMatch(/Brought in by a person from somewhere else/), { timeout: 5000 });
+    expect(ui.text("lead-detail")).toMatch(/Arriving after a campaign is not proof the campaign caused it/);
+    expect(ui.text("lead-detail")).toMatch(/this app does not send any message to a lead/);
+
+    // a form is a definition: not published
+    ui.submit(ui.$("in-form-define"));
+    await vi.waitFor(() => expect(ui.text("in-forms")).toMatch(/NOT PUBLISHED/), { timeout: 5000 });
+    expect(ui.text("in-forms")).toMatch(/not published or hosted/);
+
+    // reporting: each origin on its own, nothing blended, unknowns are not zero
+    ui.$("main-nav").querySelector('a[href="#s-results"]')!.dispatchEvent(new ui.w.Event("click", { bubbles: true }));
+    await vi.waitFor(() => expect(ui.text("rs-view")).toMatch(/Imported leads/), { timeout: 5000 });
+    const r = ui.text("rs-view");
+    expect(r).toMatch(/never added together/);
+    expect(r).toMatch(/Real leads from a verified integration/);
+    expect(r).toMatch(/Cost per lead\s*Not measured/);
+    expect(r).toMatch(/Impressions\s*Not measured/);
+    expect(r).toMatch(/Return on ad spend\s*Not measured/);
+    expect(r).toMatch(/not proof the campaign caused it/);
+    expect(r).not.toMatch(/Cost per lead\s*\$|Cost per lead\s*0/);
+  }, 30000);
+
+  it("Learning: plan an experiment on two exact versions, freeze it, record synthetic data and see it cannot support a decision, conclude without changing anything, and confirm a suggested learning", async () => {
+    const s = server();
+    const ui = await openPage(s);
+    await ui.createWorkspace();
+    ui.click(ui.$("brain-demo"));
+    ui.submit(ui.$("brain-form"));
+    await vi.waitFor(() => expect(ui.text("brain-version")).toMatch(/Saved \(version 1\)/), { timeout: 4000 });
+    const wsId = (ui.$("ws-select") as HTMLSelectElement).value;
+    const rec = await generateCampaign(s.ctx, wsId, { providerId: "mock", model: "mock-deterministic-1" });
+    updateBrief(s.ctx, wsId, rec.id, { ...rec.brief, dailyBudgetCents: rec.brief.dailyBudgetCents - 50 }, "user:editor"); // campaign version 2
+    ui.$("ws-select").dispatchEvent(new ui.w.Event("change", { bubbles: true }));
+    await vi.waitFor(() => expect((ui.$("ln-exp-form-box").querySelector("select[name=vVersion]") as HTMLSelectElement | null)?.options.length).toBe(2), { timeout: 6000 });
+    expect(ui.text("s-learning")).toMatch(/records and decisions only/);
+    expect(ui.text("s-learning")).toMatch(/this app measures no performance/);
+
+    const form = ui.$("ln-exp-form") as HTMLFormElement;
+    const set = (n: string, v: string) => { (form.elements.namedItem(n) as HTMLInputElement).value = v; };
+    set("name", "Headline test"); set("hypothesis", "A question headline gets more qualified leads"); set("variableNote", "Only the headline wording differs"); set("audienceNote", "Homeowners nearby"); set("placementNote", "Feed");
+    set("decisionRule", "Switch if the variant is clearly higher with enough data; otherwise keep the control"); set("minSample", "20");
+    set("cVersion", "1"); set("vVersion", "2"); set("vLabel", "Question"); set("vDesc", "Question headline");
+    ui.submit(form);
+    await vi.waitFor(() => expect(ui.text("ln-experiments")).toMatch(/Headline test/), { timeout: 5000 });
+    expect(ui.text("ln-experiments")).toMatch(/plan can still change/);
+    expect(ui.text("ln-experiments")).toMatch(/Decision rule, written before the data/);
+    expect(ui.text("ln-experiments")).toMatch(/Control.*version 1.*Question.*version 2/);
+
+    ui.click(ui.buttonIn("ln-experiments", "Start (freezes the plan)"));
+    await vi.waitFor(() => expect(ui.text("ln-experiments")).toMatch(/PLAN FROZEN/), { timeout: 5000 });
+    ui.click(ui.buttonIn("ln-experiments", "Show the analysis"));
+    await vi.waitFor(() => expect(ui.text("ln-experiments")).toMatch(/still collecting/), { timeout: 5000 });
+    expect(ui.text("ln-experiments")).toMatch(/blocks a conclusion/);
+    expect(ui.text("ln-experiments")).toMatch(/cannot verify how people were assigned/);
+
+    // record SYNTHETIC results: shown as such, and the sample does not grow
+    const resForm = Array.from(ui.$("ln-experiments").querySelectorAll("form")).find((f) => f.textContent?.includes("Record a result")) as HTMLFormElement;
+    (resForm.elements.namedItem("successes") as HTMLInputElement).value = "5"; (resForm.elements.namedItem("trials") as HTMLInputElement).value = "10";
+    (resForm.elements.namedItem("sourceType") as HTMLSelectElement).value = "synthetic"; (resForm.elements.namedItem("observedOn") as HTMLInputElement).value = "2030-01-10"; (resForm.elements.namedItem("sourceNote") as HTMLInputElement).value = "Simulator";
+    ui.submit(resForm);
+    await vi.waitFor(() => expect(ui.text("ln-experiments")).toMatch(/SYNTHETIC.*5 of 10/), { timeout: 5000 });
+    expect(ui.text("ln-experiments")).toMatch(/only data is synthetic/);
+    expect(ui.text("ln-experiments")).toMatch(/No statistical test was run/);
+    expect(ui.text("ln-experiments")).not.toMatch(/statistically significant\./);
+
+    // concluding records a decision and changes nothing
+    const budgetBefore = JSON.stringify(s.db.prepare("SELECT id, status, current_version FROM campaigns").all());
+    const conForm = Array.from(ui.$("ln-experiments").querySelectorAll("form")).find((f) => f.textContent?.includes("Your decision")) as HTMLFormElement;
+    (conForm.elements.namedItem("outcome") as HTMLSelectElement).value = "inconclusive"; (conForm.elements.namedItem("rationale") as HTMLTextAreaElement).value = "Only synthetic data so far";
+    ui.submit(conForm);
+    await vi.waitFor(() => expect(ui.text("ln-experiments")).toMatch(/CONCLUDED/), { timeout: 5000 });
+    expect(ui.text("ln-experiments")).toMatch(/No clear difference: Only synthetic data so far/);
+    expect(JSON.stringify(s.db.prepare("SELECT id, status, current_version FROM campaigns").all())).toBe(budgetBefore);
+
+    // the Marketing Brain: a rule-made suggestion is not a learning until a person confirms it
+    ui.click(ui.$("ln-suggest"));
+    await vi.waitFor(() => expect(ui.text("ln-learnings")).toMatch(/Suggested by a rule/), { timeout: 5000 });
+    expect(ui.text("ln-learnings")).toMatch(/never makes an ad claim usable/);
+    expect(ui.text("ln-learnings")).toMatch(/Does not show: A person's judgement, not a proven effect/);
+    expect(ui.text("ln-learnings")).not.toMatch(/HUMAN-CONFIRMED/);
+    ui.click(ui.buttonIn("ln-learnings", "Confirm"));
+    await vi.waitFor(() => expect(ui.text("ln-learnings")).toMatch(/HUMAN-CONFIRMED/), { timeout: 5000 });
+    expect(ui.text("ln-recs")).toMatch(/derived from records in this workspace/);
+  }, 40000);
 });

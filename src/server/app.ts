@@ -24,6 +24,10 @@ import { archiveCampaign, completeCampaign, LIFECYCLE_LABEL } from "../app/lifec
 import { budgetPosition } from "../app/budgetCommitments.js";
 import { brandKitVersions, brandKitView, decideBrandKit, saveBrandKit, submitBrandKit } from "../app/brandKit.js";
 import { archiveCreative, attachImportedVariant, cancelRender, checkCreative, createCreative, creativeDetail, decideCreative, listCampaignCreatives, readVariantFile, requestRenders, retryRender, reviseCreative, submitCreative, suggestConcepts } from "../app/creatives.js";
+import { abandonExperiment, concludeExperiment, createExperiment, experimentAnalysis, experimentView, listExperiments, recordObservation, recordUsage, replaceDraftPlan, startExperiment } from "../app/experiments.js";
+import { createLearning, decideLearning, decideRecommendation, listLearnings, recommendations, suggestLearnings } from "../app/learnings.js";
+import { createForm, formDetail, importLeads, listForms, listImportBatches, reviseForm, setFollowUp, testSubmit } from "../app/leadIntake.js";
+import { analyticsView } from "../app/analytics.js";
 import { assignees, calendar, createWorkItem, inbox, listNotifications, listWorkItems, markNotificationsRead, ownershipOf, setOwnership, updateWorkItem } from "../app/teamOps.js";
 import { VIDEO_SUPPORT } from "../creative/video.js";
 import { addAssetVersion, archiveAsset, assetBodyLimit, assetDetail, createAsset, decideAssetVersion, listAssets, readAssetFile, submitAssetVersion } from "../app/assets.js";
@@ -326,6 +330,35 @@ export function buildServer(ctx: AppContext, auth: AuthRuntime = workspaceTokenR
     ws.get("/notifications", async (req) => listNotifications(ctx, wid(req), me(req)));
     ws.post("/notifications/read-all", async (req) => markNotificationsRead(ctx, wid(req), me(req)));
     ws.post("/notifications/:nid/read", async (req) => markNotificationsRead(ctx, wid(req), me(req), p(req, "nid")));
+
+    // ---- Lead intake and reporting: imports (labelled IMPORTED, never sent to a CRM), follow-up reminders, form definitions (nothing published), truthful analytics ----
+    ws.post("/leads/import", async (req, reply) => reply.status(201).send(importLeads(ctx, wid(req), az(req).actor.label, req.body)));
+    ws.get("/lead-imports", async (req) => listImportBatches(ctx, wid(req)));
+    ws.put("/leads/:lid/follow-up", async (req) => setFollowUp(ctx, wid(req), p(req, "lid"), req.body, az(req).actor.label));
+    ws.get("/campaigns/:cid/forms", async (req) => listForms(ctx, wid(req), p(req, "cid")));
+    ws.post("/campaigns/:cid/forms", async (req, reply) => reply.status(201).send(createForm(ctx, wid(req), az(req).actor.label, p(req, "cid"), req.body)));
+    ws.get("/forms/:fid", async (req) => formDetail(ctx, wid(req), p(req, "fid")));
+    ws.post("/forms/:fid/versions", async (req, reply) => reply.status(201).send(reviseForm(ctx, wid(req), az(req).actor.label, p(req, "fid"), req.body)));
+    ws.post("/forms/:fid/test-submission", async (req, reply) => reply.status(201).send(testSubmit(ctx, wid(req), az(req).actor.label, p(req, "fid"), req.body)));
+    ws.get("/analytics", async (req) => analyticsView(ctx, wid(req)));
+
+    // ---- Experiments, the Marketing Brain and recommendations: records and decisions only. Nothing here changes spend, edits a campaign or publishes ----
+    ws.get("/experiments", async (req) => listExperiments(ctx, wid(req)));
+    ws.post("/experiments", async (req, reply) => reply.status(201).send(createExperiment(ctx, wid(req), az(req).actor.label, req.body)));
+    ws.get("/experiments/:eid", async (req) => experimentView(ctx, wid(req), p(req, "eid")));
+    ws.put("/experiments/:eid", async (req) => replaceDraftPlan(ctx, wid(req), az(req).actor.label, p(req, "eid"), req.body));
+    ws.post("/experiments/:eid/start", async (req) => startExperiment(ctx, wid(req), az(req).actor.label, p(req, "eid")));
+    ws.post("/experiments/:eid/usage", async (req) => recordUsage(ctx, wid(req), az(req).actor.label, p(req, "eid"), req.body));
+    ws.post("/experiments/:eid/observations", async (req) => recordObservation(ctx, wid(req), az(req).actor.label, p(req, "eid"), req.body));
+    ws.get("/experiments/:eid/analysis", async (req) => experimentAnalysis(ctx, wid(req), p(req, "eid")));
+    ws.post("/experiments/:eid/conclude", async (req) => concludeExperiment(ctx, wid(req), p(req, "eid"), req.body, az(req).actor.label));
+    ws.post("/experiments/:eid/abandon", async (req) => abandonExperiment(ctx, wid(req), p(req, "eid"), req.body, az(req).actor.label));
+    ws.get("/learnings", async (req) => listLearnings(ctx, wid(req), (req.query as { status?: string } | undefined)?.status));
+    ws.post("/learnings", async (req, reply) => reply.status(201).send(createLearning(ctx, wid(req), az(req).actor.label, req.body)));
+    ws.post("/learnings/suggest", async (req) => suggestLearnings(ctx, wid(req), az(req).actor.label));
+    for (const d of ["confirm", "reject", "retire"] as const) ws.post(`/learnings/:lid/${d}`, async (req) => decideLearning(ctx, wid(req), p(req, "lid"), d, req.body, approverOf(req)));
+    ws.get("/recommendations", async (req) => recommendations(ctx, wid(req)));
+    ws.post("/recommendations/decide", async (req) => { const b = (req.body ?? {}) as { key?: unknown; decision?: unknown; note?: unknown }; if (typeof b.key !== "string" || (b.decision !== "accept" && b.decision !== "dismiss")) throw new AppError(400, "invalid_request", "Send a key and a decision of accept or dismiss"); return decideRecommendation(ctx, wid(req), b.key, b.decision, { note: b.note }, az(req).actor.label); });
     ws.put("/policy", async (req) => setPolicy(ctx, az(req).actor, wid(req), req.body));
 
     // ---- AI configuration, usage and explicit connection test ----
