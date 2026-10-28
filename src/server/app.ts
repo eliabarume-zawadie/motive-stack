@@ -24,6 +24,7 @@ import { archiveCampaign, completeCampaign, LIFECYCLE_LABEL } from "../app/lifec
 import { budgetPosition } from "../app/budgetCommitments.js";
 import { brandKitVersions, brandKitView, decideBrandKit, saveBrandKit, submitBrandKit } from "../app/brandKit.js";
 import { archiveCreative, attachImportedVariant, cancelRender, checkCreative, createCreative, creativeDetail, decideCreative, listCampaignCreatives, readVariantFile, requestRenders, retryRender, reviseCreative, submitCreative, suggestConcepts } from "../app/creatives.js";
+import { assignees, calendar, createWorkItem, inbox, listNotifications, listWorkItems, markNotificationsRead, ownershipOf, setOwnership, updateWorkItem } from "../app/teamOps.js";
 import { VIDEO_SUPPORT } from "../creative/video.js";
 import { addAssetVersion, archiveAsset, assetBodyLimit, assetDetail, createAsset, decideAssetVersion, listAssets, readAssetFile, submitAssetVersion } from "../app/assets.js";
 import { CUSTOMIZABLE_PERMISSIONS, PERMISSION_CATALOG } from "../auth/orgAuthz.js";
@@ -311,6 +312,20 @@ export function buildServer(ctx: AppContext, auth: AuthRuntime = workspaceTokenR
     });
     ws.post("/renders/:rid/cancel", async (req) => cancelRender(ctx, wid(req), az(req).actor.label, p(req, "rid")));
     ws.post("/renders/:rid/retry", async (req) => retryRender(ctx, wid(req), az(req).actor.label, p(req, "rid")));
+
+    // ---- Team operations: inbox, calendar, tasks, owners and reviewers, in-app notifications (nothing is sent outside the app) ----
+    const me = (req: FastifyRequest): string | null => { const a = az(req).actor; return a.kind === "user" ? a.userId : null; };
+    ws.get("/inbox", async (req) => inbox(ctx, wid(req), { userId: me(req), can: (perm) => authzAllows(az(req), perm) }));
+    ws.get("/calendar", async (req) => { const q = (req.query ?? {}) as { from?: string; to?: string }; return calendar(ctx, wid(req), q.from, q.to); });
+    ws.get("/assignees", async (req) => assignees(ctx, wid(req)));
+    ws.get("/work-items", async (req) => listWorkItems(ctx, wid(req), (req.query as { status?: string } | undefined)?.status));
+    ws.post("/work-items", async (req, reply) => reply.status(201).send(createWorkItem(ctx, wid(req), az(req).actor.label, req.body)));
+    ws.patch("/work-items/:wiid", async (req) => updateWorkItem(ctx, wid(req), az(req).actor.label, p(req, "wiid"), req.body));
+    ws.get("/ownerships/:stype/:sid", async (req) => { const t = p(req, "stype"); if (t !== "campaign" && t !== "creative") throw new AppError(404, "not_found", "Not found"); return ownershipOf(ctx, wid(req), t, p(req, "sid")); });
+    ws.put("/ownerships", async (req) => setOwnership(ctx, wid(req), az(req).actor.label, req.body));
+    ws.get("/notifications", async (req) => listNotifications(ctx, wid(req), me(req)));
+    ws.post("/notifications/read-all", async (req) => markNotificationsRead(ctx, wid(req), me(req)));
+    ws.post("/notifications/:nid/read", async (req) => markNotificationsRead(ctx, wid(req), me(req), p(req, "nid")));
     ws.put("/policy", async (req) => setPolicy(ctx, az(req).actor, wid(req), req.body));
 
     // ---- AI configuration, usage and explicit connection test ----

@@ -22,7 +22,7 @@ import { decideProposal, requestExecution } from "../src/app/proposals.js";
 
 const HTML = readFileSync("public/index.html", "utf8");
 const asScript = (f: string) => readFileSync(`public/${f}`, "utf8").replace(/^export /gm, "").replace(/^import .*\n/gm, "");
-const SCRIPT = [asScript("recovery.js"), asScript("dashboard.js"), asScript("activity.js"), asScript("claims.js"), asScript("onboarding.js"), asScript("provenance.js"), asScript("goal.js"), asScript("leads.js"), asScript("workspace.js"), asScript("brand.js"), asScript("plans.js"), asScript("creative.js"), asScript("aitest.js"), asScript("ai.js"), asScript("app.js")].join("\n");
+const SCRIPT = [asScript("recovery.js"), asScript("dashboard.js"), asScript("activity.js"), asScript("claims.js"), asScript("onboarding.js"), asScript("provenance.js"), asScript("goal.js"), asScript("leads.js"), asScript("workspace.js"), asScript("brand.js"), asScript("plans.js"), asScript("creative.js"), asScript("team.js"), asScript("aitest.js"), asScript("ai.js"), asScript("app.js")].join("\n");
 
 const cleanup: Array<() => void> = [];
 afterEach(() => { while (cleanup.length) cleanup.pop()?.(); });
@@ -578,9 +578,9 @@ describe("Phase 1: permission-denied, loading and error states, and a readable A
       return res;
     }) as never;
   }
-  const VIEWER = ["workspace.read", "brain.read", "campaigns.read", "proposals.read", "leads.read", "activity.read", "ai.settings.read", "ai.usage.read", "brandkit.read", "assets.read", "plans.read", "creatives.read"];
-  const OPERATOR = [...VIEWER, "jobs.read", "campaigns.generate", "campaigns.edit", "proposals.create", "leads.simulate", "leads.update", "brandkit.write", "assets.write", "plans.write", "creatives.write"];
-  const ADMIN = [...OPERATOR, "proposals.decide", "proposals.execute", "brain.write", "workspace.update", "ai.settings.write", "ai.connection_test", "jobs.retry", "brandkit.approve", "assets.review", "assets.archive", "plans.review", "campaigns.archive", "creatives.review"];
+  const VIEWER = ["workspace.read", "brain.read", "campaigns.read", "proposals.read", "leads.read", "activity.read", "ai.settings.read", "ai.usage.read", "brandkit.read", "assets.read", "plans.read", "creatives.read", "tasks.read"];
+  const OPERATOR = [...VIEWER, "jobs.read", "campaigns.generate", "campaigns.edit", "proposals.create", "leads.simulate", "leads.update", "brandkit.write", "assets.write", "plans.write", "creatives.write", "tasks.write"];
+  const ADMIN = [...OPERATOR, "proposals.decide", "proposals.execute", "brain.write", "workspace.update", "ai.settings.write", "ai.connection_test", "jobs.retry", "brandkit.approve", "assets.review", "assets.archive", "plans.review", "campaigns.archive", "creatives.review", "assignments.manage"];
   const disabled = (ui: UI, sel: string) => (ui.doc.querySelector(sel) as HTMLButtonElement).disabled;
 
   it("a viewer sees what their role is, every control they cannot use is disabled, and each section says why", async () => {
@@ -592,7 +592,7 @@ describe("Phase 1: permission-denied, loading and error states, and a readable A
       expect(disabled(ui, sel), sel).toBe(true);
     }
     const notes = Array.from(ui.doc.querySelectorAll(".role-note")).filter((n) => !(n as HTMLElement).hidden).map((n) => n.textContent);
-    expect(notes).toHaveLength(9); // the five from before, plus the Brand Kit, the assets, the plans and the Creative section
+    expect(notes).toHaveLength(11); // the five from before, plus the Brand Kit, the assets, the plans and the Creative section
     expect(notes.join(" ")).toMatch(/can look at plans, but your role does not allow asking for one/);
     expect(notes.join(" ")).toMatch(/can read the Brand Kit, but your role does not allow changing it/);
     expect(notes.join(" ")).toMatch(/can look at the assets, but your role does not allow uploading them/);
@@ -1044,5 +1044,45 @@ describe("Phase 1: permission-denied, loading and error states, and a readable A
     await vi.waitFor(() => expect(ui.text("cr-list")).toMatch(/WAITING FOR REVIEW/), { timeout: 5000 });
     expect((s.db.prepare("SELECT status FROM creative_versions").get() as { status: string }).status).toBe("needs_review");
     expect(s.db.prepare("SELECT COUNT(*) n FROM creative_variants").get()).toEqual({ n: 2 }); // a suggestion asks for the square and portrait formats: one stored picture each
+  }, 30000);
+
+  it("Inbox & calendar: add a dated task tied to a campaign version, see it overdue, close it, see a proposed date labelled as not a platform schedule, and learn the token is not a person", async () => {
+    const s = server();
+    const ui = await openPage(s);
+    await ui.createWorkspace();
+    ui.click(ui.$("brain-demo"));
+    ui.submit(ui.$("brain-form"));
+    await vi.waitFor(() => expect(ui.text("brain-version")).toMatch(/Saved \(version 1\)/), { timeout: 4000 });
+    const wsId = (ui.$("ws-select") as HTMLSelectElement).value;
+    await generateCampaign(s.ctx, wsId, { providerId: "mock", model: "mock-deterministic-1" });
+    ui.$("ws-select").dispatchEvent(new ui.w.Event("change", { bubbles: true }));
+    await vi.waitFor(() => expect((ui.$("tm-campaign") as HTMLSelectElement).value).toMatch(/^cmp_|^[a-z]+_/), { timeout: 5000 });
+    await vi.waitFor(() => expect(ui.text("tm-inbox")).toMatch(/Assigned to you/), { timeout: 5000 });
+    expect(ui.text("tm-inbox")).toMatch(/not a person/); // the shared token has no inbox of its own
+    expect(ui.text("tm-notes")).toMatch(/not a person/);
+    expect(ui.text("s-inbox")).toMatch(/nothing is sent by e-mail, text message or push/i);
+
+    const form = ui.$("tm-work-form") as HTMLFormElement;
+    (form.elements.namedItem("title") as HTMLInputElement).value = "Finish the draft";
+    (form.elements.namedItem("kind") as HTMLSelectElement).value = "draft";
+    (form.elements.namedItem("dueDate") as HTMLInputElement).value = "2000-01-01";
+    ui.submit(form);
+    await vi.waitFor(() => expect(ui.text("tm-inbox")).toMatch(/Finish the draft/), { timeout: 5000 });
+    expect(ui.text("tm-inbox").slice(0, 700)).toMatch(/overdue since 2000-01-01/);
+    expect(ui.text("tm-inbox")).toMatch(/Finish and check the draft of .* \(version 1\)/); // the stated action names the exact version
+    expect(ui.text("tm-inbox")).toMatch(/Campaign .* version 1/);
+
+    ui.click(ui.buttonIn("tm-inbox", "Mark done"));
+    await vi.waitFor(() => expect(ui.text("tm-inbox")).not.toMatch(/overdue since/), { timeout: 5000 });
+
+    (form.elements.namedItem("title") as HTMLInputElement).value = "Aim to run on the 15th";
+    (form.elements.namedItem("kind") as HTMLSelectElement).value = "schedule_proposal";
+    const soon = new Date(s.ctx.now().getTime() + 3 * 86400000).toISOString().slice(0, 10); // relative to the server clock, which this test server may fix
+    (form.elements.namedItem("dueDate") as HTMLInputElement).value = soon;
+    ui.submit(form);
+    await vi.waitFor(() => expect(ui.text("tm-cal")).toMatch(/Proposed date \(not a platform schedule\)/), { timeout: 5000 });
+    expect(ui.text("tm-inbox")).toMatch(/PROPOSED ONLY/);
+    expect(ui.text("tm-cal")).toMatch(/Nothing is scheduled on any ad platform/);
+    expect((s.db.prepare("SELECT COUNT(*) n FROM work_items").get() as { n: number }).n).toBe(2);
   }, 30000);
 });

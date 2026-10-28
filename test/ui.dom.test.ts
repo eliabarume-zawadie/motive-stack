@@ -15,7 +15,7 @@ import { BRAIN } from "./fixtures.js";
 const HTML = readFileSync("public/index.html", "utf8");
 // The page is a set of ES modules; the test evaluates them as one script in jsdom, so `export` and `import` lines are removed (names are unique across the files).
 const asScript = (f: string) => readFileSync(`public/${f}`, "utf8").replace(/^export /gm, "").replace(/^import .*\n/gm, "");
-const AI_JS = [asScript("recovery.js"), asScript("dashboard.js"), asScript("activity.js"), asScript("claims.js"), asScript("onboarding.js"), asScript("provenance.js"), asScript("goal.js"), asScript("leads.js"), asScript("workspace.js"), asScript("brand.js"), asScript("plans.js"), asScript("creative.js"), asScript("aitest.js"), asScript("ai.js")].join("\n");
+const AI_JS = [asScript("recovery.js"), asScript("dashboard.js"), asScript("activity.js"), asScript("claims.js"), asScript("onboarding.js"), asScript("provenance.js"), asScript("goal.js"), asScript("leads.js"), asScript("workspace.js"), asScript("brand.js"), asScript("plans.js"), asScript("creative.js"), asScript("team.js"), asScript("aitest.js"), asScript("ai.js")].join("\n");
 const APP_JS = asScript("app.js");
 const FAKE_KEYS = { OPENAI_API_KEY: "sk-FAKE-OPENAI-DOM-TEST", ANTHROPIC_API_KEY: "sk-ant-FAKE-DOM-TEST", META_ACCESS_TOKEN: "EAA-FAKE-META-DOM-TEST" };
 

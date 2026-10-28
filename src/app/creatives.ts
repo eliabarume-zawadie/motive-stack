@@ -11,6 +11,7 @@ import type { AppContext } from "./context.js";
 import { audit, iso, type Core } from "./core.js";
 import { AppError, conflict, notFound } from "./errors.js";
 import { enqueueJob, RetryableError, type Job } from "./jobs.js";
+import { closeWorkItemsFor, notify, ownershipOf, reviewerFor } from "./teamOps.js";
 import { newId, safeError } from "./util.js";
 import { separationOutcome, type SeparationOutcome } from "./workspacePolicy.js";
 import { getBrain } from "./workspaces.js";
@@ -401,6 +402,8 @@ export async function submitCreative(c: AppContext, wsId: string, actor: string,
       .run(JSON.stringify(qa), actor, iso(c), creativeId, version, wsId).changes;
     if (n !== 1) throw conflict("not_submittable", "This version changed while it was being checked");
     audit(c, wsId, actor, "creative.submitted", "creative", creativeId, { version, passed: qa.passed, warnings: qa.counts.warn });
+    const rv = reviewerFor(c, wsId, creativeId, cr.campaign_id);
+    if (rv && `user:${rv}` !== actor) notify(c, wsId, rv, "review_requested", `Creative “${cr.name}” version ${version} is waiting for your review.`, { type: "creative", id: creativeId });
   })();
   return creativeDetail(c, wsId, creativeId);
 }
@@ -431,6 +434,11 @@ export async function decideCreative(c: AppContext, wsId: string, creativeId: st
     c.db.prepare("UPDATE creative_versions SET status = ?, qa = COALESCE(?, qa), reviewed_by = ?, reviewed_at = ?, review_note = ?, separation = ? WHERE creative_id = ? AND version = ? AND workspace_id = ?")
       .run(decision === "approve" ? "approved" : "rejected", qa ? JSON.stringify(qa) : null, by.decidedBy, iso(c), body.reason ?? null, separation, creativeId, version, wsId);
     audit(c, wsId, by.decidedBy, decision === "approve" ? "creative.approved" : "creative.rejected", "creative", creativeId, { version, reason: body.reason ?? null, ...(separation ? { separation, separationEnforced: separation === "enforced" } : {}) });
+    closeWorkItemsFor(c, wsId, { kind: "review", creativeId, creativeVersion: version }, decision === "approve" ? "closed_by_approval" : "closed_by_rejection");
+    const submitter = cur.submitted_by && cur.submitted_by.startsWith("user:") ? cur.submitted_by.slice(5) : null;
+    for (const u of new Set([submitter, ownershipOf(c, wsId, "creative", creativeId).ownerUserId, ownershipOf(c, wsId, "campaign", cr.campaign_id).ownerUserId])) {
+      if (u && `user:${u}` !== by.decidedBy) notify(c, wsId, u, decision === "approve" ? "creative_approved" : "creative_rejected", `Creative “${cr.name}” version ${version} was ${decision === "approve" ? "approved" : "rejected"}${body.reason ? `: ${body.reason}` : ""}.`, { type: "creative", id: creativeId });
+    }
   })();
   return creativeDetail(c, wsId, creativeId);
 }

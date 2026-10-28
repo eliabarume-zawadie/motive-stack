@@ -150,7 +150,7 @@ describe("migration 017: existing campaigns get a lifecycle without losing anyth
     for (const [id, st] of [["c_draft", "draft"], ["c_sim", "launched_paused"], ["c_live", "launched_paused"], ["c_prop", "draft"], ["c_appr", "draft"]] as const) camp(id, st);
     prop("p_sim", "c_sim", "executed", "mock"); prop("p_live", "c_live", "executed", "live"); prop("p_prop", "c_prop", "proposed", "mock"); prop("p_appr", "c_appr", "approved", "mock");
     const before = db.prepare("SELECT id, workspace_id, name, status, current_version, created_at FROM campaigns ORDER BY id").all();
-    expect(migrate(db)).toEqual(["017_plans_lifecycle.sql", "018_creative_studio.sql"]);
+    expect(migrate(db)).toEqual(["017_plans_lifecycle.sql", "018_creative_studio.sql", "019_team_operations.sql"]);
     expect(db.prepare("SELECT id, workspace_id, name, status, current_version, created_at FROM campaigns ORDER BY id").all()).toEqual(before);
     const states = () => Object.fromEntries((db.prepare("SELECT id, lifecycle_state s FROM campaigns").all() as Array<{ id: string; s: string }>).map((r) => [r.id, r.s]));
     expect(states()).toEqual({ c_draft: "draft", c_sim: "executed_simulated", c_live: "executed_external", c_prop: "ready_for_approval", c_appr: "approved" });

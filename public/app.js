@@ -9,6 +9,7 @@ import { initWorkspaceSettings } from "./workspace.js";
 import { initBrand } from "./brand.js";
 import { initPlans } from "./plans.js";
 import { initCreative } from "./creative.js";
+import { initTeam } from "./team.js";
 import { initOnboarding } from "./onboarding.js";
 import { initProvenance } from "./provenance.js";
 import { DEMO_BUSINESS, formatRecoveryCode, parseRecoveryCode } from "./recovery.js";
@@ -79,6 +80,8 @@ const DENIED_TEXT = {
   "plans.write": "You can look at plans, but your role does not allow asking for one or changing it. Ask an operator, admin or owner.",
   "brandkit.write": "You can read the Brand Kit, but your role does not allow changing it. Ask an operator, admin or owner.",
   "creatives.write": "You can look at creatives, but your role does not allow making or editing them. Ask an operator, admin or owner.",
+  "tasks.write": "You can look at the inbox and calendar, but your role does not allow adding or changing tasks. Ask an operator, admin or owner.",
+  "assignments.manage": "Only an admin or owner can set who owns and reviews a campaign.",
   "assets.write": "You can look at the assets, but your role does not allow uploading them. Ask an operator, admin or owner.",
   "proposals.execute": "Approving does not run anything. Someone allowed to run approved actions (an admin or owner, or a custom role with that permission) has to press Run.",
   "leads.simulate": "Your role does not allow adding test leads. Ask an operator, admin or owner.",
@@ -393,7 +396,7 @@ function renderLeads(leads) {
 function renderActivity(items) { activityUi.render(items); }
 
 // ---- data loading ----
-async function act(fn) { try { await fn(); } catch { /* error already shown */ } await refresh(); plansUi.load(); /* a campaign change can change its plan (budget sum, review) */ }
+async function act(fn) { try { await fn(); } catch { /* error already shown */ } await refresh(); plansUi.load(); teamUi.load(); /* a campaign change can change its plan (budget sum, review) */ }
 
 async function refresh({ fillForms = false } = {}) {
   if (!session()) { state.dash = null; state.campaigns = []; renderDashboardViews(); renderCampaign(); renderProposals(); renderLeads([]); renderActivity([]); return; }
@@ -435,6 +438,7 @@ async function selectWorkspace(id) {
   brandUi.load();
   plansUi.load();
   creativeUi.load();
+  teamUi.load();
 }
 
 async function retryJob(id, button) {
@@ -463,6 +467,7 @@ const settingsUi = initWorkspaceSettings({ $, h, api, state, can, once, pill, si
 // A file is fetched with the same credentials as every other call, then drawn on a canvas: no image URL (and no blob: URL) is ever needed.
 const fetchFile = async (path) => { const s = session(); const res = await fetch(`/api/workspaces/${s.id}${path}`, { headers: { authorization: Auth.header(s) } }); if (!res.ok) throw new Error("file unavailable"); return res.blob(); };
 const plansUi = initPlans({ $, h, api, state, can, once, pill, usd, showNotice, openCampaign: (id) => openCampaign(id), session, reloadCampaigns: () => refresh() });
+const teamUi = initTeam({ $, h, api, state, can, once, pill, showNotice, session });
 const creativeUi = initCreative({ $, h, api, state, can, once, pill, showNotice, session, fetchFile });
 const brandUi = initBrand({ $, h, api, state, can, once, pill, simBadge, showNotice, session, fetchFile });
 const leadsUi = initLeads({ $, h, api, pill, simBadge, can, once, showNotice, state, reload: async () => { if (session()) renderLeads(await api("/leads", { quiet: true })); } });

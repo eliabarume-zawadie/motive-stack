@@ -299,7 +299,7 @@ describe("migration 004 is additive", () => {
     db.prepare("INSERT INTO workspaces (id, name, token_hash, created_at) VALUES ('ws_old', 'Old Co', 'hash-old', '2026-01-01')").run();
     const cols = "id, name, token_hash, meta_account_id, created_at";
     const before = db.prepare(`SELECT ${cols} FROM workspaces`).all();
-    expect(migrate(db)).toEqual(["004_users.sql", "005_memberships.sql", "006_meta_accounts.sql", "007_credentials.sql", "008_drop_credential_hint.sql", "009_website_analysis.sql", "010_website_content_hash.sql", "011_ai_reservations.sql", "012_reservation_state_and_fill_ledger.sql", "013_campaign_plans.sql", "014_lead_status_job_retries.sql", "015_organizations_permissions.sql", "016_brand_kit_assets.sql", "017_plans_lifecycle.sql", "018_creative_studio.sql"]);
+    expect(migrate(db)).toEqual(["004_users.sql", "005_memberships.sql", "006_meta_accounts.sql", "007_credentials.sql", "008_drop_credential_hint.sql", "009_website_analysis.sql", "010_website_content_hash.sql", "011_ai_reservations.sql", "012_reservation_state_and_fill_ledger.sql", "013_campaign_plans.sql", "014_lead_status_job_retries.sql", "015_organizations_permissions.sql", "016_brand_kit_assets.sql", "017_plans_lifecycle.sql", "018_creative_studio.sql", "019_team_operations.sql"]);
     expect(db.prepare(`SELECT ${cols} FROM workspaces`).all()).toEqual(before);
     expect((db.prepare("SELECT COUNT(*) n FROM users").get() as { n: number }).n).toBe(0);
     const approvalCols = (db.prepare("PRAGMA table_info(approvals)").all() as Array<{ name: string }>).map((c) => c.name);

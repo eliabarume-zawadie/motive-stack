@@ -9,6 +9,7 @@ import { planGate } from "./planBudget.js";
 import { assertWithinDailyLimit, budgetPreview, limitMessage, budgetPosition } from "./budgetCommitments.js";
 import { separationOutcome, type SeparationOutcome } from "./workspacePolicy.js";
 import { getCampaignRecord, getCampaignRow } from "./campaigns.js";
+import { closeWorkItemsFor } from "./teamOps.js";
 import { approvedCreativesFor, assertCreativesStillApproved } from "./creatives.js";
 import { newId, sha256, stableStringify } from "./util.js";
 import { getBrain } from "./workspaces.js";
@@ -249,6 +250,7 @@ function decideProposalNow(
     if (typeof (e as { code?: unknown }).code === "string" && (e as { code: string }).code.startsWith("SQLITE_BUSY")) throw new AppError(503, "busy", "Another approval is being recorded; try again in a moment");
     throw e;
   }
+  closeWorkItemsFor(c, wsId, { kind: "approval", proposalId: p.id }, decision === "approve" ? "closed_by_approval" : "closed_by_rejection"); // the task that was waiting for this decision is done
   syncLifecycle(c, wsId, p.campaign_id, by.decidedBy, decision === "approve" ? "approved" : "rejected");
   return getProposalRow(c, wsId, p.id);
 }
@@ -273,6 +275,7 @@ export function requestExecution(c: AppContext, wsId: string, proposalId: string
   if (pos.unnormalizable.length) throw new AppError(409, "budget_not_normalizable", "A committed budget could not be read as a daily amount, so nothing can run until it has been reviewed");
   const queued = enqueueJob(c, wsId, "execute_proposal", { proposalId: p.id }, `exec:${p.id}`);
   audit(c, wsId, actor, "proposal.execution_requested", "proposal", p.id, { mode: p.integration_mode, queued });
+  closeWorkItemsFor(c, wsId, { kind: "run", proposalId: p.id }, "closed_by_run_request");
   syncLifecycle(c, wsId, p.campaign_id, actor, "run requested");
   return getProposalRow(c, wsId, p.id);
 }

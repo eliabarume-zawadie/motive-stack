@@ -107,4 +107,7 @@ export const PERMISSION_CATALOG: Record<Permission, { group: string; label: stri
   "creatives.read": { group: "Creative", label: "See creatives, their pictures and checks" },
   "creatives.write": { group: "Creative", label: "Make and edit creatives, make pictures, send for review" },
   "creatives.review": { group: "Creative", label: "Approve or reject creative versions" },
+  "tasks.read": { group: "Team", label: "See the inbox, the calendar, tasks and who owns what" },
+  "tasks.write": { group: "Team", label: "Create and update tasks and dated milestones" },
+  "assignments.manage": { group: "Team", label: "Set owners and reviewers (coordination only)" },
 };

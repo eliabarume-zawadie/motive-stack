@@ -48,6 +48,9 @@
  *   creatives.read               x        x        x      x     creatives, their pictures, checks and history
  *   creatives.write                       x        x      x     make, edit and archive a creative, make or cancel pictures, attach an approved image, send for review
  *   creatives.review                               x      x     approve or reject a creative version
+ *   tasks.read                   x        x        x      x     the inbox, the calendar, tasks and who owns what
+ *   tasks.write                           x        x      x     create and update tasks and dated milestones
+ *   assignments.manage                             x      x     set the owner and reviewer of a campaign or creative (coordination only: grants nothing)
  *
  * No permission lets any role skip approval-first execution, the budget ceiling, mock/live separation, payload-hash checks or
  * the campaign safety rules: those live in the services and the executor and apply to everyone. Credential permissions guard the
@@ -106,6 +109,9 @@ export const PERMISSION_MIN_ROLE = {
   "creatives.read": "viewer",
   "creatives.write": "operator",
   "creatives.review": "admin",
+  "tasks.read": "viewer",
+  "tasks.write": "operator",
+  "assignments.manage": "admin",
 } as const satisfies Record<string, Role>;
 export type Permission = keyof typeof PERMISSION_MIN_ROLE;
 
@@ -199,6 +205,17 @@ export const ROUTE_PERMISSIONS: Readonly<Record<string, Permission>> = {
   "GET /api/workspaces/:wid/creatives/:crid/versions/:v/pictures/:ratio/file": "creatives.read",
   "POST /api/workspaces/:wid/renders/:rid/cancel": "creatives.write",
   "POST /api/workspaces/:wid/renders/:rid/retry": "creatives.write",
+  "GET /api/workspaces/:wid/inbox": "tasks.read",
+  "GET /api/workspaces/:wid/calendar": "tasks.read",
+  "GET /api/workspaces/:wid/assignees": "tasks.read",
+  "GET /api/workspaces/:wid/work-items": "tasks.read",
+  "POST /api/workspaces/:wid/work-items": "tasks.write",
+  "PATCH /api/workspaces/:wid/work-items/:wiid": "tasks.write",
+  "GET /api/workspaces/:wid/ownerships/:stype/:sid": "tasks.read",
+  "PUT /api/workspaces/:wid/ownerships": "assignments.manage",
+  "GET /api/workspaces/:wid/notifications": "workspace.read",
+  "POST /api/workspaces/:wid/notifications/read-all": "workspace.read",
+  "POST /api/workspaces/:wid/notifications/:nid/read": "workspace.read",
   "GET /api/workspaces/:wid/policy": "workspace.read",
   "PUT /api/workspaces/:wid/policy": "policy.manage",
   "GET /api/workspaces/:wid/ai/settings": "ai.settings.read",

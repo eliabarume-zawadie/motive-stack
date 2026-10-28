@@ -22,6 +22,7 @@
     <a href="#s-dashboard">Home</a>
     <a href="#s-brain">My business</a>
     <a href="#s-brand">Brand</a>
+    <a href="#s-inbox">Inbox</a>
     <a href="#s-campaigns">Campaigns</a>
     <a href="#s-creative">Creative</a>
     <a href="#s-launch">Review &amp; approve</a>
@@ -191,6 +192,42 @@
     <p id="asset-error" class="flag-note" role="alert"></p>
     <p id="asset-usage" class="hint"></p>
     <ul id="asset-list" class="plain"></ul>
+  </section>
+
+  <section id="s-inbox">
+    <h2>Inbox &amp; calendar</h2>
+    <p class="hint">What needs a person, dated work, and who owns and reviews what. Notifications stay inside the app: nothing is sent by e-mail, text message or push. Dates are plain calendar dates, and a proposed date is a plan of your own: nothing is scheduled on any ad platform.</p>
+    <p class="flag-note role-note" data-for="tasks.write" hidden></p>
+    <p id="tm-badge" class="hint" role="status"></p>
+    <p id="tm-error" class="flag-note" role="alert"></p>
+    <h3>Notifications</h3>
+    <div id="tm-notes"></div>
+    <h3>Your inbox</h3>
+    <div id="tm-inbox"></div>
+    <h3>Add a task or a date</h3>
+    <form id="tm-work-form" class="grid">
+      <label>Campaign <select id="tm-campaign" name="campaignId"></select></label>
+      <label>What kind <select name="kind"><option value="draft">Finish the draft</option><option value="review">Review a creative version</option><option value="approval">Approve or reject a proposal</option><option value="run">Run an approved proposal (simulated)</option><option value="schedule_proposal">Proposed date (not a platform schedule)</option><option value="other">Other</option></select></label>
+      <label class="wide">Title <input name="title" maxlength="120" required></label>
+      <label>Creative (for a review task; its current version is used) <select id="tm-creative" name="creativeId"></select></label>
+      <label>Proposal id (for an approval or run task) <input name="proposalId" maxlength="64"></label>
+      <label>Due date <input name="dueDate" type="date"></label>
+      <label>Owner <select id="tm-w-owner" name="ownerUserId"></select></label>
+      <label>Reviewer <select id="tm-w-reviewer" name="reviewerUserId"></select></label>
+      <div class="wide"><button type="submit" data-needs="tasks.write" data-busy-label="Saving...">Save</button> <span class="hint">The task records the campaign version (and creative version) it was made for, and what has to be done.</span></div>
+    </form>
+    <h3>Owners and reviewers</h3>
+    <p class="hint">Who owns a campaign and who is expected to review it. This is for coordination only: it does not give anyone permission, and it never replaces approval or the second-person rule.</p>
+    <p class="flag-note role-note" data-for="assignments.manage" hidden></p>
+    <div class="grid">
+      <label>Campaign <select id="tm-own-campaign"></select></label>
+      <label>Owner <select id="tm-owner"></select></label>
+      <label>Reviewer <select id="tm-reviewer"></select></label>
+      <div><button type="button" id="tm-own-save" data-needs="assignments.manage">Save owner and reviewer</button></div>
+    </div>
+    <h3>Calendar</h3>
+    <div class="actions"><button type="button" id="tm-prev" class="secondary">Earlier 4 weeks</button> <button type="button" id="tm-today" class="secondary">Today</button> <button type="button" id="tm-next" class="secondary">Later 4 weeks</button> <span id="tm-range" class="muted"></span></div>
+    <div id="tm-cal"></div>
   </section>
 
   <section id="s-campaigns">
