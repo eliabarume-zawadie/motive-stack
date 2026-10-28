@@ -1,6 +1,7 @@
-import { iso } from "./core.js";
+import { audit, iso } from "./core.js";
+import { conflict, notFound } from "./errors.js";
 import type { AppContext } from "./context.js";
-import { newId } from "./util.js";
+import { newId, safeError } from "./util.js";
 
 export interface Job {
   id: string;
@@ -59,7 +60,7 @@ export function completeJob(c: AppContext, id: string): void {
 
 /** Retry with exponential backoff, or mark dead after the last attempt. */
 export function failJob(c: AppContext, job: Job, err: unknown): "retry" | "dead" {
-  const msg = (err instanceof Error ? err.message : String(err)).slice(0, 500);
+  const msg = safeError(err, 500);
   const dead = job.attempts >= job.maxAttempts;
   const runAt = new Date(c.now().getTime() + c.backoffMs(job.attempts)).toISOString();
   c.db
@@ -71,6 +72,30 @@ export function failJob(c: AppContext, job: Job, err: unknown): "retry" | "dead"
 /** After a crash/restart, jobs left "running" are orphaned. Re-queue them; handlers are idempotent. */
 export function recoverOrphanedJobs(c: AppContext): number {
   return c.db.prepare("UPDATE jobs SET status = 'queued', locked_at = NULL, updated_at = ? WHERE status = 'running'").run(iso(c)).changes;
+}
+
+/** Job types a person may re-queue after they gave up: the handler is idempotent (the lead and its CRM sync are stored once). Never an execution job. */
+export const RETRYABLE_JOB_TYPES = ["process_lead"];
+export const MAX_MANUAL_RETRIES = 2;
+
+export function jobRetryState(r: { type: string; status: string; manual_retries: number }): { eligible: boolean; reason: string } {
+  if (r.status !== "dead") return { eligible: false, reason: r.status === "done" ? "Completed: nothing to retry." : "Not failed: the worker is still handling it." };
+  if (!RETRYABLE_JOB_TYPES.includes(r.type)) return { eligible: false, reason: "Not retried from here: its result may be unconfirmed outside this app. Open the proposal and follow its recovery steps." };
+  if (r.manual_retries >= MAX_MANUAL_RETRIES) return { eligible: false, reason: "Retried " + MAX_MANUAL_RETRIES + " times already. Check the cause before trying again." };
+  return { eligible: true, reason: "Safe to retry: it will not create a duplicate." };
+}
+
+/** Put one job that gave up back in the queue, at most MAX_MANUAL_RETRIES times. Audited with the server-derived actor. */
+export function retryDeadJob(c: AppContext, wsId: string, jobId: string, actor: string): { status: string; manualRetries: number } {
+  const r = c.db.prepare("SELECT id, type, status, manual_retries FROM jobs WHERE id = ? AND workspace_id = ?").get(jobId, wsId) as { id: string; type: string; status: string; manual_retries: number } | undefined;
+  if (!r) throw notFound("Job");
+  const s = jobRetryState(r);
+  if (!s.eligible) throw conflict("job_not_retryable", s.reason);
+  const res = c.db.prepare("UPDATE jobs SET status = 'queued', attempts = 0, locked_at = NULL, run_at = ?, updated_at = ?, manual_retries = manual_retries + 1 WHERE id = ? AND workspace_id = ? AND status = 'dead' AND manual_retries < ?")
+    .run(iso(c), iso(c), jobId, wsId, MAX_MANUAL_RETRIES);
+  if (res.changes !== 1) throw conflict("job_not_retryable", "This job changed while you were looking at it. Reload and check its state.");
+  audit(c, wsId, actor, "job.retried", "job", jobId, { type: r.type, manualRetries: r.manual_retries + 1 });
+  return { status: "queued", manualRetries: r.manual_retries + 1 };
 }
 
 export type JobHandler = (c: AppContext, job: Job) => Promise<void>;

@@ -41,6 +41,29 @@ Optional settings: copy `.env.example` to `.env.local` (git-ignored). With no `.
 7. **Inject a synthetic lead**. It is stored once (duplicate event IDs are ignored) and synced to the simulated GoHighLevel, which deduplicates contacts by email, then phone.
 8. The UI shows campaign state, proposal and attempts, leads and CRM sync, errors, and the activity history. Every simulated result is labelled **SIMULATED**.
 
+## Current feature status (mock mode)
+
+Everything below runs locally and offline. Nothing here uses a real AI provider, Meta account or CRM.
+
+| Area | Status | Details |
+|---|---|---|
+| Home dashboard | working | Real local counts, a server-built "Needs your attention" list, loading, empty and error states. |
+| Business Brain | working | Website analysis (bounded, SSRF-safe reader, evidence per finding) or a no-website questionnaire; review, edit, approve or reject each finding; owner wording survives re-analysis; each saved item is labelled with where it came from. [docs/website-analysis.md](docs/website-analysis.md) |
+| Daily budget limit | working | The Business Brain's daily ceiling is one limit for the whole workspace: every plan and stand-alone campaign together, counting what is approved or running once. Enforced on the server when proposing, approving (race-safe, in one write-locked transaction) and running; a lowered limit is flagged and blocks new approvals. [docs/daily-budget-limit.md](docs/daily-budget-limit.md) |
+| Plans and lifecycle | working | A canonical campaign lifecycle enforced on the server (draft, needs review, awaiting approval, approved, queued, run, completed, archived). Rule-based plans of separate campaigns that share one daily budget, resumable idempotent batch drafts, duplicate checks, and a budget review that goes stale when any number changes. A plan is never approved as a whole. [docs/campaign-lifecycle-and-plans.md](docs/campaign-lifecycle-and-plans.md) |
+| Marketing goal and campaigns | working | Goal choice, mock draft with claims, assumptions, questions and platform checks, edits with version history, search and filter. The mock draft does not change with the goal. [docs/campaign-planning.md](docs/campaign-planning.md) |
+| Approval and simulated execution | working | Approval binds to the reviewed version and **never runs anything**: running is a separate step needing its own `proposals.execute` permission. Over-budget proposals are refused; execution is idempotent and always labelled SIMULATED. A person cannot approve their own proposal (default on; not enforceable with the shared local token, and recorded as such). |
+| Brand Kit and assets | working (local files) | A versioned Brand Kit (voice, look, audiences, disclaimer wording: preferences, never business facts) with version-bound review, and an asset library with validated PNG/JPEG/WebP files, provenance, rights, immutable versions and review. Files are stored in `data/assets/` (git-ignored, development only). Not used in generation yet. [docs/brand-kit-and-assets.md](docs/brand-kit-and-assets.md) |
+| Creative Studio | working (mock only) | Still-image creatives per campaign: structured brief, editable copy, placeholder pictures from an offline mock made by persisted, cancellable, retryable jobs, deterministic checks with repair guidance (AI critique is shown as not performed), version-bound approval and a hash-pinned link to the campaign proposal. No live image service; video is planned, not built. See [docs/creative-studio.md](docs/creative-studio.md). |
+| Organizations and custom roles | API only | Every workspace belongs to an organization (personal ones are automatic). Agencies, client workspaces and custom roles work through the API for signed-in people; the browser cannot sign in yet, so there is no role editor. [docs/organizations-and-permissions.md](docs/organizations-and-permissions.md) |
+| Leads and jobs | working | Synthetic leads only, duplicate events ignored, owner-set status with history; persisted jobs with safe errors and a bounded retry. [docs/leads-and-jobs.md](docs/leads-and-jobs.md) |
+| Settings | working | Workspace and role, people (needs real sign-in), AI status and estimated usage, integrations with last test. [docs/settings-and-integrations.md](docs/settings-and-integrations.md) |
+| Security review | done for Phases 1 to 5 | Findings, fixes and production prerequisites: [docs/security-review.md](docs/security-review.md) |
+| Live OpenAI | **not tested** | Deferred. Needs explicit authorization and a new valid key. The one-request plan is in [docs/website-analysis.md](docs/website-analysis.md). |
+| Live Meta, live CRM | **not implemented / not enabled** | Real GoHighLevel actions are deferred; live Meta creation is not enabled in this release. |
+
+Acceptance evidence for the whole roadmap: [docs/acceptance-report.md](docs/acceptance-report.md).
+
 ## Integration modes
 
 | Mode | When | Behavior |

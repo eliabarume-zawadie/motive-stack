@@ -52,6 +52,7 @@ async function fullFlow(s: ReturnType<typeof boot>) {
   expect(prop.status).toBe(201);
   expect(prop.body.status).toBe("proposed");
   const appr = await call(s.app, "POST", `${base}/proposals/${prop.body.id}/approve`, w.token, { decidedBy: "elia" });
+  await call(s.app, "POST", `${base}/proposals/${prop.body.id}/execute`, w.token);
   expect(appr.body.status).toBe("approved");
   await s.worker.runUntilIdle();
   return { w, base, cid, pid: prop.body.id as string };
@@ -215,6 +216,7 @@ describe("mock vs live separation", () => {
     const g = await call(mock.app, "POST", `${base}/campaigns/generate`, w.token, { providerId: "mock", model: "mock-deterministic-1" });
     const p = await call(mock.app, "POST", `${base}/campaigns/${g.body.id}/proposals`, w.token, {});
     await call(mock.app, "POST", `${base}/proposals/${p.body.id}/approve`, w.token, { decidedBy: "elia" });
+    await call(mock.app, "POST", `${base}/proposals/${p.body.id}/execute`, w.token);
     mock.db.close();
 
     const live = boot(path, liveEnv); // same database, now in live mode; no network is touched
@@ -261,14 +263,15 @@ describe("integration config", () => {
     migrate(db);
     const avail = (env: Record<string, string>) => {
       const c = buildContext({ db, env });
+    // a blank or placeholder value is not a key, so it never makes a provider available
       return Object.fromEntries(c.ai.list().map((p) => [p.id, p.available]));
     };
-    const keys = { OPENAI_API_KEY: "k1", ANTHROPIC_API_KEY: "k2" };
+    const keys = { OPENAI_API_KEY: "sk-TEST-FAKE-openai-0000000000", ANTHROPIC_API_KEY: "sk-ant-TEST-FAKE-0000000000" };
     expect(avail({ ...keys })).toMatchObject({ mock: true, openai: false, anthropic: false }); // keys alone: nothing live
     expect(avail({ ...keys, ALLOW_LIVE_PROVIDER_CALLS: "true" })).toMatchObject({ openai: false, anthropic: false }); // allow flag alone: nothing live
     expect(() => avail({ ...keys, AI_PROVIDER_MODE: "live" })).toThrow(/ALLOW_LIVE_PROVIDER_CALLS/); // live without the second switch is a startup error
     expect(avail({ ...keys, AI_PROVIDER_MODE: "live", ALLOW_LIVE_PROVIDER_CALLS: "true" })).toMatchObject({ openai: true, anthropic: true });
-    expect(avail({ OPENAI_API_KEY: "k1", AI_PROVIDER_MODE: "live", ALLOW_LIVE_PROVIDER_CALLS: "true" })).toMatchObject({ openai: true, anthropic: false }); // per-provider keys
+    expect(avail({ OPENAI_API_KEY: "sk-TEST-FAKE-openai-0000000000", AI_PROVIDER_MODE: "live", ALLOW_LIVE_PROVIDER_CALLS: "true" })).toMatchObject({ openai: true, anthropic: false }); // per-provider keys
     db.close();
   });
 });

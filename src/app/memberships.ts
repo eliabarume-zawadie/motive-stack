@@ -1,7 +1,9 @@
-import { isRole, roleAllows, type Actor, type Role } from "../auth/authz.js";
+import { authzAllows, isRole, type Actor, type Permission, type Role } from "../auth/authz.js";
 import { audit, iso, type Core } from "./core.js";
 import { AppError, conflict, forbidden, notFound } from "./errors.js";
 import { newId, newToken, safeEqual, sha256 } from "./util.js";
+import { customRolePermissions, ensurePersonalOrgOwner, orgAudit } from "./organizations.js";
+import { ensureWorkspaceDefaults } from "./tenancy.js";
 import { getWorkspace, type Workspace } from "./workspaces.js";
 
 export interface Membership {
@@ -9,6 +11,8 @@ export interface Membership {
   userId: string;
   role: Role;
   status: "active" | "revoked";
+  /** Set when the member has a custom role (which then replaces the built-in set). */
+  customRoleId: string | null;
 }
 
 interface Row {
@@ -16,12 +20,13 @@ interface Row {
   user_id: string;
   role: string;
   status: "active" | "revoked";
+  custom_role_id: string | null;
 }
 
 /** The CURRENT active membership, read fresh from the database on every call. Nothing about roles is cached or taken from a token. */
 export function activeMembership(c: Core, userId: string, workspaceId: string): Membership | null {
-  const r = c.db.prepare("SELECT workspace_id, user_id, role, status FROM workspace_memberships WHERE workspace_id = ? AND user_id = ? AND status = 'active'").get(workspaceId, userId) as Row | undefined;
-  return r && isRole(r.role) ? { workspaceId: r.workspace_id, userId: r.user_id, role: r.role, status: r.status } : null;
+  const r = c.db.prepare("SELECT workspace_id, user_id, role, status, custom_role_id FROM workspace_memberships WHERE workspace_id = ? AND user_id = ? AND status = 'active'").get(workspaceId, userId) as Row | undefined;
+  return r && isRole(r.role) ? { workspaceId: r.workspace_id, userId: r.user_id, role: r.role, status: r.status, customRoleId: r.custom_role_id } : null;
 }
 
 /**
@@ -38,11 +43,20 @@ export function approverMayAuthorize(c: Core, approval: { approver_kind: string;
   if (!approval) return false;
   if (approval.approver_kind === "user") {
     const m = approval.approver_user_id ? activeMembership(c, approval.approver_user_id, workspaceId) : null;
-    return !!m && roleAllows(m.role, "proposals.decide");
+    return !!m && memberMayDo(c, m, "proposals.decide");
   }
   if (approval.approver_kind === "legacy_token") return mode === "mock" && legacyTokenEnabled(c, workspaceId);
   if (approval.approver_kind === "unverified") return mode === "mock";
   return false;
+}
+
+/** Does this member hold this permission right now? Custom roles are judged by their own exact set; a vanished or archived custom role grants nothing. */
+export function memberMayDo(c: Core, m: Membership, permission: Permission): boolean {
+  if (m.customRoleId) {
+    const set = customRolePermissions(c, m.customRoleId);
+    return !!set && authzAllows({ role: m.role, actor: { kind: "user" }, customPermissions: set }, permission);
+  }
+  return authzAllows({ role: m.role, actor: { kind: "user" } }, permission);
 }
 
 export function legacyTokenEnabled(c: Core, workspaceId: string): boolean {
@@ -59,10 +73,10 @@ export function listUserWorkspaces(c: Core, userId: string): Array<{ id: string;
 
 export function listMembers(c: Core, workspaceId: string) {
   return (c.db
-    .prepare(`SELECT m.user_id, u.email, u.display_name, m.role, m.status, m.created_at, m.revoked_at
-              FROM workspace_memberships m JOIN users u ON u.id = m.user_id WHERE m.workspace_id = ? ORDER BY m.created_at, m.user_id`)
+    .prepare(`SELECT m.user_id, u.email, u.display_name, m.role, m.status, m.created_at, m.revoked_at, m.custom_role_id, t.name AS custom_role_name
+              FROM workspace_memberships m JOIN users u ON u.id = m.user_id LEFT JOIN role_templates t ON t.id = m.custom_role_id WHERE m.workspace_id = ? ORDER BY m.created_at, m.user_id`)
     .all(workspaceId) as Array<Record<string, unknown>>).map((r) => ({
-    userId: r.user_id, email: r.email ?? null, displayName: r.display_name ?? null, role: r.role, status: r.status, addedAt: r.created_at, revokedAt: r.revoked_at ?? null,
+    userId: r.user_id, email: r.email ?? null, displayName: r.display_name ?? null, role: r.role, status: r.status, addedAt: r.created_at, revokedAt: r.revoked_at ?? null, customRoleId: r.custom_role_id ?? null, customRoleName: r.custom_role_name ?? null,
   }));
 }
 
@@ -79,7 +93,7 @@ export function addMember(c: Core, actor: Actor, workspaceId: string, userId: st
     const cur = c.db.prepare("SELECT status FROM workspace_memberships WHERE workspace_id = ? AND user_id = ?").get(workspaceId, userId) as { status: string } | undefined;
     if (cur?.status === "active") throw conflict("already_member", "That user is already a member; change their role instead");
     if (cur) {
-      c.db.prepare("UPDATE workspace_memberships SET role = ?, status = 'active', updated_at = ?, revoked_at = NULL, revoked_by = NULL WHERE workspace_id = ? AND user_id = ?").run(role, at, workspaceId, userId);
+      c.db.prepare("UPDATE workspace_memberships SET role = ?, custom_role_id = NULL, status = 'active', updated_at = ?, revoked_at = NULL, revoked_by = NULL WHERE workspace_id = ? AND user_id = ?").run(role, at, workspaceId, userId);
     } else {
       c.db.prepare("INSERT INTO workspace_memberships (id, workspace_id, user_id, role, status, created_at, created_by, updated_at) VALUES (?,?,?,?,'active',?,?,?)").run(newId("mem"), workspaceId, userId, role, at, actor.label, at);
     }
@@ -92,8 +106,35 @@ export function changeRole(c: Core, actor: Actor, workspaceId: string, userId: s
     const cur = c.db.prepare("SELECT role FROM workspace_memberships WHERE workspace_id = ? AND user_id = ? AND status = 'active'").get(workspaceId, userId) as { role: string } | undefined;
     if (!cur) throw notFound("Member");
     if (cur.role === "owner" && role !== "owner" && activeOwners(c, workspaceId) <= 1) throw conflict("last_owner", "A workspace must keep at least one owner; make someone else an owner first");
-    c.db.prepare("UPDATE workspace_memberships SET role = ?, updated_at = ? WHERE workspace_id = ? AND user_id = ?").run(role, iso(c), workspaceId, userId);
+    c.db.prepare("UPDATE workspace_memberships SET role = ?, custom_role_id = NULL, updated_at = ? WHERE workspace_id = ? AND user_id = ?").run(role, iso(c), workspaceId, userId);
     audit(c, workspaceId, actor.label, "membership.role_changed", "user", userId, { from: cur.role, to: role });
+  })();
+}
+
+/**
+ * Gives a member a built-in role OR one of the workspace's organization's custom roles. Only one of the two applies at a time. The last owner cannot be moved
+ * off the owner role, and a custom role (which can never carry owner-only permissions) counts as "not an owner" for that rule.
+ */
+export function assignMemberRole(c: Core, actor: Actor, workspaceId: string, userId: string, input: { role?: Role; customRoleId?: string }): void {
+  if (!!input.role === !!input.customRoleId) throw new AppError(400, "validation", "Choose either a built-in role or a custom role");
+  c.db.transaction(() => {
+    const cur = c.db.prepare("SELECT role, custom_role_id FROM workspace_memberships WHERE workspace_id = ? AND user_id = ? AND status = 'active'").get(workspaceId, userId) as { role: string; custom_role_id: string | null } | undefined;
+    if (!cur) throw notFound("Member");
+    const wasOwner = cur.role === "owner" && !cur.custom_role_id;
+    if (input.customRoleId) {
+      const orgId = (c.db.prepare("SELECT organization_id o FROM workspaces WHERE id = ?").get(workspaceId) as { o: string | null } | undefined)?.o;
+      const t = c.db.prepare("SELECT id, archived_at FROM role_templates WHERE id = ? AND organization_id = ?").get(input.customRoleId, orgId ?? "") as { id: string; archived_at: string | null } | undefined;
+      if (!t) throw notFound("Role"); // a role from another organization looks like one that does not exist
+      if (t.archived_at) throw conflict("role_archived", "This role is archived");
+      if (wasOwner && activeOwners(c, workspaceId) <= 1) throw conflict("last_owner", "A workspace must keep at least one owner; make someone else an owner first");
+      c.db.prepare("UPDATE workspace_memberships SET role = 'viewer', custom_role_id = ?, updated_at = ? WHERE workspace_id = ? AND user_id = ?").run(t.id, iso(c), workspaceId, userId);
+      audit(c, workspaceId, actor.label, "membership.role_changed", "user", userId, { from: cur.custom_role_id ? "custom" : cur.role, to: "custom", customRoleId: t.id });
+      if (orgId) orgAudit(c, orgId, actor.label, "access.role_assigned", "user", userId, { workspaceId, customRoleId: t.id });
+    } else {
+      if (wasOwner && input.role !== "owner" && activeOwners(c, workspaceId) <= 1) throw conflict("last_owner", "A workspace must keep at least one owner; make someone else an owner first");
+      c.db.prepare("UPDATE workspace_memberships SET role = ?, custom_role_id = NULL, updated_at = ? WHERE workspace_id = ? AND user_id = ?").run(input.role, iso(c), workspaceId, userId);
+      audit(c, workspaceId, actor.label, "membership.role_changed", "user", userId, { from: cur.custom_role_id ? "custom" : cur.role, to: input.role });
+    }
   })();
 }
 
@@ -118,7 +159,9 @@ export function createWorkspaceForUser(c: Core, actor: Actor & { kind: "user" },
   c.db.transaction(() => {
     c.db.prepare("INSERT INTO workspaces (id, name, token_hash, created_at, legacy_token_disabled_at) VALUES (?,?,?,?,?)").run(id, name, sha256(newToken()), at, at);
     c.db.prepare("INSERT INTO workspace_memberships (id, workspace_id, user_id, role, status, created_at, created_by, updated_at) VALUES (?,?,?,?,'active',?,?,?)").run(newId("mem"), id, actor.userId, "owner", at, actor.label, at);
-    audit(c, id, actor.label, "workspace.created", "workspace", id, { name, owner: actor.userId });
+    const orgId = ensureWorkspaceDefaults(c, id, { createdBy: actor.userId });
+    ensurePersonalOrgOwner(c, orgId, actor.userId, actor.label);
+    audit(c, id, actor.label, "workspace.created", "workspace", id, { name, owner: actor.userId, organizationId: orgId });
   })();
   return getWorkspace(c, id);
 }
@@ -147,6 +190,8 @@ export function claimWorkspace(c: Core, actor: Actor & { kind: "user" }, workspa
     const cur = c.db.prepare("SELECT 1 FROM workspace_memberships WHERE workspace_id = ? AND user_id = ?").get(workspaceId, actor.userId);
     if (cur) c.db.prepare("UPDATE workspace_memberships SET role = 'owner', status = 'active', updated_at = ?, revoked_at = NULL, revoked_by = NULL WHERE workspace_id = ? AND user_id = ?").run(at, workspaceId, actor.userId);
     else c.db.prepare("INSERT INTO workspace_memberships (id, workspace_id, user_id, role, status, created_at, created_by, updated_at) VALUES (?,?,?,?,'active',?,?,?)").run(newId("mem"), workspaceId, actor.userId, "owner", at, actor.label, at);
+    const orgId = ensureWorkspaceDefaults(c, workspaceId, { createdBy: actor.userId });
+    ensurePersonalOrgOwner(c, orgId, actor.userId, actor.label);
     audit(c, workspaceId, actor.label, "workspace.claimed", "workspace", workspaceId, { owner: actor.userId });
   });
   try {

@@ -3,18 +3,31 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import { fileURLToPath } from "node:url";
 import { z, ZodError } from "zod";
 import { AiError } from "../ai/types.js";
+import { brainProvenance, reconcileLedger } from "../app/provenance.js";
 import { aiProviderStatus, connectionTest, getAiSettings, listModels, listUsage, putAiSettings, runTestRequest, usageSummary } from "../app/aiService.js";
-import { analysisView, approveSafeInsights, brainPatchFor, decideInsight, latestWebsiteAnalysis, retryWebsiteAnalysisAi, startWebsiteAnalysis } from "../app/websiteAnalysis.js";
+import { analysisView, approveSafeInsights, brainPatchFor, decideInsight, latestWebsiteAnalysis, recordFillApplied, retryWebsiteAnalysisAi, startWebsiteAnalysis } from "../app/websiteAnalysis.js";
+import { splitPlan } from "../app/campaignPlan.js";
 import { generateCampaign, listCampaigns, updateBrief } from "../app/campaigns.js";
 import { dashboardView } from "../app/dashboard.js";
 import type { AppContext } from "../app/context.js";
 import { AppError } from "../app/errors.js";
-import { ingestLeadEvent } from "../app/leads.js";
-import { createProposal, decideProposal, getProposalRow } from "../app/proposals.js";
+import { ingestLeadEvent, leadDetail, setLeadStatus } from "../app/leads.js";
+import { retryDeadJob } from "../app/jobs.js";
+import { createProposal, decideProposal, requestExecution, getProposalRow } from "../app/proposals.js";
 import { activityView, campaignView, jobsView, leadsView, proposalView, workspaceView } from "../app/views.js";
-import { addMember, changeRole, claimWorkspace, createWorkspaceForUser, disableLegacyToken, listMembers, listUserWorkspaces, removeMember } from "../app/memberships.js";
+import { addMember, assignMemberRole, claimWorkspace, createWorkspaceForUser, disableLegacyToken, listMembers, listUserWorkspaces, removeMember } from "../app/memberships.js";
 import { createWorkspace, getBrain, putBrain } from "../app/workspaces.js";
-import type { AuthzContext } from "../auth/authz.js";
+import { AccessGrantSchema, OrgMemberAddSchema, OrgMemberRoleSchema, OrgNameSchema, PermissionPreviewSchema, addOrgMember, archiveRoleTemplate, changeOrgRole, createAgencyOrganization, createClientWorkspace, createRoleTemplate, describePermissions, getOrganization, grantWorkspaceAccess, listOrgMembers, listOrgWorkspaces, listRoleTemplates, listUserOrganizations, orgAuditView, removeOrgMember, updateRoleTemplate, validatePermissionList } from "../app/organizations.js";
+import { getPolicy, setPolicy } from "../app/workspacePolicy.js";
+import { applyAllocations, archivePlan, generatePlanDrafts, listPlans, planView, recommendPlan, regenerateOpportunity, reviewPlanBudget, updateOpportunity, updatePlan } from "../app/plans.js";
+import { archiveCampaign, completeCampaign, LIFECYCLE_LABEL } from "../app/lifecycle.js";
+import { budgetPosition } from "../app/budgetCommitments.js";
+import { brandKitVersions, brandKitView, decideBrandKit, saveBrandKit, submitBrandKit } from "../app/brandKit.js";
+import { archiveCreative, attachImportedVariant, cancelRender, checkCreative, createCreative, creativeDetail, decideCreative, listCampaignCreatives, readVariantFile, requestRenders, retryRender, reviseCreative, submitCreative, suggestConcepts } from "../app/creatives.js";
+import { VIDEO_SUPPORT } from "../creative/video.js";
+import { addAssetVersion, archiveAsset, assetBodyLimit, assetDetail, createAsset, decideAssetVersion, listAssets, readAssetFile, submitAssetVersion } from "../app/assets.js";
+import { CUSTOMIZABLE_PERMISSIONS, PERMISSION_CATALOG } from "../auth/orgAuthz.js";
+import { authzAllows, permissionsFor, type AuthzContext } from "../auth/authz.js";
 import { ClaimSchema, CredentialPutSchema, EmptyBodySchema, MemberAddSchema, MemberRoleSchema, MetaAccountSchema } from "../auth/schemas.js";
 import { CREDENTIAL_KINDS, type CredentialKind, type WriteResult } from "../credentials/vault.js";
 import { audit } from "../app/core.js";
@@ -106,6 +119,7 @@ export function buildServer(ctx: AppContext, auth: AuthRuntime = workspaceTokenR
       };
       return reply.status(status[err.kind] ?? 400).send(errorBody(err.kind, err.message, err.requestId ? { requestId: err.requestId } : {}));
     }
+    if (typeof (err as { code?: unknown })?.code === "string" && (err as { code: string }).code.startsWith("SQLITE_BUSY")) return reply.status(503).send(errorBody("busy", "The workspace is being changed by another request; try again in a moment"));
     const fe = err as { statusCode?: number; code?: string };
     if (fe.statusCode && fe.statusCode < 500) return reply.status(fe.statusCode).send(errorBody(fe.code ?? "bad_request", "Bad request"));
     return reply.status(500).send(errorBody("internal", "Internal error")); // never echo internals or secrets
@@ -177,7 +191,11 @@ export function buildServer(ctx: AppContext, auth: AuthRuntime = workspaceTokenR
     const wid = (req: FastifyRequest) => az(req).workspaceId;
     const p = <T extends string>(req: FastifyRequest, k: T) => (req.params as Record<T, string>)[k];
 
-    ws.get("/", async (req) => workspaceView(ctx, wid(req)));
+    ws.get("/", async (req) => {
+      const a = az(req);
+      // the role and the permissions it grants, derived on the server, so the screen can say "you may not do this" instead of showing a button that fails
+      return { ...workspaceView(ctx, wid(req)), role: a.role, permissions: permissionsFor(a.role, a.actor.kind, a.customPermissions), customRoleId: a.customRoleId ?? null };
+    });
     ws.patch("/", async (req) => {
       const { metaAccountId } = WorkspaceUpdateSchema.parse(req.body);
       selectMetaAccount(ctx, wid(req), metaAccountId, az(req).actor); // live: only an account this workspace is authorized for
@@ -185,12 +203,21 @@ export function buildServer(ctx: AppContext, auth: AuthRuntime = workspaceTokenR
     });
 
     ws.get("/brain", async (req) => getBrain(ctx, wid(req)) ?? { brain: null, version: 0 });
-    ws.put("/brain", async (req) => putBrain(ctx, wid(req), req.body, az(req).actor.label));
+    ws.put("/brain", async (req) => {
+      const saved = putBrain(ctx, wid(req), req.body, az(req).actor.label);
+      reconcileLedger(ctx, wid(req)); // what is recorded as coming from a website now matches what is really saved
+      // Lowering the daily limit below what is already committed is allowed, but it is flagged, audited and blocks new approvals until the commitments fit again.
+      const pos = budgetPosition(ctx, wid(req));
+      if (pos.overLimitCents > 0) audit(ctx, wid(req), az(req).actor.label, "budget.over_limit", "workspace", wid(req), { ceilingCents: pos.ceilingCents, committedCents: pos.committedCents, overLimitCents: pos.overLimitCents });
+      return { ...saved, budget: { ceilingCents: pos.ceilingCents, committedCents: pos.committedCents, availableCents: pos.availableCents, overLimitCents: pos.overLimitCents } };
+    });
+    ws.get("/brain/provenance", async (req) => brainProvenance(ctx, wid(req)));
 
     ws.get("/campaigns", async (req) => listCampaigns(ctx, wid(req)));
     ws.post("/campaigns/generate", async (req, reply) => {
-      const body = GenerateRequestSchema.parse(req.body ?? {});
-      const rec = await generateCampaign(ctx, wid(req), body);
+      const { rest, plan } = splitPlan(req.body ?? {});
+      const body = GenerateRequestSchema.parse(rest);
+      const rec = await generateCampaign(ctx, wid(req), body, undefined, plan);
       return reply.status(201).send(campaignView(ctx, wid(req), rec.id));
     });
     ws.get("/campaigns/:cid", async (req) => campaignView(ctx, wid(req), p(req, "cid")));
@@ -218,6 +245,73 @@ export function buildServer(ctx: AppContext, auth: AuthRuntime = workspaceTokenR
         return proposalView(ctx, wid(req), decideProposal(ctx, wid(req), p(req, "pid"), decision, by));
       });
     }
+
+    // Running an approved action is its own step with its own permission: approving never runs anything.
+    ws.post("/proposals/:pid/execute", async (req) => proposalView(ctx, wid(req), requestExecution(ctx, wid(req), p(req, "pid"), az(req).actor.label)));
+    ws.get("/policy", async (req) => getPolicy(ctx, wid(req)));
+
+    // ---- Marketing plans: groups of SEPARATE campaigns sharing one daily budget. A plan is never approved as a whole; each campaign keeps its own proposal and approval ----
+    ws.get("/plans", async (req) => listPlans(ctx, wid(req), (req.query as { archived?: string } | undefined)?.archived === "true"));
+    ws.post("/plans/recommend", async (req, reply) => reply.status(201).send(recommendPlan(ctx, wid(req), az(req).actor.label, req.body)));
+    ws.get("/plans/:plid", async (req) => planView(ctx, wid(req), p(req, "plid")));
+    ws.patch("/plans/:plid", async (req) => updatePlan(ctx, wid(req), az(req).actor.label, p(req, "plid"), req.body));
+    ws.patch("/plans/:plid/opportunities/:opid", async (req) => updateOpportunity(ctx, wid(req), az(req).actor.label, p(req, "plid"), p(req, "opid"), req.body));
+    ws.post("/plans/:plid/generate", async (req) => generatePlanDrafts(ctx, wid(req), az(req).actor.label, p(req, "plid"), req.body));
+    ws.post("/plans/:plid/opportunities/:opid/regenerate", async (req) => regenerateOpportunity(ctx, wid(req), az(req).actor.label, p(req, "plid"), p(req, "opid"), req.body));
+    ws.post("/plans/:plid/apply-allocations", async (req) => applyAllocations(ctx, wid(req), az(req).actor.label, p(req, "plid")));
+    ws.post("/plans/:plid/budget-review", async (req) => reviewPlanBudget(ctx, wid(req), p(req, "plid"), req.body, approverOf(req)));
+    ws.post("/plans/:plid/archive", async (req) => archivePlan(ctx, wid(req), az(req).actor.label, p(req, "plid")));
+    ws.post("/campaigns/:cid/archive", async (req) => { const s = archiveCampaign(ctx, wid(req), p(req, "cid"), az(req).actor.label); return { lifecycle: { state: s, label: LIFECYCLE_LABEL[s] } }; });
+    ws.post("/campaigns/:cid/complete", async (req) => { const s = completeCampaign(ctx, wid(req), p(req, "cid"), az(req).actor.label); return { lifecycle: { state: s, label: LIFECYCLE_LABEL[s] } }; });
+
+    // ---- Brand Kit: preferences, never business facts. Versioned; approval is bound to one version ----
+    const approverOf = (req: FastifyRequest) => { const a = az(req).actor; return { decidedBy: a.label, approver: a.kind === "user" ? ({ kind: "user", userId: a.userId } as const) : ({ kind: "legacy_token" } as const) }; };
+    ws.get("/brand-kit", async (req) => brandKitView(ctx, wid(req)));
+    ws.put("/brand-kit", async (req) => saveBrandKit(ctx, wid(req), az(req).actor.label, req.body));
+    ws.post("/brand-kit/submit", async (req) => submitBrandKit(ctx, wid(req), az(req).actor.label));
+    ws.post("/brand-kit/approve", async (req) => decideBrandKit(ctx, wid(req), "approve", req.body, approverOf(req)));
+    ws.post("/brand-kit/reject", async (req) => decideBrandKit(ctx, wid(req), "reject", req.body, approverOf(req)));
+    ws.get("/brand-kit/versions", async (req) => ({ versions: brandKitVersions(ctx, wid(req)) }));
+
+    // ---- Asset library: metadata in the database, bytes behind the AssetStore. Uploads are JSON (base64) so no extra dependency is needed ----
+    const assetDeps = { c: ctx, store: ctx.assetStore, limits: ctx.assetLimits };
+    const upload = { bodyLimit: assetBodyLimit(ctx.assetLimits) };
+    ws.get("/assets", async (req) => listAssets(ctx, wid(req), (req.query as { archived?: string } | undefined)?.archived === "true"));
+    ws.post("/assets", upload, async (req, reply) => reply.status(201).send(await createAsset(assetDeps, wid(req), az(req).actor.label, req.body)));
+    ws.get("/assets/:aid", async (req) => assetDetail(ctx, wid(req), p(req, "aid")));
+    ws.post("/assets/:aid/versions", upload, async (req, reply) => reply.status(201).send(await addAssetVersion(assetDeps, wid(req), p(req, "aid"), az(req).actor.label, req.body)));
+    const ver = (req: FastifyRequest) => { const v = Number(p(req, "v")); if (!Number.isInteger(v) || v < 1) throw new AppError(404, "not_found", "Asset version not found"); return v; };
+    ws.get("/assets/:aid/versions/:v/file", async (req, reply) => {
+      const f = await readAssetFile(assetDeps, wid(req), p(req, "aid"), ver(req));
+      // The type comes from the file's own bytes (checked at upload). A sandboxed, script-free policy and nosniff mean even a hostile file could not run anything.
+      return reply.header("content-type", f.mime).header("content-disposition", `inline; filename="asset.${f.ext}"`).header("x-content-type-options", "nosniff").header("cache-control", "private, no-store").header("content-security-policy", "default-src 'none'; sandbox").send(f.bytes);
+    });
+    ws.post("/assets/:aid/versions/:v/submit", async (req) => submitAssetVersion(ctx, wid(req), p(req, "aid"), ver(req), az(req).actor.label));
+    ws.post("/assets/:aid/versions/:v/approve", async (req) => decideAssetVersion(ctx, wid(req), p(req, "aid"), ver(req), "approve", req.body, approverOf(req)));
+    ws.post("/assets/:aid/versions/:v/reject", async (req) => decideAssetVersion(ctx, wid(req), p(req, "aid"), ver(req), "reject", req.body, approverOf(req)));
+    ws.post("/assets/:aid/archive", async (req) => archiveAsset(ctx, wid(req), p(req, "aid"), az(req).actor.label));
+
+    // ---- Creative Studio (images; mock provider only). Pictures are persisted render jobs; nothing is complete until its bytes are validated and stored ----
+    ws.get("/creative/providers", async () => ({ image: [ctx.imageProvider.capabilities], video: VIDEO_SUPPORT, limits: ctx.creativeLimits }));
+    ws.get("/campaigns/:cid/creative-concepts", async (req) => suggestConcepts(ctx, wid(req), p(req, "cid")));
+    ws.get("/campaigns/:cid/creatives", async (req) => listCampaignCreatives(ctx, wid(req), p(req, "cid")));
+    ws.post("/campaigns/:cid/creatives", async (req, reply) => reply.status(201).send(createCreative(ctx, wid(req), az(req).actor.label, p(req, "cid"), req.body)));
+    ws.get("/creatives/:crid", async (req) => creativeDetail(ctx, wid(req), p(req, "crid")));
+    ws.post("/creatives/:crid/versions", async (req, reply) => reply.status(201).send(reviseCreative(ctx, wid(req), az(req).actor.label, p(req, "crid"), req.body)));
+    ws.post("/creatives/:crid/archive", async (req) => archiveCreative(ctx, wid(req), az(req).actor.label, p(req, "crid")));
+    ws.post("/creatives/:crid/versions/:v/renders", async (req, reply) => reply.status(202).send(requestRenders(ctx, wid(req), az(req).actor.label, p(req, "crid"), ver(req), req.body)));
+    ws.post("/creatives/:crid/versions/:v/images", async (req) => attachImportedVariant(ctx, wid(req), az(req).actor.label, p(req, "crid"), ver(req), req.body));
+    ws.post("/creatives/:crid/versions/:v/check", async (req) => checkCreative(ctx, wid(req), p(req, "crid"), ver(req)));
+    ws.post("/creatives/:crid/versions/:v/submit", async (req) => submitCreative(ctx, wid(req), az(req).actor.label, p(req, "crid"), ver(req)));
+    ws.post("/creatives/:crid/versions/:v/approve", async (req) => decideCreative(ctx, wid(req), p(req, "crid"), ver(req), "approve", req.body, approverOf(req)));
+    ws.post("/creatives/:crid/versions/:v/reject", async (req) => decideCreative(ctx, wid(req), p(req, "crid"), ver(req), "reject", req.body, approverOf(req)));
+    ws.get("/creatives/:crid/versions/:v/pictures/:ratio/file", async (req, reply) => {
+      const f = await readVariantFile(ctx, wid(req), p(req, "crid"), ver(req), p(req, "ratio"));
+      return reply.header("content-type", f.mime).header("content-disposition", `inline; filename="creative.${f.ext}"`).header("x-content-type-options", "nosniff").header("cache-control", "private, no-store").header("content-security-policy", "default-src 'none'; sandbox").send(f.bytes);
+    });
+    ws.post("/renders/:rid/cancel", async (req) => cancelRender(ctx, wid(req), az(req).actor.label, p(req, "rid")));
+    ws.post("/renders/:rid/retry", async (req) => retryRender(ctx, wid(req), az(req).actor.label, p(req, "rid")));
+    ws.put("/policy", async (req) => setPolicy(ctx, az(req).actor, wid(req), req.body));
 
     // ---- AI configuration, usage and explicit connection test ----
     ws.get("/ai/settings", async (req) => ({ settings: getAiSettings(ctx, wid(req)), models: listModels(ctx, wid(req)) }));
@@ -344,8 +438,8 @@ export function buildServer(ctx: AppContext, auth: AuthRuntime = workspaceTokenR
       return reply.status(201).send({ members: listMembers(ctx, wid(req)) });
     });
     ws.patch("/members/:uid", async (req) => {
-      const { role } = MemberRoleSchema.parse(req.body);
-      changeRole(ctx, az(req).actor, wid(req), p(req, "uid"), role);
+      const body = MemberRoleSchema.parse(req.body);
+      assignMemberRole(ctx, az(req).actor, wid(req), p(req, "uid"), { ...(body.role ? { role: body.role } : {}), ...(body.customRoleId ? { customRoleId: body.customRoleId } : {}) });
       return { members: listMembers(ctx, wid(req)) };
     });
     ws.delete("/members/:uid", async (req) => {
@@ -399,14 +493,54 @@ export function buildServer(ctx: AppContext, auth: AuthRuntime = workspaceTokenR
       return { insight: decideInsight(ctx, wid(req), p(req, "aid"), p(req, "iid"), body.action, body.text, az(req).actor.label) };
     });
     ws.get("/website-analyses/:aid/brain-patch", async (req) => brainPatchFor(ctx, wid(req), p(req, "aid")));
+    ws.post("/website-analyses/:aid/applied", async (req) => {
+      const item = z.object({ field: z.string().max(40), value: z.string().max(2100) }).strict();
+      const body = z.object({ added: z.array(item).max(80), removed: z.array(item).max(80) }).strict().parse(req.body);
+      return recordFillApplied(ctx, wid(req), p(req, "aid"), body, az(req).actor.label);
+    });
 
     ws.get("/leads", async (req) => leadsView(ctx, wid(req)));
     ws.get("/activity", async (req) => activityView(ctx, wid(req)));
     ws.get("/jobs", async (req) => jobsView(ctx, wid(req)));
+    ws.post("/jobs/:jid/retry", async (req) => retryDeadJob(ctx, wid(req), p(req, "jid"), az(req).actor.label));
+    ws.get("/leads/:lid", async (req) => leadDetail(ctx, wid(req), p(req, "lid")));
+    ws.put("/leads/:lid/status", async (req) => setLeadStatus(ctx, wid(req), p(req, "lid"), req.body, az(req).actor.label));
     // One read-only summary for the UI's dashboard, campaign list, operations and integrations views. Jobs inside it are included only for
     // roles that may read /jobs; everything else is what workspace.read already allows.
-    ws.get("/dashboard", async (req) => dashboardView(ctx, wid(req), az(req).role));
+    ws.get("/dashboard", async (req) => dashboardView(ctx, wid(req), (p) => authzAllows(az(req), p)));
   }, { prefix: "/api/workspaces/:wid" });
+
+  // ---- organizations (signed-in people only; with no identity provider these routes do not exist) ----
+  const person = (req: FastifyRequest) => {
+    const pr = req.principal;
+    if (pr?.kind !== "user") throw new AppError(401, "unauthorized", "Missing or invalid credentials");
+    return userActorOf(pr);
+  };
+  app.get("/api/me/organizations", async (req) => ({ organizations: listUserOrganizations(ctx, person(req).userId) }));
+  app.post("/api/organizations", async (req, reply) => reply.status(201).send(createAgencyOrganization(ctx, person(req), OrgNameSchema.parse(req.body).name)));
+  app.register(async (org) => {
+    const oz = (req: FastifyRequest) => {
+      if (!req.orgAuthz) throw new AppError(401, "unauthorized", "Missing or invalid credentials"); // unreachable: the hook sets it or refuses
+      return req.orgAuthz;
+    };
+    const oid = (req: FastifyRequest) => oz(req).organizationId; // the VERIFIED organization, never the raw URL value
+    const q = <T extends string>(req: FastifyRequest, k: T) => (req.params as Record<T, string>)[k];
+    org.get("/", async (req) => ({ ...getOrganization(ctx, oid(req)), role: oz(req).role }));
+    org.get("/workspaces", async (req) => ({ workspaces: listOrgWorkspaces(ctx, oid(req)) }));
+    org.post("/workspaces", async (req, reply) => reply.status(201).send(createClientWorkspace(ctx, oz(req).actor, oid(req), OrgNameSchema.parse(req.body).name)));
+    org.get("/members", async (req) => ({ members: listOrgMembers(ctx, oid(req)) }));
+    org.post("/members", async (req, reply) => { const b = OrgMemberAddSchema.parse(req.body); addOrgMember(ctx, oz(req).actor, oid(req), b.userId, b.role); return reply.status(201).send({ members: listOrgMembers(ctx, oid(req)) }); });
+    org.patch("/members/:uid", async (req) => { changeOrgRole(ctx, oz(req).actor, oid(req), q(req, "uid"), OrgMemberRoleSchema.parse(req.body).role); return { members: listOrgMembers(ctx, oid(req)) }; });
+    org.delete("/members/:uid", async (req) => { removeOrgMember(ctx, oz(req).actor, oid(req), q(req, "uid")); return { members: listOrgMembers(ctx, oid(req)) }; });
+    org.get("/permissions", async () => ({ permissions: CUSTOMIZABLE_PERMISSIONS.map((p) => ({ permission: p, ...PERMISSION_CATALOG[p] })) }));
+    org.get("/role-templates", async (req) => ({ roles: listRoleTemplates(ctx, oid(req)) }));
+    org.post("/role-templates", async (req, reply) => reply.status(201).send(createRoleTemplate(ctx, oz(req).actor, oid(req), req.body)));
+    org.put("/role-templates/:tid", async (req) => updateRoleTemplate(ctx, oz(req).actor, oid(req), q(req, "tid"), req.body));
+    org.delete("/role-templates/:tid", async (req) => { archiveRoleTemplate(ctx, oz(req).actor, oid(req), q(req, "tid")); return { roles: listRoleTemplates(ctx, oid(req)) }; });
+    org.post("/role-preview", async (req) => describePermissions(validatePermissionList(PermissionPreviewSchema.parse(req.body).permissions)));
+    org.post("/access-grants", async (req, reply) => reply.status(201).send(grantWorkspaceAccess(ctx, oz(req).actor, oid(req), AccessGrantSchema.parse(req.body))));
+    org.get("/audit", async (req) => ({ events: orgAuditView(ctx, oid(req)) }));
+  }, { prefix: "/api/organizations/:oid" });
 
   app.register(fastifyStatic, { root: PUBLIC_DIR });
   return app;

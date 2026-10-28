@@ -1,5 +1,10 @@
 import type { AppContext } from "./context.js";
 import { getCampaignRecord } from "./campaigns.js";
+import { safeError } from "./util.js";
+import { getPlan, versionHistory } from "./campaignPlan.js";
+import { LIFECYCLE_LABEL, syncLifecycle } from "./lifecycle.js";
+import { planContextFor } from "./plans.js";
+import { budgetPreview } from "./budgetCommitments.js";
 import { getProposalRow, listProposals, type ProposalRow } from "./proposals.js";
 import { getBrain, getWorkspace } from "./workspaces.js";
 import { APPLICABLE_TARGETING_NOTE, metaValidation, specialAdCategoryHints } from "../domain/briefRules.js";
@@ -8,7 +13,7 @@ import { APPLICABLE_TARGETING_NOTE, metaValidation, specialAdCategoryHints } fro
 
 export function proposalView(c: AppContext, wsId: string, p: ProposalRow) {
   const approval = c.db
-    .prepare("SELECT decision, decided_by, claimed_label, reason, decided_at, expires_at, integration_mode FROM approvals WHERE proposal_id = ? AND workspace_id = ?")
+    .prepare("SELECT decision, decided_by, claimed_label, reason, decided_at, expires_at, integration_mode, separation FROM approvals WHERE proposal_id = ? AND workspace_id = ?")
     .get(p.id, wsId) as Record<string, string> | undefined;
   const attempts = c.db
     .prepare("SELECT attempt_no, status, dispatched, error_kind, error_message, started_at, finished_at FROM execution_attempts WHERE proposal_id = ? AND workspace_id = ? ORDER BY attempt_no")
@@ -26,6 +31,9 @@ export function proposalView(c: AppContext, wsId: string, p: ProposalRow) {
     plannedDailyBudgetCents: p.daily_budget_cents,
     payload: JSON.parse(p.payload) as unknown,
     lastError: p.last_error,
+    proposedByKind: p.proposed_by_kind,
+    /** For a proposal still waiting: what approving it would do to the workspace-wide daily limit. */
+    budgetImpact: p.status === "proposed" ? budgetPreview(c, wsId, p.daily_budget_cents) : null,
     createdAt: p.created_at,
     approval: approval ?? null,
     attempts,
@@ -40,6 +48,10 @@ export function campaignView(c: AppContext, wsId: string, campaignId: string) {
   const brain = getBrain(c, wsId)?.brain;
   return {
     ...rec,
+    plan: getPlan(c, wsId, campaignId),
+    lifecycle: (() => { const s = syncLifecycle(c, wsId, campaignId, "system", "viewed") ?? "draft"; return { state: s, label: LIFECYCLE_LABEL[s] }; })(),
+    marketingPlan: planContextFor(c, wsId, campaignId),
+    versionHistory: versionHistory(c, wsId, campaignId),
     proposals: listProposals(c, wsId, campaignId).map((p) => proposalView(c, wsId, p)),
     // Computed from the stored brief and the CURRENT Business Brain; never stored and never supplied by a model.
     ceilingCents: brain?.maxDailyBudgetCents ?? null,
@@ -53,7 +65,7 @@ export function leadsView(c: AppContext, wsId: string) {
   return (
     c.db
       .prepare(
-        `SELECT l.id, l.campaign_id, l.full_name, l.email, l.phone, l.simulated, l.crm_status, l.crm_error, l.created_at,
+        `SELECT l.id, l.campaign_id, l.full_name, l.email, l.phone, l.simulated, l.status, l.crm_status, l.crm_error, l.created_at,
                 s.contact_id, s.created_contact
          FROM leads l LEFT JOIN crm_syncs s ON s.lead_id = l.id AND s.workspace_id = l.workspace_id
          WHERE l.workspace_id = ? ORDER BY l.created_at DESC, l.id`,
@@ -66,6 +78,7 @@ export function leadsView(c: AppContext, wsId: string) {
     email: r.email,
     phone: r.phone,
     simulated: r.simulated === 1,
+    status: r.status,
     crmStatus: r.crm_status,
     crmError: r.crm_error,
     crmContactId: r.contact_id ?? null,
@@ -87,14 +100,16 @@ export function activityView(c: AppContext, wsId: string, limit = 100) {
 }
 
 export function jobsView(c: AppContext, wsId: string) {
-  return c.db.prepare("SELECT id, type, status, attempts, max_attempts, last_error, run_at FROM jobs WHERE workspace_id = ? ORDER BY created_at DESC, id LIMIT 50").all(wsId);
+  const rows = c.db.prepare("SELECT id, type, status, attempts, max_attempts, last_error, run_at FROM jobs WHERE workspace_id = ? ORDER BY created_at DESC, id LIMIT 50").all(wsId) as Array<Record<string, unknown>>;
+  return rows.map((r) => ({ ...r, last_error: r.last_error == null ? null : safeError(r.last_error) })); // older rows may hold longer text than is stored today
 }
 
 export function workspaceView(c: AppContext, wsId: string) {
   const ws = getWorkspace(c, wsId);
   const meta = c.metaFor(wsId);
   // metaAccountId is what the workspace chose; metaAccountAuthorized says whether it can be used right now (null: simulated, nothing to authorize).
-  return { ...ws, mode: meta.mode, metaAccountId: meta.configuredAccountId, metaAccountAuthorized: meta.mode === "mock" ? null : meta.accountId !== null };
+  const org = c.db.prepare("SELECT o.id, o.kind, o.name FROM workspaces w JOIN organizations o ON o.id = w.organization_id WHERE w.id = ?").get(wsId) as { id: string; kind: string; name: string } | undefined;
+  return { ...ws, organizationId: org?.id ?? null, organizationKind: org?.kind ?? null, organizationName: org?.name ?? null, mode: meta.mode, metaAccountId: meta.configuredAccountId, metaAccountAuthorized: meta.mode === "mock" ? null : meta.accountId !== null };
 }
 
 export { getProposalRow };

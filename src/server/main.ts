@@ -4,6 +4,9 @@ import { loadConfig } from "../config.js";
 import { buildContext } from "../app/context.js";
 import { createWorker } from "../app/worker.js";
 import { migrate, openDb } from "../db/db.js";
+import { backfillTenancy } from "../app/tenancy.js";
+import { syncAllLifecycles } from "../app/lifecycle.js";
+import { LocalAssetStore } from "../storage/assetStore.js";
 import { credentialStartupNotes } from "../credentials/provider.js";
 import { buildServer } from "./app.js";
 import { loadApiRateLimits, loadClaimRateLimits, loadCredentialRateLimits } from "./rateLimit.js";
@@ -15,7 +18,11 @@ const env = process.env;
 const dbPath = env.DATABASE_PATH ?? "./data/motivestack.db";
 const db = openDb(dbPath);
 const applied = migrate(db);
-const ctx = buildContext({ db, env });
+// Asset files live in a local folder (default data/assets, git-ignored). A development store: no backup, retention or object-storage claim.
+const assetDir = env.ASSET_DIR && env.ASSET_DIR.trim() ? env.ASSET_DIR.trim() : "data/assets";
+const ctx = buildContext({ db, env, assetStore: new LocalAssetStore(assetDir) });
+const lifecycleFixed = syncAllLifecycles(ctx); // applies the exact lifecycle rules to every campaign; a campaign already correct is left alone
+const tenancy = backfillTenancy(ctx); // only fills in what is missing (an organization or a policy row); a normal start changes nothing
 if (ctx.integrations.liveMeta) loadConfig(env); // fail fast with a clear message if live Meta is requested without a token
 
 const authConfig = loadAuthConfig(env);
@@ -36,12 +43,15 @@ if (env.WORKER_IN_PROCESS !== "false") {
   worker.start(500);
 }
 
+for (const n of ctx.aiPolicy.customBaseUrls) console.warn(`WARNING: ${n} is a custom host (ALLOW_CUSTOM_PROVIDER_BASE_URL=true): the provider key will be sent there, not to the official API. Development use only.`);
 const port = Number(env.PORT ?? 3000);
 await app.listen({ host: "127.0.0.1", port }); // localhost only: never exposed to the network
 
 const i = ctx.integrations;
 console.log(`MotiveStack listening on http://localhost:${port}`);
 console.log(`Database: ${dbPath}${applied.length ? ` (applied ${applied.join(", ")})` : ""}`);
+if (lifecycleFixed) console.log(`Lifecycle sync: ${lifecycleFixed} campaign(s) brought in line with their records`);
+if (tenancy.organizationsCreated || tenancy.policiesCreated) console.log(`Tenancy backfill: ${tenancy.organizationsCreated} organization(s), ${tenancy.policiesCreated} policy row(s) created`);
 console.log(`Mode: ${i.mode.toUpperCase()}  |  Meta: ${i.liveMeta ? "LIVE" : "simulated"}  |  AI: ${i.liveAi ? "LIVE paid providers" : i.localAi ? "LOCAL model (Ollama)" : "mock only"}  |  CRM: simulated`);
 if (i.mode === "live") console.log("WARNING: live mode is on for the providers listed above. Writes stay paused-only and approval-gated.");
 {

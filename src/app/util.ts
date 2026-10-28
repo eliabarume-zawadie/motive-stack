@@ -19,3 +19,18 @@ export function stableStringify(v: unknown): string {
   }
   return JSON.stringify(v);
 }
+
+/**
+ * Error text that is safe to store and show: one line, bounded, with anything shaped like a key, token or credential header replaced. Provider and
+ * network errors can echo request details, so every place that persists a failure message goes through this.
+ */
+export function safeError(message: unknown, max = 240): string {
+  const raw = message instanceof Error ? message.message : typeof message === "string" ? message : "error";
+  const line = (raw.split(/\r?\n/)[0] ?? "").trim();
+  return line
+    .replace(/\b(?:sk|pk|rk|msw|act|EAA)[-_][A-Za-z0-9_-]{8,}/g, "[redacted]")
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]{6,}/gi, "Bearer [redacted]")
+    .replace(/\b(authorization|api[_-]?key|access[_-]?token|secret|password|token)(["'\s:=]+)[^\s"',;]{4,}/gi, "$1$2[redacted]")
+    .replace(/\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]*/g, "[redacted]")
+    .slice(0, max) || "error";
+}

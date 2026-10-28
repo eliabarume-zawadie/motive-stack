@@ -182,16 +182,17 @@ describe("master keys that stored credentials depend on", () => {
     expect(before.vault.canRetire("k2")).toBe(true); // nothing depends on a key that is not in the keyring
     // another process starts with a keyring that no longer has k1
     const after = world(ring({ k2: keys.k2! }, "k2"));
-    for (const t of ["workspaces", "workspace_credentials"]) for (const row of before.db.prepare(`SELECT * FROM ${t}`).all() as Array<Record<string, unknown>>) after.db.prepare(`INSERT INTO ${t} (${Object.keys(row).join(",")}) VALUES (${Object.keys(row).map(() => "?").join(",")})`).run(...Object.values(row));
+    for (const t of ["organizations", "workspaces", "workspace_credentials"]) for (const row of before.db.prepare(`SELECT * FROM ${t}`).all() as Array<Record<string, unknown>>) after.db.prepare(`INSERT INTO ${t} (${Object.keys(row).join(",")}) VALUES (${Object.keys(row).map(() => "?").join(",")})`).run(...Object.values(row));
     expect(after.vault.keyDependencies()).toEqual([{ keyId: "k1", credentials: 1, available: false }]);
     const nothing = world(null);
+    for (const row of before.db.prepare("SELECT * FROM organizations").all() as Array<Record<string, unknown>>) nothing.db.prepare(`INSERT INTO organizations (${Object.keys(row).join(",")}) VALUES (${Object.keys(row).map(() => "?").join(",")})`).run(...Object.values(row));
     for (const row of before.db.prepare("SELECT * FROM workspaces").all() as Array<Record<string, unknown>>) nothing.db.prepare(`INSERT INTO workspaces (${Object.keys(row).join(",")}) VALUES (${Object.keys(row).map(() => "?").join(",")})`).run(...Object.values(row));
     for (const row of before.db.prepare("SELECT * FROM workspace_credentials").all() as Array<Record<string, unknown>>) nothing.db.prepare(`INSERT INTO workspace_credentials (${Object.keys(row).join(",")}) VALUES (${Object.keys(row).map(() => "?").join(",")})`).run(...Object.values(row));
     expect(nothing.vault.keyDependencies()).toEqual([{ keyId: "k1", credentials: 1, available: false }]); // vault off, credentials still there
     expect(nothing.vault.canRetire("k1")).toBe(false);
     // after re-wrapping to k2 in a process that has both, k1 becomes retirable
     const both = world(ring(keys, "k2"));
-    for (const t of ["workspaces", "workspace_credentials"]) for (const row of before.db.prepare(`SELECT * FROM ${t}`).all() as Array<Record<string, unknown>>) both.db.prepare(`INSERT INTO ${t} (${Object.keys(row).join(",")}) VALUES (${Object.keys(row).map(() => "?").join(",")})`).run(...Object.values(row));
+    for (const t of ["organizations", "workspaces", "workspace_credentials"]) for (const row of before.db.prepare(`SELECT * FROM ${t}`).all() as Array<Record<string, unknown>>) both.db.prepare(`INSERT INTO ${t} (${Object.keys(row).join(",")}) VALUES (${Object.keys(row).map(() => "?").join(",")})`).run(...Object.values(row));
     expect(both.vault.canRetire("k1")).toBe(false);
     await both.vault.rewrapAll();
     expect(both.vault.canRetire("k1")).toBe(true);

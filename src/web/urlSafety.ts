@@ -46,7 +46,7 @@ function embeddedV4(ip: string): string | null {
   // IPv4-mapped, dotted (::ffff:1.2.3.4) or hex (::ffff:102:304); IPv4-compatible (::1.2.3.4)
   let m = /^::(?:ffff:)?(\d+\.\d+\.\d+\.\d+)$/.exec(lower);
   if (m) return m[1] as string;
-  m = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(lower);
+  m = /^::(?:ffff:)?([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(lower); // mapped (::ffff:a:b) or the old IPv4-compatible form (::a:b), as an address is canonically written
   if (m) return hex(m[1] as string, m[2] as string);
   m = /^64:ff9b::(?:(\d+\.\d+\.\d+\.\d+)|([0-9a-f]{1,4}):([0-9a-f]{1,4}))$/.exec(lower); // NAT64
   if (m) return m[1] ?? hex(m[2] as string, m[3] as string);
@@ -58,12 +58,16 @@ function embeddedV4(ip: string): string | null {
 
 /** True only for a public, routable address. Anything that is not a valid IP literal is refused. */
 export function isPublicAddress(ip: string): boolean {
+  if (ip.includes("%")) return false; // a zone id ("fe80::1%eth0") only exists on a local link
   const kind = isIP(ip);
   if (kind === 0) return false;
   if (kind === 4) return !blocked.check(ip, "ipv4");
-  const inner = embeddedV4(ip);
+  // Spelled out in full or in capitals ("2001:0000:...", "FE80::1", "0:0:0:0:0:ffff:7f00:1"), an address must be judged in its one canonical form.
+  let canonical = ip;
+  try { canonical = new URL(`http://[${ip}]/`).hostname.slice(1, -1); } catch { return false; }
+  const inner = embeddedV4(canonical);
   if (inner) return isPublicAddress(inner);
-  return !blocked.check(ip, "ipv6");
+  return !blocked.check(canonical, "ipv6");
 }
 
 export type UrlProblem = "empty" | "too_long" | "bad_url" | "scheme" | "credentials" | "port" | "ip_literal" | "internal_name" | "no_dot";

@@ -665,3 +665,28 @@ describe("service names", () => {
     for (const junk of ["GoNano", "Nano-Roof", "Step 1: The Essential Tune-Up"]) expect(names).not.toContain(junk);
   });
 });
+
+describe("the duplicate 'approve Licensed & Insured' question (regression)", () => {
+  it("a credential the owner approved is not asked about again when the campaign is generated", async () => {
+    const { generateCampaign, getCampaignRecord } = await import("../src/app/campaigns.js");
+    const GENERATE = { providerId: "mock", model: "mock-deterministic-1" };
+    const site = await website({ "/": `<html><head><title>Acme Roofing | Austin</title></head><body><h1>Acme Roofing</h1><p>Call today for a free estimate.</p><footer>Licensed &amp; Insured · Utah Contractor</footer></body></html>` });
+    const { ctx } = mockApp(site.deps);
+    const { workspace } = wsOf(ctx);
+    const a = await analyze(ctx, workspace.id);
+    approveSafeInsights(ctx, workspace.id, a.id, "owner", { includeClaims: true });
+    const p = brainPatchFor(ctx, workspace.id, a.id);
+    expect(p.verifiedFacts).toContain("Licensed & Insured");
+    expect(p.facts.map((f) => f.text).join(" ")).not.toMatch(/Licensed/); // no second, unapproved record for the same statement
+    putBrain(ctx, workspace.id, { ...BRAIN, verifiedFacts: p.verifiedFacts, differentiators: p.differentiators, facts: p.facts });
+    const campaign = await generateCampaign(ctx, workspace.id, GENERATE);
+    const questions = (getCampaignRecord(ctx, workspace.id, campaign.id) as unknown as { brief: { openQuestions: Array<{ question: string }> } }).brief.openQuestions.map((q) => q.question).join(" | ");
+    expect(questions).not.toMatch(/approve these statements/i);
+
+    // the cause, kept as documentation: an UNAPPROVED record for the same words does make the checker ask
+    putBrain(ctx, workspace.id, { ...BRAIN, verifiedFacts: ["Licensed & Insured"], facts: [{ text: "Licensed & Insured", status: "imported", source: "website:x", importedFrom: "https://x.example.com/", approvedForMarketing: false, evidence: [] }] });
+    const again = await generateCampaign(ctx, workspace.id, GENERATE);
+    const q2 = (getCampaignRecord(ctx, workspace.id, again.id) as unknown as { brief: { openQuestions: Array<{ question: string }> } }).brief.openQuestions.map((q) => q.question).join(" | ");
+    expect(q2).toMatch(/approve these statements.*Licensed/i);
+  });
+});

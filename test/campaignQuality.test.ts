@@ -7,7 +7,7 @@ import { AiError, type AiProvider, type GenerateObjectRequest, type GenerateText
 import { generateCampaign } from "../src/app/campaigns.js";
 import { buildCampaignPrompt, CAMPAIGN_SYSTEM_PROMPT } from "../src/app/campaignPrompt.js";
 import { executeProposal } from "../src/app/executor.js";
-import { createProposal, decideProposal, getProposalRow } from "../src/app/proposals.js";
+import { createProposal, decideProposal, getProposalRow, requestExecution } from "../src/app/proposals.js";
 import { createWorkspace, putBrain } from "../src/app/workspaces.js";
 import { buildContext } from "../src/app/context.js";
 import { ModelRegistry } from "../src/ai/registry.js";
@@ -473,6 +473,7 @@ describe("approval and policy gates around the proposal", () => {
     const { app, ws, campaign } = await drafted(brain());
     const p = createProposal(app.ctx, ws.id, campaign.id);
     decideProposal(app.ctx, ws.id, p.id, "approve", { decidedBy: "elia" });
+    requestExecution(app.ctx, ws.id, p.id, "test");
     await app.worker.runUntilIdle();
     expect(getProposalRow(app.ctx, ws.id, p.id).status).toBe("executed");
     expect(app.ctx.db.prepare("SELECT status FROM sim_meta_campaigns").all()).toEqual([{ status: "PAUSED" }]);
@@ -488,6 +489,7 @@ describe("approval and policy gates around the proposal", () => {
     const { hashPayload } = await import("../src/app/proposals.js");
     app.ctx.db.prepare("UPDATE action_proposals SET payload = ?, payload_hash = ? WHERE id = ?").run(JSON.stringify(old), hashPayload(old), p.id);
     decideProposal(app.ctx, ws.id, p.id, "approve", { decidedBy: "elia" });
+    requestExecution(app.ctx, ws.id, p.id, "test");
     await app.worker.runUntilIdle();
     expect(getProposalRow(app.ctx, ws.id, p.id).status).toBe("executed");
   });

@@ -5,7 +5,9 @@ import type { AppContext } from "./context.js";
 import { getCampaignRow } from "./campaigns.js";
 import { RetryableError } from "./jobs.js";
 import { getProposalRow, hashPayload, ProposalPayloadSchema, type ProposalPayload, type ProposalRow } from "./proposals.js";
-import { newId } from "./util.js";
+import { newId, safeError } from "./util.js";
+import { syncLifecycle } from "./lifecycle.js";
+import { budgetPosition } from "./budgetCommitments.js";
 import { liveAccountDenied } from "./metaAccounts.js";
 import { approverMayAuthorize } from "./memberships.js";
 import { getBrain } from "./workspaces.js";
@@ -35,8 +37,11 @@ class GateRefusal extends Error {
   }
 }
 
-const setStatus = (c: AppContext, wsId: string, id: string, status: string, error: string | null = null) =>
-  c.db.prepare("UPDATE action_proposals SET status = ?, last_error = ?, updated_at = ? WHERE id = ? AND workspace_id = ?").run(status, error, iso(c), id, wsId);
+const setStatus = (c: AppContext, wsId: string, id: string, status: string, error: string | null = null) => {
+  c.db.prepare("UPDATE action_proposals SET status = ?, last_error = ?, updated_at = ? WHERE id = ? AND workspace_id = ?").run(status, error === null ? null : safeError(error, 300), iso(c), id, wsId);
+  const camp = c.db.prepare("SELECT campaign_id FROM action_proposals WHERE id = ? AND workspace_id = ?").get(id, wsId) as { campaign_id: string } | undefined;
+  if (camp) syncLifecycle(c, wsId, camp.campaign_id, "system", `proposal ${status}`); // the campaign's lifecycle follows what really happened
+};
 
 /**
  * Every precondition for an external write, checked immediately before it happens.
@@ -68,6 +73,10 @@ function checkGate(c: AppContext, p: ProposalRow): ProposalPayload {
 
   const brain = getBrain(c, p.workspace_id);
   if (!brain || p.daily_budget_cents > brain.brain.maxDailyBudgetCents) throw new GateRefusal("budget_exceeds_cap");
+  // The workspace-wide limit, judged now: everything committed (this proposal included, once) must still fit. This is what catches a limit lowered after approval.
+  const pos = budgetPosition(c, p.workspace_id);
+  if (pos.unnormalizable.length) throw new GateRefusal("budget_not_normalizable");
+  if (pos.ceilingCents !== null && pos.overLimitCents > 0) throw new GateRefusal("daily_budget_limit_exceeded");
   return payload;
 }
 
@@ -106,7 +115,7 @@ export async function executeProposal(c: AppContext, wsId: string, proposalId: s
   const approval = c.db.prepare("SELECT decided_by, expires_at FROM approvals WHERE proposal_id = ? AND workspace_id = ?").get(p.id, p.workspace_id) as { decided_by: string; expires_at: string };
   const meta = c.metaFor(wsId);
   const finishAttempt = (status: string, kind: string | null = null, msg: string | null = null) =>
-    c.db.prepare("UPDATE execution_attempts SET status = ?, error_kind = ?, error_message = ?, finished_at = ? WHERE id = ? AND workspace_id = ?").run(status, kind, msg, iso(c), attemptId, wsId);
+    c.db.prepare("UPDATE execution_attempts SET status = ?, error_kind = ?, error_message = ?, finished_at = ? WHERE id = ? AND workspace_id = ?").run(status, kind, msg === null ? null : safeError(msg, 300), iso(c), attemptId, wsId);
 
   try {
     c.db.prepare("UPDATE execution_attempts SET dispatched = 1 WHERE id = ? AND workspace_id = ?").run(attemptId, wsId);

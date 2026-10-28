@@ -313,10 +313,47 @@ export function approveSafeInsights(c: AppContext, wsId: string, analysisId: str
   return ok.length;
 }
 
-/** The owner-approved findings as a proposed update to the Business Brain. Nothing is saved: the owner reviews it in the form and saves. */
-export function brainPatchFor(c: AppContext, wsId: string, analysisId: string): BrainPatch & { approvedCount: number } {
+/**
+ * The owner-approved findings as a proposed update to the Business Brain. Nothing is saved: the owner reviews it in the form and saves.
+ * `ledger` lists what an earlier fill (of this or ANY other website analysis) put in this workspace's form, so the form can replace exactly those
+ * values, and nothing the owner wrote.
+ */
+export function brainPatchFor(c: AppContext, wsId: string, analysisId: string): BrainPatch & { approvedCount: number; ledger: Array<{ field: string; value: string; site: string }> } {
   const r = rowOf(c, wsId, analysisId);
   const approved = (c.db.prepare("SELECT * FROM website_insights WHERE analysis_id = ? AND workspace_id = ? AND status = 'approved' ORDER BY position").all(analysisId, wsId) as InsightDbRow[]).map(insightView);
   const existing = getBrain(c, wsId)?.brain ?? null;
-  return { ...buildBrainPatch(approved, existing, r.site), approvedCount: approved.length };
+  const ledger = (c.db.prepare("SELECT field, value, site FROM website_fill_ledger WHERE workspace_id = ? ORDER BY created_at, rowid").all(wsId) as Array<{ field: string; value: string; site: string }>);
+  return { ...buildBrainPatch(approved, existing, r.site), approvedCount: approved.length, ledger };
+}
+
+const LEDGER_SCALARS = ["businessName", "industry", "serviceArea", "targetCustomer", "offer", "tone", "description", "approvedPricing"] as const;
+const LEDGER_LISTS = ["services", "differentiators", "verifiedFacts", "unverifiedClaims"] as const;
+const keyOf = (v: string) => v.replace(/\s+/g, " ").trim().toLowerCase();
+
+/**
+ * Records which values a fill actually ADDED to the form (so a later analysis can replace exactly those), and forgets values the fill removed.
+ * The server accepts only values it itself offered in this analysis's brain patch, so the record cannot be forged or filled with the owner's own text.
+ */
+export function recordFillApplied(c: AppContext, wsId: string, analysisId: string, body: { added: Array<{ field: string; value: string }>; removed: Array<{ field: string; value: string }> }, actor: string): { recorded: number; forgotten: number } {
+  const r = rowOf(c, wsId, analysisId);
+  const patch = brainPatchFor(c, wsId, analysisId);
+  const offered = new Map<string, Set<string>>();
+  const offer = (field: string, v: string | undefined) => { if (v) { const set = offered.get(field) ?? new Set<string>(); set.add(keyOf(v)); offered.set(field, set); } };
+  for (const f of LEDGER_SCALARS) offer(f, patch.fields[f]);
+  for (const f of LEDGER_LISTS) for (const v of (patch as unknown as Record<string, string[]>)[f] ?? []) offer(f, v);
+  const known = new Set<string>([...LEDGER_SCALARS, ...LEDGER_LISTS]);
+  for (const a of body.added) {
+    if (!known.has(a.field) || a.value.length > 2000 || !offered.get(a.field)?.has(keyOf(a.value))) throw new AppError(400, "not_offered", "That value was not offered by this analysis, so it cannot be recorded as coming from the website.");
+  }
+  let forgotten = 0;
+  c.db.transaction(() => {
+    const del = c.db.prepare("DELETE FROM website_fill_ledger WHERE workspace_id = ? AND field = ? AND value_key = ?");
+    for (const x of body.removed) { if (known.has(x.field)) forgotten += del.run(wsId, x.field, keyOf(x.value)).changes; }
+    const up = c.db.prepare(
+      "INSERT INTO website_fill_ledger (id, workspace_id, field, value, value_key, analysis_id, site, created_at) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(workspace_id, field, value_key) DO UPDATE SET analysis_id = excluded.analysis_id, site = excluded.site, created_at = excluded.created_at, value = excluded.value",
+    );
+    for (const a of body.added) up.run(newId("wfl"), wsId, a.field, a.value.replace(/\s+/g, " ").trim(), keyOf(a.value), analysisId, r.site, iso(c));
+  })();
+  audit(c, wsId, actor, "website.fill_applied", "website_analysis", analysisId, { added: body.added.length, removed: forgotten });
+  return { recorded: body.added.length, forgotten };
 }

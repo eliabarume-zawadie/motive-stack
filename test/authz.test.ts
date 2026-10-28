@@ -73,6 +73,7 @@ async function world() {
     expect((await call(s.app, "PUT", `${base}/brain`, { token: owner.token, payload: BRAIN })).status).toBe(200);
     const gen = await call(s.app, "POST", `${base}/campaigns/generate`, { token: owner.token, payload: { providerId: "mock", model: "mock-deterministic-1" } });
     expect(gen.status).toBe(201);
+    await call(s.app, "PUT", `${base}/policy`, { token: owner.token, payload: { preventSelfApproval: false } }); // this test is not about separation of duties (see separationOfDuties.test.ts)
     const prop = await call(s.app, "POST", `${base}/campaigns/${gen.body.id}/proposals`, { token: owner.token, payload: {} });
     expect(prop.status).toBe(201);
     return { cid: gen.body.id as string, pid: prop.body.id as string };
@@ -150,8 +151,9 @@ describe("the permission matrix is enforced centrally, for every route and every
     expect(PERMISSION_MIN_ROLE).toEqual({
       "workspace.read": "viewer", "brain.read": "viewer", "campaigns.read": "viewer", "proposals.read": "viewer", "leads.read": "viewer", "activity.read": "viewer",
       "ai.settings.read": "viewer", "ai.usage.read": "viewer", "jobs.read": "operator", "campaigns.generate": "operator", "campaigns.edit": "operator",
-      "proposals.create": "operator", "leads.simulate": "operator", "proposals.decide": "admin", "brain.write": "admin", "workspace.update": "admin",
-      "ai.settings.write": "admin", "ai.connection_test": "admin", "members.read": "admin", "meta_accounts.read": "admin", "credentials.read": "admin", "members.manage": "owner", "meta_accounts.manage": "owner", "credentials.manage": "owner", "legacy_token.disable": "owner",
+      "proposals.create": "operator", "leads.simulate": "operator", "leads.update": "operator", "jobs.retry": "admin", "proposals.decide": "admin", "brain.write": "admin", "workspace.update": "admin",
+      "ai.settings.write": "admin", "ai.connection_test": "admin", "members.read": "admin", "meta_accounts.read": "admin", "credentials.read": "admin", "members.manage": "owner", "meta_accounts.manage": "owner", "credentials.manage": "owner", "legacy_token.disable": "owner", "proposals.execute": "admin", "roles.manage": "owner", "policy.manage": "owner",
+      "plans.read": "viewer", "plans.write": "operator", "plans.review": "admin", "campaigns.archive": "admin", "brandkit.read": "viewer", "brandkit.write": "operator", "brandkit.approve": "admin", "assets.read": "viewer", "assets.write": "operator", "assets.review": "admin", "assets.archive": "admin", "creatives.read": "viewer", "creatives.write": "operator", "creatives.review": "admin",
     });
     expect(ROLES).toEqual(["viewer", "operator", "admin", "owner"]);
     expect(roleAllows("operator", "proposals.decide")).toBe(false); // operators cannot approve
@@ -288,6 +290,7 @@ describe("guessed ids from another workspace reach nothing", () => {
   it("a background job that names another workspace's proposal does nothing to it", async () => {
     const w = await world();
     await call(w.s.app, "POST", `${w.baseA}/proposals/${w.a.pid}/approve`, { token: w.u.alice.token, payload: { decidedBy: "a" } });
+    await call(w.s.app, "POST", `${w.baseA}/proposals/${w.a.pid}/execute`, { token: w.u.alice.token });
     w.s.db.prepare("UPDATE jobs SET status = 'done' WHERE workspace_id = ?").run(w.A); // park A's real job
     enqueueJob(w.s.ctx, w.B, "execute_proposal", { proposalId: w.a.pid }, "forged:1"); // a job in B pointing at A's proposal
     await w.s.worker.runUntilIdle();
@@ -308,6 +311,8 @@ describe("approval attribution comes from the authenticated user", () => {
     const ev = w.s.db.prepare("SELECT actor, detail FROM audit_events WHERE type = 'proposal.approved' AND entity_id = ?").get(w.a.pid) as { actor: string; detail: string };
     expect(ev.actor).toBe(`user:${w.u.carol.id}`);
     expect(JSON.parse(ev.detail)).toMatchObject({ claimedLabelVerified: false });
+    expect((await call(w.s.app, "GET", `${w.baseA}/proposals/${w.a.pid}`, { token: w.u.carol.token })).body.status).toBe("approved"); // approving alone ran nothing
+    expect((await call(w.s.app, "POST", `${w.baseA}/proposals/${w.a.pid}/execute`, { token: w.u.carol.token })).status).toBe(200);
     await w.s.worker.runUntilIdle();
     expect((await call(w.s.app, "GET", `${w.baseA}/proposals/${w.a.pid}`, { token: w.u.carol.token })).body.status).toBe("executed"); // the allowed path still works end to end
   });
@@ -325,6 +330,7 @@ describe("the executor re-checks the approver at execution time", () => {
   async function approvedBy(who: "carol" | "alice") {
     const w = await world();
     const r = await call(w.s.app, "POST", `${w.baseA}/proposals/${w.a.pid}/approve`, { token: w.u[who].token, payload: { decidedBy: "x" } });
+    await call(w.s.app, "POST", `${w.baseA}/proposals/${w.a.pid}/execute`, { token: w.u[who].token });
     expect(r.status).toBe(200);
     return w;
   }
@@ -362,8 +368,9 @@ describe("the executor re-checks the approver at execution time", () => {
   });
   it("trusted code that approves without an identity records an 'unverified' approver (live use is covered in authzFixes.test.ts)", async () => {
     const w = await world();
-    const { decideProposal } = await import("../src/app/proposals.js");
+    const { decideProposal, requestExecution } = await import("../src/app/proposals.js");
     decideProposal(w.s.ctx, w.A, w.a.pid, "approve", { decidedBy: "trusted-code" }); // no approver identity
+    requestExecution(w.s.ctx, w.A, w.a.pid, "trusted-code");
     expect(w.s.db.prepare("SELECT approver_kind FROM approvals WHERE proposal_id = ?").get(w.a.pid)).toEqual({ approver_kind: "unverified" });
     await w.s.worker.runUntilIdle(); // simulated action: allowed
     expect(outcome(w as never).proposal).toMatchObject({ status: "executed" });
@@ -399,6 +406,7 @@ describe("the legacy workspace token during the transition", () => {
     const gen = await call(w.s.app, "POST", `${base}/campaigns/generate`, { token, payload: { providerId: "mock", model: "mock-deterministic-1" } });
     const prop = await call(w.s.app, "POST", `${base}/campaigns/${gen.body.id}/proposals`, { token, payload: {} });
     await call(w.s.app, "POST", `${base}/proposals/${prop.body.id}/approve`, { token, payload: { decidedBy: "Pat" } });
+    await call(w.s.app, "POST", `${base}/proposals/${prop.body.id}/execute`, { token });
     expect(w.s.db.prepare("SELECT approver_kind, approver_user_id, decided_by FROM approvals WHERE proposal_id = ?").get(prop.body.id)).toEqual({ approver_kind: "legacy_token", approver_user_id: null, decided_by: `workspace-token:${workspace.id}` });
     expect((await call(w.s.app, "POST", "/api/workspaces/claim", { token: w.u.zed.token, payload: { workspaceId: workspace.id, token } })).status).toBe(200);
     expect((await call(w.s.app, "POST", `${base}/legacy-token/disable`, { token: w.u.zed.token })).status).toBe(200);
@@ -456,7 +464,7 @@ describe("migration 005 on a database that already has data", () => {
     for (const [id, proposal, by] of [["apr_1", "prp_1", "workspace-token:ws_old"], ["apr_2", "prp_2", "elia"]] as const) {
       db.prepare("INSERT INTO approvals (id, workspace_id, proposal_id, decision, decided_by, payload_hash, campaign_version, integration_mode, decided_at, expires_at) VALUES (?, 'ws_old', ?, 'approve', ?, 'h',1,'mock','t','t')").run(id, proposal, by);
     }
-    expect(migrate(db)).toEqual(["005_memberships.sql", "006_meta_accounts.sql", "007_credentials.sql", "008_drop_credential_hint.sql", "009_website_analysis.sql", "010_website_content_hash.sql"]);
+    expect(migrate(db)).toEqual(["005_memberships.sql", "006_meta_accounts.sql", "007_credentials.sql", "008_drop_credential_hint.sql", "009_website_analysis.sql", "010_website_content_hash.sql", "011_ai_reservations.sql", "012_reservation_state_and_fill_ledger.sql", "013_campaign_plans.sql", "014_lead_status_job_retries.sql", "015_organizations_permissions.sql", "016_brand_kit_assets.sql", "017_plans_lifecycle.sql", "018_creative_studio.sql"]);
     expect(count({ db } as S, "SELECT COUNT(*) n FROM workspace_memberships")).toBe(0); // no owner is invented
     expect(db.prepare("SELECT id, approver_kind, approver_user_id FROM approvals ORDER BY id").all()).toEqual([
       { id: "apr_1", approver_kind: "legacy_token", approver_user_id: null },

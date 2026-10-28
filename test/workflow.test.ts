@@ -3,7 +3,7 @@ import { updateBrief, getCampaignRow } from "../src/app/campaigns.js";
 import { executeProposal } from "../src/app/executor.js";
 import { claimJob, enqueueJob, recoverOrphanedJobs } from "../src/app/jobs.js";
 import { ingestLeadEvent } from "../src/app/leads.js";
-import { createProposal, decideProposal, getProposalRow } from "../src/app/proposals.js";
+import { createProposal, decideProposal, getProposalRow, requestExecution } from "../src/app/proposals.js";
 import { proposalView, leadsView } from "../src/app/views.js";
 import { createWorkspace, putBrain } from "../src/app/workspaces.js";
 import { BRAIN, draftCampaign, makeApp, type App } from "./fixtures.js";
@@ -18,6 +18,7 @@ async function approved(a: App) {
   const d = await draftCampaign(a);
   const p = createProposal(a.ctx, d.ws.id, d.campaign.id);
   decideProposal(a.ctx, d.ws.id, p.id, "approve", { decidedBy: "elia" });
+  requestExecution(a.ctx, d.ws.id, p.id, "test");
   return { ...d, p };
 }
 
@@ -30,6 +31,7 @@ describe("happy path: brief -> proposal -> approval -> paused simulated campaign
     expect(simCampaigns(a, d.ws.id)).toHaveLength(0); // proposing writes nothing externally
 
     decideProposal(a.ctx, d.ws.id, p.id, "approve", { decidedBy: "elia" });
+    requestExecution(a.ctx, d.ws.id, p.id, "test");
     await a.worker.runUntilIdle();
 
     const v = proposalView(a.ctx, d.ws.id, getProposalRow(a.ctx, d.ws.id, p.id));
@@ -252,6 +254,7 @@ describe("leads", () => {
     const d = await draftCampaign(a);
     const p = createProposal(a.ctx, d.ws.id, d.campaign.id);
     decideProposal(a.ctx, d.ws.id, p.id, "approve", { decidedBy: "elia" });
+    requestExecution(a.ctx, d.ws.id, p.id, "test");
     await a.worker.runUntilIdle();
     return d;
   }

@@ -154,16 +154,28 @@ export function usageSummary(c: AppContext, wsId: string) {
  * Enforced BEFORE any billable (live) request. Mock/simulated requests are never billable and never blocked.
  * A cost ceiling cannot be enforced for a model with no configured price, so such a request is refused rather than guessed.
  */
-function checkLimits(c: AppContext, wsId: string, s: AiSettings, cand: Candidate, taskId: string, taskType: string, attemptNo: number, size?: { inputTokens: number; maxOutputTokens: number }): void {
+/**
+ * Settles what checkLimits reserved. Always call it when the request is over, whatever the outcome; calling it twice does nothing, and it can only touch
+ * its own reservation. With `unverifiedAttempts` > 0 (attempts that were sent but ended in a timeout or cancellation, so the provider may have billed
+ * them and said nothing) the reservation is not released: it is cut down to the worst case of those attempts and kept as an unverified hold.
+ */
+type Release = (unverifiedAttempts?: number) => void;
+const NO_RELEASE: Release = () => {};
+
+/** How many attempts of a finished request may have been billed without any usage being reported. */
+const unverifiedAttemptsOf = (e: unknown): number => (e instanceof AiError ? e.attempts.filter((a) => (a.outcome === "timeout" || a.outcome === "cancelled") && !a.usage).length : 0);
+
+function checkLimits(c: AppContext, wsId: string, s: AiSettings, cand: Candidate, taskId: string, taskType: string, attemptNo: number, size?: { inputTokens: number; maxOutputTokens: number }): Release {
   const p = c.ai.get(cand.provider);
-  if (!p || p.simulated || p.local) return; // simulated and local requests have no per-token charge: nothing to limit
+  if (!p || p.simulated || p.local) return NO_RELEASE; // simulated and local requests have no per-token charge: nothing to limit
   const block = (kind: "budget_exhausted" | "budget_unverifiable", msg: string): never => {
     recordUsage(c, wsId, taskId, taskType, attemptNo, { provider: cand.provider, model: cand.model, simulated: false }, "blocked", kind, iso(c), null, "unknown_no_usage", msg);
     audit(c, wsId, "system", "ai.blocked", "ai_task", taskId, { kind, provider: cand.provider, model: cand.model });
     throw new AiError(kind, msg);
   };
   const now = c.now();
-  checkLiveCeiling(c, cand, size, block);
+  const release = checkLiveCeiling(c, wsId, cand, size, block);
+  try {
   if (s.maxRequestsPerDay !== null) {
     const n = (c.db.prepare("SELECT COUNT(*) n FROM ai_usage WHERE workspace_id = ? AND mode = 'live' AND attempt_kind != 'blocked' AND started_at >= ?").get(wsId, dayStart(now)) as { n: number }).n;
     if (n >= s.maxRequestsPerDay) block("budget_exhausted", `Daily AI request limit reached (${n}/${s.maxRequestsPerDay})`);
@@ -173,6 +185,8 @@ function checkLimits(c: AppContext, wsId: string, s: AiSettings, cand: Candidate
     const spent = (c.db.prepare("SELECT COALESCE(SUM(estimated_cost_micros),0) n FROM ai_usage WHERE workspace_id = ? AND started_at >= ?").get(wsId, monthStart(now)) as { n: number }).n;
     if (spent >= s.monthlyBudgetMicros) block("budget_exhausted", `Monthly AI budget reached (${spent}/${s.monthlyBudgetMicros} micro-units)`);
   }
+  } catch (e) { release(); throw e; } // a workspace limit refused the request: give the reservation back
+  return release;
 }
 
 /* ---------------------------------------------------- server-side live ceiling */
@@ -180,13 +194,14 @@ function checkLimits(c: AppContext, wsId: string, s: AiSettings, cand: Candidate
 /** What live AI requests have cost this UTC month, across ALL workspaces, from the usage records. An estimate from provider-reported tokens and the price list. */
 export function liveSpend(c: AppContext) {
   const now = c.now();
+  const held = c.db.prepare("SELECT COALESCE(SUM(micros),0) micros, SUM(CASE WHEN state = 'unverified' THEN 1 ELSE 0 END) unverified FROM ai_reservations WHERE reserved_at >= ?").get(monthStart(now)) as { micros: number; unverified: number | null };
   const r = c.db.prepare(
     `SELECT COALESCE(SUM(estimated_cost_micros),0) spent,
             SUM(CASE WHEN estimated_cost_micros IS NULL AND outcome IN ('ok','invalid_output','response_rejected') THEN 1 ELSE 0 END) unpriced
      FROM ai_usage WHERE mode = 'live' AND attempt_kind != 'blocked' AND started_at >= ?`,
   ).get(monthStart(now)) as { spent: number; unpriced: number | null };
   const day = c.db.prepare("SELECT COUNT(*) n FROM ai_usage WHERE mode = 'live' AND attempt_kind != 'blocked' AND started_at >= ?").get(dayStart(now)) as { n: number };
-  return { spentMicros: r.spent, requestsWithUnknownCost: r.unpriced ?? 0, requestsToday: day.n };
+  return { spentMicros: r.spent, requestsWithUnknownCost: r.unpriced ?? 0, requestsToday: day.n, heldMicros: held.micros, unverifiedHolds: held.unverified ?? 0 };
 }
 
 /**
@@ -195,21 +210,43 @@ export function liveSpend(c: AppContext) {
  * try, retries, a repair) using the full input and the full output cap at the configured price. If any of that cannot be established,
  * the request is refused rather than guessed. This is the application's own estimate; it is not the provider's billing limit.
  */
-function checkLiveCeiling(c: AppContext, cand: Candidate, size: { inputTokens: number; maxOutputTokens: number } | undefined, block: (kind: "budget_exhausted" | "budget_unverifiable", msg: string) => never): void {
+function checkLiveCeiling(c: AppContext, wsId: string, cand: Candidate, size: { inputTokens: number; maxOutputTokens: number } | undefined, block: (kind: "budget_exhausted" | "budget_unverifiable", msg: string) => never): Release {
   const pol = c.aiPolicy;
   if (pol.liveBudgetMicros === null) block("budget_unverifiable", "Live AI is switched on, but no spending ceiling is set on the server, so no request was sent. Set AI_LIVE_BUDGET_MICROS (for example 50000 means 0.05 USD per month) and restart.");
   const ceiling = pol.liveBudgetMicros as number;
   if (!c.ai.hasPrice(cand.provider, cand.model)) block("budget_unverifiable", `No price is configured for ${cand.provider}/${cand.model}, so its cost cannot be limited and no request was sent.`);
-  const spend = liveSpend(c);
-  if (pol.liveMaxRequestsPerDay !== null && spend.requestsToday >= pol.liveMaxRequestsPerDay) block("budget_exhausted", `The server's daily limit of ${pol.liveMaxRequestsPerDay} live AI requests was reached.`);
-  if (spend.requestsWithUnknownCost > 0) block("budget_unverifiable", `${spend.requestsWithUnknownCost} earlier live request(s) this month returned no usable token count, so the money spent cannot be verified and further live requests are paused.`);
-  if (!size) return;
+  if (!size) return NO_RELEASE;
   const worst = c.pricing.estimate(cand.provider, cand.model, { inputTokens: size.inputTokens, outputTokens: size.maxOutputTokens, source: "provider" }, false);
   if (worst.micros === null) block("budget_unverifiable", `The worst-case cost of this request cannot be computed for ${cand.provider}/${cand.model} (the price list does not cover this size), so no request was sent.`);
   const reserve = (worst.micros as number) * pol.attemptsPerRequest;
-  if (spend.spentMicros + reserve > ceiling) {
-    block("budget_exhausted", `The server's live AI spending ceiling would be exceeded: about ${spend.spentMicros} used this month, up to ${reserve} reserved for this request, ceiling ${ceiling} (micro-units of ${c.ai.currency}). No request was sent.`);
-  }
+  // The check and the reservation are ONE write transaction: requests that start at the same time (or in another process on the same database)
+  // see each other's reservations, so together they can never exceed the ceiling or the daily cap.
+  const reservationId = newId("rsv");
+  const verdict = c.db.transaction((): { block?: [("budget_exhausted" | "budget_unverifiable"), string] } => {
+    const nowIso = iso(c);
+    // Reservations are never expired by age: one left behind by a crash may have been billed without any usage being recorded, so it keeps counting
+    // for the rest of the month (it is small: one request's worst case). Only last month's are cleared.
+    c.db.prepare("DELETE FROM ai_reservations WHERE reserved_at < ?").run(monthStart(c.now()));
+    const spend = liveSpend(c);
+    const heldToday = (c.db.prepare("SELECT COUNT(*) n FROM ai_reservations WHERE reserved_at >= ?").get(dayStart(c.now())) as { n: number }).n;
+    const held = { micros: spend.heldMicros, n: heldToday };
+    if (pol.liveMaxRequestsPerDay !== null && spend.requestsToday + held.n >= pol.liveMaxRequestsPerDay) return { block: ["budget_exhausted", `The server's daily limit of ${pol.liveMaxRequestsPerDay} live AI requests was reached.`] };
+    if (spend.requestsWithUnknownCost > 0) return { block: ["budget_unverifiable", `${spend.requestsWithUnknownCost} earlier live request(s) this month returned no usable token count, so the money spent cannot be verified and further live requests are paused.`] };
+    if (spend.spentMicros + held.micros + reserve > ceiling) {
+      return { block: ["budget_exhausted", `The server's live AI spending ceiling would be exceeded: about ${spend.spentMicros} used this month, ${held.micros} held for requests in progress, up to ${reserve} reserved for this request, ceiling ${ceiling} (micro-units of ${c.ai.currency}). No request was sent.`] };
+    }
+    c.db.prepare("INSERT INTO ai_reservations (id, workspace_id, micros, reserved_at) VALUES (?,?,?,?)").run(reservationId, wsId, reserve, nowIso);
+    return {};
+  }).immediate();
+  if (verdict.block) block(verdict.block[0], verdict.block[1]);
+  let settled = false;
+  const perAttempt = worst.micros as number;
+  return (unverifiedAttempts = 0) => {
+    if (settled) return;
+    settled = true;
+    if (unverifiedAttempts > 0) c.db.prepare("UPDATE ai_reservations SET micros = ?, state = 'unverified' WHERE id = ?").run(Math.min(reserve, perAttempt * unverifiedAttempts), reservationId);
+    else c.db.prepare("DELETE FROM ai_reservations WHERE id = ?").run(reservationId);
+  };
 }
 
 /* ------------------------------------------------------------------ context guard */
@@ -279,11 +316,12 @@ export async function runAiTask<T>(c: AppContext, wsId: string, input: AiTaskInp
     if (p && !p.simulated && !(p.local ? c.integrations.localAi : c.integrations.liveAi)) {
       throw new AiError("live_disabled", p.local ? "Local AI is not enabled (AI_PROVIDER_MODE=local)" : "Live AI provider calls are not enabled");
     }
-    checkLimits(c, wsId, settings, cand, taskId, input.taskType, attemptNo + 1, { inputTokens: estimateTokens(input.system) + estimateTokens(input.prompt), maxOutputTokens: Math.min(input.maxOutputTokens ?? c.maxOutputTokens, c.maxOutputTokens) });
     checkContextFits(c, cand, input.system, input.prompt, Math.min(input.maxOutputTokens ?? c.maxOutputTokens, c.maxOutputTokens));
+    const release = checkLimits(c, wsId, settings, cand, taskId, input.taskType, attemptNo + 1, { inputTokens: estimateTokens(input.system) + estimateTokens(input.prompt), maxOutputTokens: Math.min(input.maxOutputTokens ?? c.maxOutputTokens, c.maxOutputTokens) });
 
     const fromLabel = prev ? `${prev.provider}/${prev.model}` : null;
     let first = true;
+    let unverified = 0;
     try {
       const res = await c.ai.generate(cand.provider, {
         task: input.taskType, system: input.system, prompt: input.prompt, schemaHint: input.schemaHint, jsonSchema: input.jsonSchema,
@@ -301,11 +339,14 @@ export async function runAiTask<T>(c: AppContext, wsId: string, input: AiTaskInp
       audit(c, wsId, `ai:${cand.provider}`, "ai.task_succeeded", "ai_task", taskId, { taskType: input.taskType, model: cand.model, simulated: res.simulated, attempts: res.attempts.length, costStatus: res.costStatus, usedFallback: !!fromLabel });
       return { ...res, taskId, route: { mode: input.override?.providerId ? "override" : settings.routingMode, usedFallback: !!fromLabel, fallbackFrom: fromLabel } };
     } catch (e) {
+      unverified = unverifiedAttemptsOf(e);
       const err = e instanceof AiError ? e : new AiError("provider_unavailable", "Unexpected AI failure");
       audit(c, wsId, `ai:${cand.provider}`, "ai.task_failed", "ai_task", taskId, { taskType: input.taskType, kind: err.kind, model: cand.model });
       const next = candidates[i + 1];
       if (next && FALLBACK_ELIGIBLE.has(err.kind)) { prev = cand; continue; }
       throw err;
+    } finally {
+      release(unverified); // the request is over: its usage is recorded, so the reservation is no longer needed (unless it timed out or was cancelled)
     }
   }
   throw new AiError("not_eligible", "No candidate model could be used");
@@ -342,7 +383,8 @@ export async function connectionTest(c: AppContext, wsId: string, providerId: st
   const [cand] = routeFor(c, settings, "connection_test", false, { providerId, model });
   const taskId = newId("aitask");
   let attemptNo = 0;
-  checkLimits(c, wsId, settings, cand as Candidate, taskId, "connection_test", 1, { inputTokens: 60, maxOutputTokens: Math.min(64, c.maxOutputTokens) });
+  const release = checkLimits(c, wsId, settings, cand as Candidate, taskId, "connection_test", 1, { inputTokens: 60, maxOutputTokens: Math.min(64, c.maxOutputTokens) });
+  let unverified = 0;
   try {
     const res = await c.ai.generateText(providerId, { task: "connection_test", system: "You are a connectivity probe.", prompt: "Reply with the single word: pong", model, maxOutputTokens: Math.min(64, c.maxOutputTokens) }, {
       timeoutMs: c.registry.find(providerId, model)?.timeoutMs,
@@ -351,10 +393,11 @@ export async function connectionTest(c: AppContext, wsId: string, providerId: st
     audit(c, wsId, "owner", "ai.connection_test", "ai_task", taskId, { provider: providerId, model, ok: true });
     return { simulated: false, connected: true, provider: providerId, model, message: p.local ? "Real request to the local model server succeeded (no charge)." : "Real request succeeded.", latencyMs: res.latencyMs, requestId: res.requestId };
   } catch (e) {
+    unverified = unverifiedAttemptsOf(e);
     const err = e instanceof AiError ? e : new AiError("provider_unavailable", "Unexpected failure");
     audit(c, wsId, "owner", "ai.connection_test", "ai_task", taskId, { provider: providerId, model, ok: false, kind: err.kind });
     return { simulated: false, connected: false, provider: providerId, model, message: err.message, errorKind: err.kind, requestId: err.requestId };
-  }
+  } finally { release(unverified); }
 }
 
 /* ------------------------------------------------------------ model listing */
@@ -396,7 +439,7 @@ export interface AiProviderStatus {
   providers: Array<{ id: string; label: string; simulated: boolean; local: boolean; available: boolean; keyConfigured: boolean | null; models: Array<{ model: string; label: string; priced: boolean }> }>;
   budget: {
     configured: boolean; ceilingMicros: number | null; spentMicros: number; remainingMicros: number | null; requestsToday: number; maxRequestsPerDay: number | null;
-    requestsWithUnknownCost: number; currency: string; note: string;
+    requestsWithUnknownCost: number; unverifiedHolds: number; heldMicros: number; currency: string; note: string;
   };
   openaiStoreFalse: boolean;
   nextStep: string;
@@ -410,12 +453,14 @@ export function aiProviderStatus(c: AppContext): AiProviderStatus {
   const infos = c.ai.list();
   const mode = c.integrations.aiMode;
   const openaiKey = pol.keyPresent.openai;
+  const customHost = pol.customBaseUrls.length ? `WARNING: ${pol.customBaseUrls.join(" and ")} points to a custom host (development override), so the provider key will be sent there, not to the official API. ` : "";
   let nextStep: string;
   if (mode === "mock") nextStep = `AI is in mock mode: nothing is sent to any provider and nothing is charged.${openaiKey ? " An OpenAI key is present on the server but is ignored in mock mode." : " No OpenAI key is set on the server."} To try OpenAI, restart the server with AI_PROVIDER_MODE=live, ALLOW_LIVE_PROVIDER_CALLS=true and AI_LIVE_BUDGET_MICROS=50000 (a 0.05 USD monthly ceiling).`;
   else if (mode === "live" && !openaiKey) nextStep = "Live AI is on but no OpenAI key is set on the server (OPENAI_API_KEY). Add it to the server's environment file and restart. The key is never shown here.";
   else if (mode === "live" && pol.liveBudgetMicros === null) nextStep = "Live AI is on but no spending ceiling is set, so every live request will be refused. Set AI_LIVE_BUDGET_MICROS and restart.";
-  else if (mode === "live") nextStep = "Ready for a live test. Each request is checked against the ceiling first and may be billed by the provider.";
+  else if (mode === "live") nextStep = "Ready for a live test. A key being present does not prove it is valid or unexpired: only a real request can show that. Each request is checked against the ceiling first and may be billed by the provider.";
   else nextStep = "Local AI mode: requests go to a model on this computer and are not billed.";
+  nextStep = customHost + nextStep;
   return {
     mode, liveCallsAllowed: c.integrations.allowLiveProviderCalls,
     providers: infos.map((p) => ({
@@ -425,7 +470,7 @@ export function aiProviderStatus(c: AppContext): AiProviderStatus {
     budget: {
       configured: pol.liveBudgetMicros !== null, ceilingMicros: pol.liveBudgetMicros, spentMicros: spend.spentMicros,
       remainingMicros: pol.liveBudgetMicros === null ? null : Math.max(0, pol.liveBudgetMicros - spend.spentMicros), requestsToday: spend.requestsToday,
-      maxRequestsPerDay: pol.liveMaxRequestsPerDay, requestsWithUnknownCost: spend.requestsWithUnknownCost, currency: c.ai.currency,
+      maxRequestsPerDay: pol.liveMaxRequestsPerDay, requestsWithUnknownCost: spend.requestsWithUnknownCost, unverifiedHolds: spend.unverifiedHolds, heldMicros: spend.heldMicros, currency: c.ai.currency,
       note: "This ceiling is enforced by this application from provider-reported token counts and the price list. It is an estimate and is not your provider's own billing limit; set a limit in the provider's dashboard too.",
     },
     openaiStoreFalse: pol.openaiStore === false,
@@ -470,8 +515,9 @@ export async function runTestRequest(c: AppContext, wsId: string, providerId: st
   const taskId = newId("aitask");
   let attemptNo = 0;
   const maxOut = Math.min(TEST_MAX_OUTPUT, c.maxOutputTokens);
-  checkLimits(c, wsId, settings, cand as Candidate, taskId, "test_request", 1, { inputTokens: estimateTokens(TEST_SYSTEM) + estimateTokens(prompt), maxOutputTokens: maxOut });
+  const release = checkLimits(c, wsId, settings, cand as Candidate, taskId, "test_request", 1, { inputTokens: estimateTokens(TEST_SYSTEM) + estimateTokens(prompt), maxOutputTokens: maxOut });
   const currency = c.ai.currency;
+  let unverified = 0;
   try {
     const res = await c.ai.generateText(providerId, { task: "test_request", system: TEST_SYSTEM, prompt, model, maxOutputTokens: maxOut }, {
       timeoutMs: c.registry.find(providerId, model)?.timeoutMs,
@@ -484,6 +530,7 @@ export async function runTestRequest(c: AppContext, wsId: string, providerId: st
       estimatedCostMicros: res.estimatedCostMicros, costStatus: res.costStatus, currency, latencyMs: res.latencyMs, requestId: res.requestId,
     };
   } catch (e) {
+    unverified = unverifiedAttemptsOf(e);
     const err = e instanceof AiError ? e : new AiError("provider_unavailable", "Unexpected failure");
     audit(c, wsId, "owner", "ai.test_request", "ai_task", taskId, { provider: providerId, model, mode, ok: false, kind: err.kind });
     return {
@@ -491,5 +538,5 @@ export async function runTestRequest(c: AppContext, wsId: string, providerId: st
       usage: err.usage ? { inputTokens: err.usage.inputTokens ?? null, outputTokens: err.usage.outputTokens ?? null, source: err.usage.source } : null,
       estimatedCostMicros: null, costStatus: "unknown_no_usage", currency, requestId: err.requestId,
     };
-  }
+  } finally { release(unverified); }
 }

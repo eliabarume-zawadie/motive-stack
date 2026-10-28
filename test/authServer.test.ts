@@ -83,11 +83,14 @@ describe("every non-public route demands credentials (default deny)", () => {
       expect(routes.length).toBeGreaterThan(20); // the inventory really contains the API
       expect(routes.some((r) => r.url === "/api/workspaces/:wid/ai/settings" && r.method === "PUT")).toBe(true);
       const w = legacy(s);
-      const personRoutes = new Set(["GET /api/me", "GET /api/me/workspaces", "POST /api/workspaces/claim"]);
-      expect(routes.filter((r) => personRoutes.has(`${r.method} ${r.url}`))).toHaveLength(3);
+      const personRoutes = new Set(["GET /api/me", "GET /api/me/workspaces", "GET /api/me/organizations", "POST /api/workspaces/claim", "POST /api/organizations"]);
+      expect(routes.filter((r) => personRoutes.has(`${r.method} ${r.url}`))).toHaveLength(5);
+      // every organization route is for signed-in people too: with no identity provider they do not exist (404), with one they need credentials (401)
+      const isPerson = (r: { method: string; url: string }) => personRoutes.has(`${r.method} ${r.url}`) || r.url.startsWith("/api/organizations/:oid");
+      expect(routes.filter((r) => r.url.startsWith("/api/organizations/:oid")).length).toBeGreaterThan(10);
       for (const r of routes) {
         const url = r.url.replace(":wid", w.id).replace(/:[a-z]+/g, "x_1");
-        const isMe = personRoutes.has(`${r.method} ${r.url}`);
+        const isMe = isPerson(r);
         for (const h of [undefined, "Basic abc", "Bearer", "Bearer msw_wrong", `Bearer ${signJwt(attacker)}`]) {
           const res = await call(s.app, r.method as "GET", url, { header: h, payload: r.method === "GET" ? undefined : {} });
           const expected = isMe && label === "workspace-token mode" ? 404 : 401;
@@ -251,6 +254,7 @@ describe("approval attribution is derived on the server", () => {
     const { w, base, pid } = await proposal(s);
     const claimed = "user:usr_victim";
     const r = await call(s.app, "POST", `${base}/proposals/${pid}/approve`, { token: w.token, payload: { decidedBy: claimed, reason: "ok" } });
+    await call(s.app, "POST", `${base}/proposals/${pid}/execute`, { token: w.token });
     expect(r.status).toBe(200);
     const principal = `workspace-token:${w.id}`;
     const row = s.db.prepare("SELECT decided_by, claimed_label, reason FROM approvals WHERE proposal_id = ?").get(pid);
@@ -295,7 +299,7 @@ describe("migration 004 is additive", () => {
     db.prepare("INSERT INTO workspaces (id, name, token_hash, created_at) VALUES ('ws_old', 'Old Co', 'hash-old', '2026-01-01')").run();
     const cols = "id, name, token_hash, meta_account_id, created_at";
     const before = db.prepare(`SELECT ${cols} FROM workspaces`).all();
-    expect(migrate(db)).toEqual(["004_users.sql", "005_memberships.sql", "006_meta_accounts.sql", "007_credentials.sql", "008_drop_credential_hint.sql", "009_website_analysis.sql", "010_website_content_hash.sql"]);
+    expect(migrate(db)).toEqual(["004_users.sql", "005_memberships.sql", "006_meta_accounts.sql", "007_credentials.sql", "008_drop_credential_hint.sql", "009_website_analysis.sql", "010_website_content_hash.sql", "011_ai_reservations.sql", "012_reservation_state_and_fill_ledger.sql", "013_campaign_plans.sql", "014_lead_status_job_retries.sql", "015_organizations_permissions.sql", "016_brand_kit_assets.sql", "017_plans_lifecycle.sql", "018_creative_studio.sql"]);
     expect(db.prepare(`SELECT ${cols} FROM workspaces`).all()).toEqual(before);
     expect((db.prepare("SELECT COUNT(*) n FROM users").get() as { n: number }).n).toBe(0);
     const approvalCols = (db.prepare("PRAGMA table_info(approvals)").all() as Array<{ name: string }>).map((c) => c.name);

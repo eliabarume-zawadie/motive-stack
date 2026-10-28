@@ -1,5 +1,6 @@
 import { audit, iso, type Core } from "./core.js";
 import { notFound } from "./errors.js";
+import { ensureWorkspaceDefaults } from "./tenancy.js";
 import { newId, newToken, safeEqual, sha256 } from "./util.js";
 import { BusinessBrainSchema, type BusinessBrain } from "../domain/schemas.js";
 
@@ -32,6 +33,7 @@ export function createWorkspace(c: Core, name: string): { workspace: Workspace; 
   c.db
     .prepare("INSERT INTO workspaces (id, name, token_hash, created_at) VALUES (?,?,?,?)")
     .run(id, name, sha256(token), iso(c));
+  ensureWorkspaceDefaults(c, id); // its personal organization and default policy
   audit(c, id, "system", "workspace.created", "workspace", id, { name });
   return { workspace: getWorkspace(c, id), token };
 }

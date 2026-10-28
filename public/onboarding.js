@@ -12,7 +12,7 @@ const OB_GROUPS = [
 const OB_REQUIRED = [["businessName", "business name"], ["industry", "type of business"], ["services", "services"], ["serviceArea", "where you work"], ["targetCustomer", "who you serve"], ["offer", "your offer"]];
 const OB_DEFAULT_TONE = "friendly and professional";
 
-export function initOnboarding({ $, h, api, state, showNotice, once, pill, simBadge, onFormChanged = () => {} }) {
+export function initOnboarding({ $, h, api, state, showNotice, once, pill, simBadge, can = () => true, onFormChanged = () => {} }) {
   let pollTimer = null;
   let editing = null; // id of the finding being edited
   let lastFill = null; // what the last "fill from findings" did, kept visible while the results are redrawn
@@ -133,12 +133,12 @@ export function initOnboarding({ $, h, api, state, showNotice, once, pill, simBa
         f.flagNotes.map((n) => h("div", { class: "flag-note" }, n)),
         h("div", { class: "actions" },
           decided
-            ? h("button", { type: "button", class: "secondary", onclick: () => decide(f, "reset") }, "Undo")
+            ? h("button", { type: "button", class: "secondary", disabled: !can("brain.write"), onclick: () => decide(f, "reset") }, "Undo")
             : [
-              h("button", { type: "button", onclick: () => decide(f, "approve") }, isQuestion ? "Keep as a reminder" : "Yes, this is right"),
-              h("button", { type: "button", class: "secondary", onclick: () => decide(f, "reject") }, isQuestion ? "Dismiss" : "No, leave it out"),
+              h("button", { type: "button", disabled: !can("brain.write"), onclick: () => decide(f, "approve") }, isQuestion ? "Keep as a reminder" : "Yes, this is right"),
+              h("button", { type: "button", class: "secondary", disabled: !can("brain.write"), onclick: () => decide(f, "reject") }, isQuestion ? "Dismiss" : "No, leave it out"),
             ],
-          isQuestion ? null : h("button", { type: "button", class: "secondary", onclick: () => { editing = f.id; render(); } }, "Edit")));
+          isQuestion ? null : h("button", { type: "button", class: "secondary", disabled: !can("brain.write"), onclick: () => { editing = f.id; render(); } }, "Edit")));
     return h("li", { class: `finding ${f.status}` }, h("div", {}, pill(f.label, ""), " ", status, f.flags.includes("risky_claim") ? [" ", pill("Check this claim", "warn")] : null), body);
   }
 
@@ -184,10 +184,10 @@ export function initOnboarding({ $, h, api, state, showNotice, once, pill, simBa
           a.robots === "restricted" ? h("p", { class: "hint" }, "The site's robots.txt rules were followed.") : null,
           a.notes.map((n) => h("p", { class: "hint" }, n))),
         h("div", { class: "actions" },
-          h("button", { type: "button", id: "site-use", onclick: useFindings }, "Fill my Business Brain from these findings"),
-          h("button", { type: "button", id: "site-approve-safe", class: "secondary", onclick: approveSafe }, "Approve everything clearly stated on my site"),
-          pendingClaims(a) ? h("button", { type: "button", id: "site-approve-claims", class: "secondary", onclick: approveClaimsAndFill }, `Also approve the ${pendingClaims(a)} claims, I confirm they are true`) : null,
-          h("button", { type: "button", id: "site-refresh", class: "secondary", onclick: () => start(true) }, "Analyze again")),
+          h("button", { type: "button", id: "site-use", disabled: !can("brain.write"), onclick: useFindings }, "Fill my Business Brain from these findings"),
+          h("button", { type: "button", id: "site-approve-safe", class: "secondary", disabled: !can("brain.write"), onclick: approveSafe }, "Approve everything clearly stated on my site"),
+          pendingClaims(a) ? h("button", { type: "button", id: "site-approve-claims", class: "secondary", disabled: !can("brain.write"), onclick: approveClaimsAndFill }, `Also approve the ${pendingClaims(a)} claims, I confirm they are true`) : null,
+          h("button", { type: "button", id: "site-refresh", class: "secondary", disabled: !can("brain.write"), onclick: () => start(true) }, "Analyze again")),
         h("div", { id: "site-fill-summary", class: "card", hidden: true }),
         h("p", { class: "hint" }, `${approved} approved so far. The button above approves everything clearly stated on your site, then copies your approved findings into the business details below. Claims and suggestions stay out until you approve them. Nothing is saved until you press Save.`),
       ),
@@ -200,7 +200,7 @@ export function initOnboarding({ $, h, api, state, showNotice, once, pill, simBa
     const running = !!a && a.status === "running";
     $("site-progress").hidden = !running;
     if (running) $("site-progress-text").textContent = `Working on it: ${a.step}. This usually takes under a minute. You can keep this page open.`;
-    $("site-start").disabled = running;
+    $("site-start").disabled = running || !can("brain.write");
     const failed = !!a && a.status === "failed";
     $("site-failure").hidden = !failed;
     if (failed) {
@@ -210,6 +210,7 @@ export function initOnboarding({ $, h, api, state, showNotice, once, pill, simBa
     $("site-results").hidden = !(a && a.status === "ready");
     if (a && a.status === "ready") { renderResults(a); if (lastFill) showFillSummary(lastFill.patch, lastFill.result); } else $("site-results").replaceChildren();
     $("site-start").textContent = a && a.status === "ready" ? "Analyze a different website" : "Analyze my website";
+    onFormChanged(); // Home's list of what needs attention follows the analysis
     $("demo-row").hidden = !!a && a.status === "ready"; // fictional demo data must not sit next to the owner's real findings
   }
 
@@ -234,42 +235,62 @@ export function initOnboarding({ $, h, api, state, showNotice, once, pill, simBa
   };
   function applyPatchToForm(patch) {
     const f = $("brain-form").elements;
-    const filled = [], left = [], replacedDemo = [];
-    for (const [k, v] of Object.entries(patch.fields)) {
-      if (!f[k]) continue;
-      const cur = f[k].value.trim();
-      const demo = isDemoText(cur);
-      if (!cur || (k === "tone" && cur === OB_DEFAULT_TONE) || cur === autoFilled[k] || demo || fromWebsite(cur)) { f[k].value = v; autoFilled[k] = v; filled.push(k); if (demo) replacedDemo.push(k); } else left.push(k);
-    }
-    // a demo value in a field the findings say nothing about is cleared (the tone goes back to its default): fictional text must not stay in a real Business Brain
+    const norm = (v) => String(v || "").replace(/\s+/g, " ").trim().toLowerCase();
+    // what earlier fills (of this or any other website) put in this workspace's form: the server remembers it, so replacing it is exact and the owner's own text is never taken for it
+    const ledger = patch.ledger || [];
+    const ledgerHas = (field, value) => ledger.some((x) => x.field === field && norm(x.value) === norm(value));
+    const filled = [], left = [], replacedDemo = [], removedEarlier = [], added = [], removedLedger = [];
+
     for (const k of ["businessName", "industry", "serviceArea", "targetCustomer", "offer", "tone", "approvedPricing", "description"]) {
-      if (!f[k] || patch.fields[k] || !isDemoText(f[k].value)) continue;
-      f[k].value = k === "tone" ? OB_DEFAULT_TONE : "";
-      replacedDemo.push(k);
+      const el = f[k];
+      if (!el) continue;
+      const cur = el.value.trim();
+      const v = patch.fields[k];
+      const demo = isDemoText(cur);
+      const fromEarlier = !!cur && ledgerHas(k, cur);
+      const replaceable = !cur || (k === "tone" && cur === OB_DEFAULT_TONE) || cur === autoFilled[k] || demo || fromEarlier || fromWebsite(cur);
+      if (v) {
+        if (!replaceable) { left.push(k); continue; }
+        if (cur !== v) el.value = v;
+        autoFilled[k] = v;
+        filled.push(k);
+        if (demo) replacedDemo.push(k);
+        if (fromEarlier && cur !== v) { removedEarlier.push({ field: k, value: cur }); removedLedger.push({ field: k, value: cur }); }
+        if (cur !== v || fromEarlier) added.push({ field: k, value: v }); // (the same value the owner typed is theirs: it is not recorded as the website's)
+      } else if (cur && (demo || fromEarlier)) {
+        // the findings say nothing about this field any more: what the demo or an earlier website put there goes (the tone returns to its default)
+        el.value = k === "tone" ? OB_DEFAULT_TONE : "";
+        if (demo) replacedDemo.push(k);
+        if (fromEarlier) { removedEarlier.push({ field: k, value: cur }); removedLedger.push({ field: k, value: cur }); }
+      }
     }
-    // fictional demo lines are not the owner's: they go, and the real findings take their place
+
     for (const k of ["services", "differentiators", "verifiedFacts", "unverifiedClaims", "prohibitedClaims"]) {
-      const have = lines(f[k].value);
-      const real = have.filter((x) => !isDemoText(x));
-      if (real.length !== have.length) { f[k].value = real.join("\n"); if (!replacedDemo.includes(k)) replacedDemo.push(k); }
-    }
-    // lines an EARLIER fill copied from the website and that the findings no longer support (for example a sentence that only mentioned a free inspection) are removed,
-    // so a better fill cleans up after a worse one; anything the owner wrote themselves is not touched
-    const removed = [];
-    for (const [k, items] of [["services", patch.services], ["differentiators", patch.differentiators], ["verifiedFacts", patch.verifiedFacts || []], ["unverifiedClaims", patch.unverifiedClaims || []]]) {
-      const keep = new Set(items.map((x) => x.toLowerCase()));
-      const have = lines(f[k].value);
-      const stale = have.filter((x) => fromWebsite(x) && !keep.has(x.toLowerCase()));
-      if (stale.length) { f[k].value = have.filter((x) => !stale.includes(x)).join("\n"); removed.push(k); }
+      const items = k === "prohibitedClaims" ? [] : (patch[k] || []);
+      let have = lines(f[k].value);
+      const demoLines = have.filter((x) => isDemoText(x));
+      if (demoLines.length) { have = have.filter((x) => !isDemoText(x)); if (!replacedDemo.includes(k)) replacedDemo.push(k); }
+      if (k !== "prohibitedClaims") {
+        const keep = new Set(items.map(norm));
+        // lines that came from a website earlier and that THIS analysis does not support are removed; every other line is the owner's and stays
+        const stale = have.filter((x) => !keep.has(norm(x)) && (ledgerHas(k, x) || fromWebsite(x)));
+        for (const x of stale) { removedEarlier.push({ field: k, value: x }); if (ledgerHas(k, x)) removedLedger.push({ field: k, value: x }); }
+        have = have.filter((x) => !stale.includes(x));
+        const present = new Set(have.map(norm));
+        for (const x of items) if (present.has(norm(x)) && ledgerHas(k, x)) added.push({ field: k, value: x }); // already there from a website: this analysis now vouches for it
+        const fresh = items.filter((x) => !present.has(norm(x)));
+        have = [...have, ...fresh];
+        for (const x of fresh) added.push({ field: k, value: x });
+        if (items.length) filled.push(k);
+      }
+      f[k].value = have.join("\n");
     }
     // the records of where website statements came from are rebuilt each time, not piled up
     state.brainFacts = (state.brainFacts || []).filter((x) => !(x.status === "imported" && !x.approvedForMarketing && String(x.source || "").startsWith("website:")));
-    const lists = [["services", patch.services], ["differentiators", patch.differentiators], ["verifiedFacts", patch.verifiedFacts || []], ["unverifiedClaims", patch.unverifiedClaims || []]];
-    for (const [k, items] of lists) if (items.length) { mergeLines(f[k], items); filled.push(k); }
     const haveFacts = new Set((state.brainFacts || []).map((x) => x.text.toLowerCase()));
     state.brainFacts = [...(state.brainFacts || []), ...patch.facts.filter((x) => !haveFacts.has(x.text.toLowerCase()))].slice(0, 30);
-    for (const k of removed) if (!replacedDemo.includes(k)) replacedDemo.push(k);
-    return { filled, left, replacedDemo };
+    for (const x of removedEarlier) if (!replacedDemo.includes(x.field) && !filled.includes(x.field)) filled.push(x.field);
+    return { filled, left, replacedDemo, removedEarlier, added, removedLedger };
   }
 
   const FIELD_LABEL = { businessName: "Business name", industry: "Industry", serviceArea: "Service area", targetCustomer: "Target customer", offer: "Offer", tone: "Tone", description: "Business description", approvedPricing: "Approved pricing statement", services: "Services", differentiators: "Approved differentiators", verifiedFacts: "Other verified facts", unverifiedClaims: "Claims not verified", prohibitedClaims: "Things ads must never say" };
@@ -283,6 +304,7 @@ export function initOnboarding({ $, h, api, state, showNotice, once, pill, simBa
       h("strong", {}, "What went into your Business Brain form"),
       rows.length ? h("ul", { class: "plain" }, rows) : h("p", { class: "hint" }, "Nothing new was added."),
       result.left.length ? h("p", { class: "hint" }, `Left as you wrote it: ${result.left.map((k) => FIELD_LABEL[k] || k).join(", ")}.`) : null,
+      result.removedEarlier && result.removedEarlier.length ? h("div", { class: "hint" }, "Removed because an earlier website analysis put it there and this analysis does not support it (the form is not saved yet, so you can still change your mind):", h("ul", { class: "plain" }, result.removedEarlier.slice(0, 8).map((x) => h("li", {}, `${FIELD_LABEL[x.field] || x.field}: ${String(x.value).slice(0, 120)}`)))) : null,
       result.replacedDemo && result.replacedDemo.length ? h("p", { class: "hint" }, `Demo data was replaced by your real findings in: ${result.replacedDemo.map((k) => FIELD_LABEL[k] || k).join(", ")}.`) : null,
       pendingClaimsNow() ? h("p", { class: "hint" }, `${pendingClaimsNow()} claim(s) on your site (licences, warranties, prices, strengths) are waiting for you: approve them one by one above, or press “Also approve the claims” if you confirm they are true. They then fill Approved differentiators, Other verified facts and Approved pricing.`) : null,
       notFound.length ? h("p", { class: "flag-note" }, `Not found on your site, please fill in: ${notFound.join(", ")}.`) : h("p", { class: "hint" }, "All the required fields have a value. Check them, then press Save."),
@@ -321,6 +343,8 @@ export function initOnboarding({ $, h, api, state, showNotice, once, pill, simBa
       const missing = missingRequired();
       openDetails("Findings from your website were added to the form: review them, then press Save Business Brain.");
       showNotice(missing.length ? `Added to the form. Still needed before you can save: ${missing.join(", ")}.` : "Added to the form. Check it, then press Save Business Brain.");
+      // tell the server what the fill added and removed, so the next analysis (of any website) can replace exactly that and nothing the owner wrote
+      try { await api(`/website-analyses/${state.analysis.id}/applied`, { method: "POST", body: { added: result.added.slice(0, 80), removed: result.removedLedger.slice(0, 80) }, quiet: true }); } catch { /* the form still works; older text is then recognised from the findings instead */ }
     } catch (e) { say("site-msg", e.message); }
   }
 

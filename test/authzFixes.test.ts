@@ -100,6 +100,7 @@ async function propose(w: LW, wid: string, token: string) {
   expect((await call(w.app, "PUT", `${base}/brain`, { token, payload: BRAIN })).status).toBe(200);
   const gen = await call(w.app, "POST", `${base}/campaigns/generate`, { token, payload: { providerId: "mock", model: "mock-deterministic-1" } });
   expect(gen.status).toBe(201);
+  await call(w.app, "PUT", `${base}/policy`, { token, payload: { preventSelfApproval: false } }); // this test is not about separation of duties (see separationOfDuties.test.ts)
   const prop = await call(w.app, "POST", `${base}/campaigns/${gen.body.id}/proposals`, { token, payload: {} });
   expect(prop.status).toBe(201);
   expect(prop.body.mode).toBe(w.spy.mode);
@@ -137,6 +138,7 @@ describe("a legacy-token or unverified approval cannot authorize a live write", 
     const t = await tokenWorkspace(w);
     const { base, pid } = await propose(w, t.wid, t.token);
     const r = await call(w.app, "POST", `${base}/proposals/${pid}/approve`, { token: t.token, payload: { decidedBy: "anyone" } });
+    await call(w.app, "POST", `${base}/proposals/${pid}/execute`, { token: t.token });
     expect([r.status, r.body.error.code]).toEqual([403, "live_requires_signed_in_approver"]);
     expect(n(w.db, "SELECT COUNT(*) n FROM approvals")).toBe(0);
     expect(n(w.db, "SELECT COUNT(*) n FROM jobs WHERE type = 'execute_proposal'")).toBe(0);
@@ -166,6 +168,7 @@ describe("a legacy-token or unverified approval cannot authorize a live write", 
     const wid = (await call(w.app, "POST", "/api/workspaces", { token: alice.token, payload: { name: "Retry Co" } })).body.workspace.id as string;
     const { base, pid } = await propose(w, wid, alice.token);
     expect((await call(w.app, "POST", `${base}/proposals/${pid}/approve`, { token: alice.token, payload: { decidedBy: "a" } })).status).toBe(200);
+    await call(w.app, "POST", `${base}/proposals/${pid}/execute`, { token: alice.token });
     w.spy.failNext = true;
     await w.worker.runUntilIdle(1); // attempt 1: the connector fails transiently and the job is re-queued
     expect(state(w, pid)).toMatchObject({ proposal: { status: "approved" }, attempts: 1 });
@@ -226,6 +229,7 @@ describe("a legacy-token or unverified approval cannot authorize a live write", 
     const wid = (await call(w.app, "POST", "/api/workspaces", { token: alice.token, payload: { name: "Live Co" } })).body.workspace.id as string;
     const { base, pid } = await propose(w, wid, alice.token);
     expect((await call(w.app, "POST", `${base}/proposals/${pid}/approve`, { token: alice.token, payload: { decidedBy: "a" } })).status).toBe(200);
+    await call(w.app, "POST", `${base}/proposals/${pid}/execute`, { token: alice.token });
     await w.worker.runUntilIdle();
     expect(state(w, pid)).toEqual({ proposal: { status: "executed", last_error: null }, attempts: 1, resources: 1 });
     expect(w.spy.create).toEqual([{ approvedBy: `user:${alice.id}` }]);
@@ -238,6 +242,7 @@ describe("a legacy-token or unverified approval cannot authorize a live write", 
       const t = await tokenWorkspace(w);
       const { base, pid } = await propose(w, t.wid, t.token);
       expect((await call(w.app, "POST", `${base}/proposals/${pid}/approve`, { token: t.token, payload: { decidedBy: "Pat" } })).status).toBe(200);
+      await call(w.app, "POST", `${base}/proposals/${pid}/execute`, { token: t.token });
       if (disable) w.db.prepare("UPDATE workspaces SET legacy_token_disabled_at = 't' WHERE id = ?").run(t.wid);
       await w.worker.runUntilIdle();
       if (disable) {
@@ -264,6 +269,7 @@ describe("a legacy-token or unverified approval cannot authorize a live write", 
       const wid = (await call(w.app, "POST", "/api/workspaces", { token: alice.token, payload: { name: "Gate Co" } })).body.workspace.id as string;
       const { base, pid } = await propose(w, wid, alice.token);
       expect((await call(w.app, "POST", `${base}/proposals/${pid}/approve`, { token: alice.token, payload: { decidedBy: "a" } })).status).toBe(200);
+      await call(w.app, "POST", `${base}/proposals/${pid}/execute`, { token: alice.token });
       await tweak(w, wid, pid, alice);
       await w.worker.runUntilIdle();
       expect(state(w, pid).proposal, name).toMatchObject({ status: expect.stringMatching(/failed|stale/), last_error: reason });

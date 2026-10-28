@@ -107,9 +107,10 @@ async function world() {
     const base = `/api/workspaces/${wid}`;
     expect((await call(app, "PUT", `${base}/brain`, { token: owner.token, payload: BRAIN })).status).toBe(200);
     const gen = await call(app, "POST", `${base}/campaigns/generate`, { token: owner.token, payload: { providerId: "mock", model: "mock-deterministic-1" } });
+    await call(app, "PUT", `${base}/policy`, { token: owner.token, payload: { preventSelfApproval: false } }); // this test is not about separation of duties (see separationOfDuties.test.ts)
     const prop = await call(app, "POST", `${base}/campaigns/${gen.body.id}/proposals`, { token: owner.token, payload: {} });
     expect([gen.status, prop.status, prop.body.mode, prop.body.payload?.accountId]).toEqual([201, 201, "live", account]);
-    return { base, pid: prop.body.id as string, approve: () => call(app, "POST", `${base}/proposals/${prop.body.id}/approve`, { token: owner.token, payload: { decidedBy: "a" } }) };
+    return { base, pid: prop.body.id as string, approve: async () => { const r = await call(app, "POST", `${base}/proposals/${prop.body.id}/approve`, { token: owner.token, payload: { decidedBy: "a" } }); await call(app, "POST", `${base}/proposals/${prop.body.id}/execute`, { token: owner.token }); return r; } }; // approving runs nothing: the tests using this helper also ask to run it
   };
   return { db, ctx, app, worker, spy, u, A, B, auth, pick, accounts, prepare };
 }
@@ -168,6 +169,7 @@ describe("tenant isolation: a workspace reaches only the accounts authorized for
     const base = `/api/workspaces/${w.A}`;
     await call(w.app, "PUT", `${base}/brain`, { token: w.u.alice.token, payload: BRAIN });
     const gen = await call(w.app, "POST", `${base}/campaigns/generate`, { token: w.u.alice.token, payload: { providerId: "mock", model: "mock-deterministic-1" } });
+    await call(w.app, "PUT", `${base}/policy`, { token: w.u.alice.token, payload: { preventSelfApproval: false } }); // this test is not about separation of duties (see separationOfDuties.test.ts)
     const prop = await call(w.app, "POST", `${base}/campaigns/${gen.body.id}/proposals`, { token: w.u.alice.token, payload: {} });
     expect([prop.status, prop.body.error.code]).toEqual([409, "meta_account_not_authorized"]);
     const view = await call(w.app, "GET", base, { token: w.u.alice.token });
@@ -322,6 +324,7 @@ describe("the authorization lifecycle governs execution", () => {
     const prop = await again();
     expect([prop.status, prop.body.payload.accountId]).toEqual([201, "act_111"]);
     await call(w.app, "POST", `${p.base}/proposals/${prop.body.id}/approve`, { token: w.u.alice.token, payload: { decidedBy: "a" } });
+    await call(w.app, "POST", `${p.base}/proposals/${prop.body.id}/execute`, { token: w.u.alice.token });
     await call(w.app, "DELETE", `/api/workspaces/${w.A}/meta-accounts/act_111`, { token: w.u.alice.token });
     await w.worker.runUntilIdle();
     expect(st(w, prop.body.id).proposal).toEqual({ status: "failed", last_error: "meta_account_not_authorized" });
@@ -420,6 +423,7 @@ describe("the authorization lifecycle governs execution", () => {
     const prop = await call(w.app, "POST", `${lbase}/campaigns/${gen.body.id}/proposals`, { token: legacy.token, payload: {} });
     expect(prop.status).toBe(201);
     const r = await call(w.app, "POST", `${lbase}/proposals/${prop.body.id}/approve`, { token: legacy.token, payload: { decidedBy: "x" } });
+    await call(w.app, "POST", `${lbase}/proposals/${prop.body.id}/execute`, { token: legacy.token });
     expect([r.status, r.body.error.code]).toEqual([403, "live_requires_signed_in_approver"]);
     untouched(w);
   });
@@ -535,8 +539,9 @@ describe("migration 006 and unchanged behavior elsewhere", () => {
     db.prepare("INSERT INTO workspaces (id, name, token_hash, meta_account_id, created_at) VALUES ('ws_old','Old Co','h','act_111','t')").run();
     db.prepare("INSERT INTO workspaces (id, name, token_hash, meta_account_id, created_at) VALUES ('ws_two','Two Co','h2','act_111','t')").run(); // two workspaces already claiming one account
     const before = db.prepare("SELECT * FROM workspaces ORDER BY id").all();
-    expect(migrate(db)).toEqual(["006_meta_accounts.sql", "007_credentials.sql", "008_drop_credential_hint.sql", "009_website_analysis.sql", "010_website_content_hash.sql"]);
-    expect(db.prepare("SELECT * FROM workspaces ORDER BY id").all()).toEqual(before);
+    expect(migrate(db)).toEqual(["006_meta_accounts.sql", "007_credentials.sql", "008_drop_credential_hint.sql", "009_website_analysis.sql", "010_website_content_hash.sql", "011_ai_reservations.sql", "012_reservation_state_and_fill_ledger.sql", "013_campaign_plans.sql", "014_lead_status_job_retries.sql", "015_organizations_permissions.sql", "016_brand_kit_assets.sql", "017_plans_lifecycle.sql", "018_creative_studio.sql"]);
+    // later migrations only ADD to this table: every original value is unchanged; the new column holds the workspace's own personal organization
+    expect(db.prepare("SELECT * FROM workspaces ORDER BY id").all()).toEqual(before.map((w) => ({ ...(w as object), organization_id: `org_${(w as { id: string }).id}` })));
     expect(n(db, "SELECT COUNT(*) n FROM workspace_meta_accounts")).toBe(0);
     const { connector } = makeSpy();
     const ctx = buildContext({ db, env: ENV, metaConnector: () => connector });

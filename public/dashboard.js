@@ -1,7 +1,7 @@
 // Dashboard, campaign list, operations and integrations views. Everything shown comes from GET /dashboard (and the config the server
 // already publishes); nothing is computed from guesses. Uses textContent only (via h()): no HTML is ever built from data.
 
-const STATUS_LABEL = { proposed: "waiting for approval", approved: "approved, queued", executing: "running", executed: "done", rejected: "rejected", failed: "failed", stale: "out of date", needs_review: "needs review" };
+const STATUS_LABEL = { proposed: "waiting for approval", approved: "approved, not run yet", executing: "running", executed: "done", rejected: "rejected", failed: "failed", stale: "out of date", needs_review: "needs review" };
 const STATUS_CLASS = { executed: "ok", approved: "info", proposed: "warn", rejected: "bad", failed: "bad", stale: "warn", needs_review: "bad", executing: "info" };
 
 /** What each state means and what a person can actually do about it. Only actions that exist are listed. */
@@ -19,7 +19,7 @@ const REFUSED = {
 };
 const JOB_TYPE = { execute_proposal: "Create the approved draft", process_lead: "Sync a lead to the CRM" };
 
-export function initDashboard({ $, h, pill, simBadge, usd, state, openCampaign, goProposal }) {
+export function initDashboard({ $, h, pill, simBadge, usd, state, openCampaign, goProposal, can = () => true, retryJob = () => {} }) {
   const go = (el) => { if (el && typeof el.scrollIntoView === "function") el.scrollIntoView({ behavior: "smooth" }); };
   const ago = (iso) => {
     const t = Date.parse(iso);
@@ -51,6 +51,16 @@ export function initDashboard({ $, h, pill, simBadge, usd, state, openCampaign, 
   }
 
   /* ---------------------------------------------------------------- the five-step path */
+  /** One placeholder for every data-backed view while the first answer is on its way. */
+  function renderLoading() {
+    for (const id of ["path-view", "dash-view", "campaign-list", "ops-view", "integrations-view"]) $(id).replaceChildren(h("p", { class: "hint", role: "status" }, "Loading…"));
+  }
+  /** One clear error (with a way to try again) when the first answer could not be loaded. */
+  function renderError(message, retry) {
+    for (const id of ["dash-view", "campaign-list", "ops-view", "integrations-view"]) $(id).replaceChildren(h("div", { class: "flag-note", role: "alert" }, "This could not be loaded: ", message, " ", h("button", { type: "button", class: "secondary small", onclick: retry }, "Try again")));
+    $("path-view").replaceChildren();
+  }
+
   function renderPath(st) {
     const root = $("path-view");
     if (!st.current) { root.replaceChildren(h("p", { class: "hint" }, "Create a new workspace, or open an existing one, to begin.")); return; }
@@ -74,9 +84,23 @@ export function initDashboard({ $, h, pill, simBadge, usd, state, openCampaign, 
         text: launched ? "A paused draft exists in the SIMULATED ad platform. Nothing is running or spending." : waiting ? `${waiting} waiting for your decision. Nothing is created until you approve.` : "Nothing is created on an ad platform until you approve. Then watch your leads below." },
     ];
     const current = steps.findIndex((s) => !s.done);
-    root.replaceChildren(h("ol", { class: "path" }, steps.map((s, i) => h("li", { class: `path-step${s.done ? " done" : ""}${i === current ? " current" : ""}`, "aria-current": i === current ? "step" : false },
+    const modePill = (n) => (n >= 4 ? [" ", pill(st.config && st.config.live.meta ? "LIVE" : "SIMULATED", st.config && st.config.live.meta ? "warn" : "sim")] : null);
+    // what is missing, what needs evidence, and what waits for a person: the server builds the list from stored data; while the form has unsaved gaps the
+    // form's own list replaces the server's "not saved yet" item (the form is newer than anything the server has)
+    const CTA = { brain_not_saved: "Save it", claims_waiting: "Review the statements", blocking_questions: "See the questions", approvals_waiting: "Review and decide", proposals_failed: "See what happened", jobs_failed: "See the jobs", crm_failed: "See the leads", brain_more_detail: "Add detail" };
+    const todo = [];
+    const formGaps = st.brainMissing && st.brainMissing.length && !saved;
+    if (formGaps) todo.push({ text: `Still missing in your Business Brain: ${st.brainMissing.join(", ")}.`, why: "The campaign is written from these, so gaps become guesses.", to: "s-brain", cta: "Fill them in" });
+    for (const a of (d && d.attention) || []) {
+      if (a.kind === "brain_not_saved" && formGaps) continue;
+      todo.push({ text: a.text, why: a.why, to: a.target, cta: CTA[a.kind] || "Open", campaignId: a.campaignId });
+    }
+    const attention = todo.length
+      ? h("div", { class: "card attention" }, h("strong", {}, "Needs your attention"), h("ul", { class: "plain" }, todo.map((t) => h("li", { class: "item" }, t.text, h("div", { class: "muted" }, `Why: ${t.why}`), link(t.cta, () => (t.campaignId && t.to === "s-campaigns" ? openCampaign(t.campaignId) : go($(t.to))))))))
+      : null;
+    root.replaceChildren(...(attention ? [attention] : []), h("ol", { class: "path" }, steps.map((s, i) => h("li", { class: `path-step${s.done ? " done" : ""}${i === current ? " current" : ""}`, "aria-current": i === current ? "step" : false },
       h("span", { class: "path-n", "aria-hidden": "true" }, s.done ? "\u2713" : String(i + 1)),
-      h("div", {}, h("strong", {}, s.title, s.done ? h("span", { class: "sr" }, " (done)") : null), h("div", { class: "muted" }, s.text)),
+      h("div", {}, h("strong", {}, s.title, s.done ? h("span", { class: "sr" }, " (done)") : null), modePill(i + 1), i === 4 && waiting ? [" ", pill("needs your approval", "warn")] : null, h("div", { class: "muted" }, s.text)),
       i === current ? h("button", { type: "button", onclick: () => go($(s.to)) }, s.cta) : link(s.done ? "Open" : "Go", () => go($(s.to))),
     ))));
   }
@@ -98,6 +122,19 @@ export function initDashboard({ $, h, pill, simBadge, usd, state, openCampaign, 
         : h("p", { class: "hint" }, c.total ? "No campaign has been sent to the ad platform yet." : "No campaigns yet. Generate one under AI & Campaigns."),
       link("View campaigns", () => go($("s-campaigns"))),
     ));
+
+    if (d.budget && d.budget.ceilingCents != null) {
+      const b = d.budget;
+      cards.push(card("Daily budget limit",
+        h("div", { class: "stats" }, big(usd(b.ceilingCents), "your limit"), big(usd(b.committedCents), "committed"), big(usd(b.availableCents), "left")),
+        b.overLimitCents > 0 ? h("p", { class: "flag-note" }, `Over the limit by ${usd(b.overLimitCents)} per day. Nothing new can be approved or run until a campaign is archived or completed, or the limit is raised in My business.`) : null,
+        b.unnormalizable.length ? h("p", { class: "flag-note" }, `"${b.unnormalizable[0].campaignName}" has a budget that cannot be read as a daily amount (${b.unnormalizable[0].reason}), so nothing new can be approved until it is reviewed.`) : null,
+        b.commitments.length
+          ? h("ul", { class: "plain" }, b.commitments.map((x) => h("li", {}, `${x.campaignName}: ${usd(x.cents)} per day (${x.state === "needs_review" ? "outcome unknown" : x.state === "executed" ? "run" : x.state})`)))
+          : h("p", { class: "hint" }, "Nothing is committed yet."),
+        h("p", { class: "hint" }, "One limit for your whole workspace: every plan and stand-alone campaign counts toward it, once. Approved, queued and run campaigns count until they are archived or completed. A proposal that is only waiting commits nothing."),
+      ));
+    }
 
     cards.push(card(`Waiting for your approval (${d.pendingApprovals.length})`,
       d.pendingApprovals.length
@@ -155,14 +192,18 @@ export function initDashboard({ $, h, pill, simBadge, usd, state, openCampaign, 
   function renderCampaignList(d) {
     const root = $("campaign-list");
     if (!d) { root.replaceChildren(h("p", { class: "hint" }, "Create or open a workspace first.")); return; }
-    const list = d.campaigns.list;
-    if (!list.length) { root.replaceChildren(h("p", { class: "hint" }, "No campaigns yet. Use “Generate brief” above.")); return; }
+    const all = d.campaigns.list;
+    if (!all.length) { root.replaceChildren(h("p", { class: "hint" }, "No campaigns yet. Use “Create my campaign draft” above.")); return; }
+    const q = ($("camp-search")?.value || "").trim().toLowerCase(), want = $("camp-status")?.value || "";
+    const kind = (c) => (c.status === "launched_paused" ? "launched" : c.latestProposal?.status === "proposed" ? "proposed" : c.latestProposal?.status === "approved" ? "approved" : "draft");
+    const list = all.filter((c) => (!q || c.name.toLowerCase().includes(q) || c.id.toLowerCase().endsWith(q.replace(/^#/, ""))) && (!want || kind(c) === want));
+    if (!list.length) { root.replaceChildren(h("p", { class: "hint" }, `No campaigns match your search (${all.length} in this workspace).`)); return; }
     root.replaceChildren(h("ul", { class: "plain camp-list" }, list.map((c) => {
       const [badge, text] = campaignStatus(c);
       const selected = c.id === state.campaignId;
       return h("li", { class: `camp${selected ? " selected" : ""}`, "aria-current": selected ? "true" : null },
         h("div", { class: "camp-main" },
-          h("strong", {}, c.name), " ", badge, " ", h("span", { class: "pill" }, `version ${c.currentVersion}`), " ", h("span", { class: "muted", title: c.id }, `#${c.id.slice(-6)}`),
+          h("strong", {}, c.name), " ", badge, " ", c.lifecycleLabel ? pill(c.lifecycleLabel, ["draft", "needs_review"].includes(c.lifecycle) ? "warn" : "ok") : null, " ", c.plan ? h("span", { class: "muted" }, `plan: ${c.plan.name}`) : null, " ", h("span", { class: "pill" }, `version ${c.currentVersion}`), " ", h("span", { class: "muted", title: c.id }, `#${c.id.slice(-6)}`),
           h("div", { class: "muted" }, text)),
         h("div", { class: "camp-meta muted" },
           c.budgetCents == null ? "budget unknown" : `${usd(c.budgetCents)} per day`, c.overCeiling ? [" ", pill("over your ceiling", "bad")] : null,
@@ -175,13 +216,13 @@ export function initDashboard({ $, h, pill, simBadge, usd, state, openCampaign, 
   }
 
   /* ---------------------------------------------------------------- operations */
-  function renderOps(d) {
+  function renderOps(d, role) {
     const root = $("ops-view");
     if (!d) { root.replaceChildren(h("p", { class: "hint" }, "Create or open a workspace first.")); return; }
     const kids = [];
     kids.push(h("p", { class: "hint" }, "Work runs in the background: an approved draft is created by a job, and each lead is synced to the CRM by a job. This page shows what those jobs and proposals are doing, and what you can do about problems."));
     if (!d.jobs) {
-      kids.push(h("p", { class: "hint" }, "Background jobs are visible to operators and above. Your role can see proposals but not the job queue."));
+      kids.push(h("p", { class: "hint" }, `Background jobs are visible to operators and above. Your role${role ? ` (${role})` : ""} can see proposals but not the job queue.`));
     } else {
       const j = d.jobs;
       kids.push(h("div", { class: "stats" }, big(j.counts.queued, "queued"), big(j.counts.running, "running"), big(j.counts.done, "done"), big(j.counts.dead, "gave up")));
@@ -191,12 +232,15 @@ export function initDashboard({ $, h, pill, simBadge, usd, state, openCampaign, 
             : x.status === "queued" ? "Waiting for the worker."
               : x.status === "running" ? "Running now." : "Completed.";
       const rows = (items) => items.map((x) => h("tr", {},
-        h("td", {}, JOB_TYPE[x.type] || x.type),
+        h("td", {}, JOB_TYPE[x.type] || x.type, " ", x.simulated ? simBadge() : null, x.about ? h("div", { class: "muted" }, x.about) : null),
         h("td", {}, pill(x.status === "dead" ? "gave up" : x.status, x.status === "done" ? "ok" : x.status === "dead" ? "bad" : x.status === "running" ? "info" : "warn")),
-        h("td", {}, `${x.attempts} / ${x.maxAttempts}`),
+        h("td", {}, `${x.attempts} / ${x.maxAttempts}`, x.manualRetries ? h("div", { class: "muted" }, `retried by hand ${x.manualRetries}x`) : null),
         h("td", {}, explain(x), x.lastError ? h("div", { class: "muted" }, `Last error: ${x.lastError}`) : null),
-        h("td", {}, ago(x.updatedAt))));
-      const table = (items) => h("table", {}, h("thead", {}, h("tr", {}, ...["Job", "Status", "Attempts", "What it means", "Updated"].map((x) => h("th", {}, x)))), h("tbody", {}, rows(items)));
+        h("td", {}, ago(x.updatedAt), x.durationMs != null ? h("div", { class: "muted" }, `took ${x.durationMs < 1000 ? "under a second" : Math.round(x.durationMs / 1000) + " s"}`) : null),
+        h("td", {}, x.status === "dead" ? (x.retryable
+          ? (() => { const b = h("button", { type: "button", class: "secondary", disabled: !can("jobs.retry"), title: can("jobs.retry") ? null : "Your role does not allow retrying jobs. Ask an admin or owner.", onclick: () => retryJob(x.id, b) }, "Retry"); return b; })()
+          : h("span", { class: "muted" }, x.retryNote)) : null)));
+      const table = (items) => h("table", {}, h("thead", {}, h("tr", {}, ...["Job", "Status", "Attempts", "What it means", "Updated", ""].map((x) => h("th", {}, x)))), h("tbody", {}, rows(items)));
       if (j.attention.length) kids.push(h("h3", {}, "Failed or retrying"), table(j.attention));
       kids.push(h("h3", {}, "Recent jobs"), j.recent.length ? table(j.recent) : h("p", { class: "hint" }, "No jobs yet. They appear when you approve a proposal or add a lead."));
     }
@@ -219,7 +263,19 @@ export function initDashboard({ $, h, pill, simBadge, usd, state, openCampaign, 
     if (!cfg) { root.replaceChildren(); return; }
     // a NEW element per row: a DOM node can only be in one place, so a shared pill would show on the last row only
     const KIND_CLASS = { SIMULATED: "sim", LIVE: "warn", LOCAL: "ok", UNAVAILABLE: "", CONFIGURED: "ok" };
-    const row = (name, kind, note) => h("tr", {}, h("td", {}, h("strong", {}, name)), h("td", {}, pill(kind, KIND_CLASS[kind] ?? "")), h("td", {}, note));
+    const aiTest = d?.integrations.lastAiTest;
+    const lastTest = aiTest ? `${aiTest.ok ? "Passed" : "Failed"}: ${aiTest.provider}/${aiTest.model}${aiTest.simulated ? " (simulated, no provider contacted)" : ""}, ${stamp(aiTest.at)}` : "No connection test has been run. A key or setting being present proves nothing until a test succeeds.";
+    const live = !!d?.integrations.ai?.live;
+    // what each integration can do, who may change it, and when it was last tested (only AI has an explicit test)
+    const EXTRA = {
+      "Run mode": ["Switches the whole app between simulation and live.", "n/a"],
+      "Meta Ads": [d?.integrations.meta?.simulated === false ? "Paused drafts only, on an ad account an owner authorized, after an admin approves. Live creation and publishing are not enabled in this release. Choosing an account: admin. Authorizing one: owner." : "Creates a PAUSED draft in the simulator after approval. Cannot spend money or publish anything.", "Never tested: there is no Meta connection test in this release."],
+      "GoHighLevel CRM": ["Stores a synthetic lead and a simulated contact. Real CRM actions are deferred.", "Never tested: simulated only."],
+      "AI generation": ["Writes campaign drafts and reads your website. Settings and tests: admin. Keys stay on the server.", live && !aiTest ? "Configured but NOT verified. " + lastTest : lastTest],
+      "Sign-in": ["Who can open this workspace.", "n/a"],
+      "Provider credentials": ["Nothing can be stored or entered here.", "n/a"],
+    };
+    const row = (name, kind, note) => { const x = EXTRA[name.trim()] || ["", ""]; return h("tr", {}, h("td", {}, h("strong", {}, name)), h("td", {}, pill(kind, KIND_CLASS[kind] ?? "")), h("td", {}, note), h("td", {}, x[0]), h("td", {}, x[1])); };
     const rows = [];
     rows.push(row("Run mode", cfg.mode === "mock" ? "SIMULATED" : "LIVE",
       cfg.mode === "mock" ? "Mock mode: nothing leaves this computer and nothing real is spent. This is the default." : "Live mode is on for the integrations below that say LIVE."));
@@ -245,12 +301,15 @@ export function initDashboard({ $, h, pill, simBadge, usd, state, openCampaign, 
     rows.push(row("Sign-in", "SIMULATED", cfg.auth?.mode === "oidc" ? "The server expects identity-provider sign-in, which this page does not offer yet." : "Local development: a per-workspace access token (you saved it when you created the workspace). There are no user accounts or roles in this mode."));
     rows.push(row("Provider credentials", "UNAVAILABLE", "Not part of this release. Provider keys are read by the server from its own environment and are never shown or stored here."));
     root.replaceChildren(
-      h("table", {}, h("thead", {}, h("tr", {}, ...["Integration", "Status", "What it means"].map((x) => h("th", {}, x)))), h("tbody", {}, rows)),
+      h("table", {}, h("thead", {}, h("tr", {}, ...["Integration", "Status", "What it means", "What it can do and who may change it", "Last test"].map((x) => h("th", {}, x)))), h("tbody", {}, rows)),
       h("p", { class: "hint" }, "SIMULATED: a built-in stand-in; no real service. LIVE: a real service. LOCAL: runs on this computer. UNAVAILABLE: cannot be used right now. Nothing on this page connects an account or enters a key."),
       workspace ? h("p", { class: "hint" }, `This workspace: ${workspace.name} (id ${workspace.id}), created ${stamp(workspace.createdAt || workspace.created_at)}.`) : null,
     );
   }
 
+  for (const id of ["camp-search", "camp-status"]) $(id)?.addEventListener("input", () => renderCampaignList(state.dash));
+
   return {
+    renderLoading, renderError,
     renderPath, renderDashboard, renderCampaignList, renderOps, renderIntegrations };
 }

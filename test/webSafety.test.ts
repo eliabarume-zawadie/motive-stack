@@ -296,3 +296,28 @@ describe("reading a whole site, politely and within limits", () => {
     expect((e as CrawlRefused).message).toMatch(/status 500/);
   });
 });
+
+describe("addresses written in unusual ways are judged in their canonical form", () => {
+  it.each([
+    "FE80::1", "FC00:0:0:0:0:0:0:1", "0:0:0:0:0:0:0:1", "0:0:0:0:0:ffff:7f00:1", "0000:0000:0000:0000:0000:ffff:7f00:0001", "::FFFF:127.0.0.1", "2001:0000:4136:e378:8000:63bf:3fff:fdd2",
+    "fe80::1%eth0", "fe80::1%25", "::ffff:169.254.169.254", "64:ff9b::a9fe:a9fe", "2002:a9fe:a9fe::1", "::127.0.0.1",
+  ])("refuses %s", (ip) => { expect(isPublicAddress(ip)).toBe(false); });
+  it("still allows a public address in long or capital form", () => {
+    expect(isPublicAddress("2606:4700:4700:0000:0000:0000:0000:1111")).toBe(true);
+    expect(isPublicAddress("2606:4700:4700::1111".toUpperCase())).toBe(true);
+  });
+});
+
+describe("the whole read is bounded in time", () => {
+  it("stops starting new pages once the total time budget is nearly used, and says so", async () => {
+    const links = Array.from({ length: 6 }, (_, i) => `<a href="/services/s${i}">Service ${i}</a>`).join("");
+    const handlers: Record<string, Handler> = { "/": html(page("Slow", `<p>home</p>${links}`)) };
+    for (let i = 0; i < 6; i++) handlers[`/services/s${i}`] = (_q, res) => { setTimeout(() => { res.writeHead(200, { "content-type": "text/html" }); res.end(page(`S${i}`, "<p>text</p>")); }, 450); };
+    const s = await site(handlers);
+    const t0 = Date.now();
+    const r = await crawlSite("http://shop.example.com/", { ...DEFAULT_CRAWL, maxPages: 8, totalTimeoutMs: 2400, limits: { timeoutMs: 1500 } }, s.deps());
+    expect(Date.now() - t0).toBeLessThan(4500); // not 6 x 450 ms of pages plus slack
+    expect(r.pages.length).toBeLessThan(7);
+    expect(r.notes.join(" ")).toMatch(/Stopped early/);
+  });
+});

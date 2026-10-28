@@ -45,7 +45,7 @@ export function initAiTest({ $, h, api, once, pill, simBadge }) {
       const prev = sel.value;
       sel.replaceChildren(...(usable.length ? usable.map((m) => h("option", { value: `${m.provider}/${m.model}` }, `${m.label}${m.simulated ? " (simulated)" : ""}`)) : [h("option", { value: "" }, "No model is available in this mode")]));
       if (prev && usable.some((m) => `${m.provider}/${m.model}` === prev)) sel.value = prev;
-      $("aitest-send").disabled = usable.length === 0;
+      $("aitest-send").disabled = usable.length === 0 || $("aitest-send").dataset.denied === "1";
       $("aitest-why").textContent = usable.length ? "" : (models.models.find((m) => m.provider === "openai")?.reason || "");
     } catch { /* no workspace selected, or no access */ }
   }

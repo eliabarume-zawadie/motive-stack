@@ -133,3 +133,26 @@ button.small { padding: 4px 10px; font-size: .82rem; flex: none; }
 /* the hidden attribute must win over any display rule set above */
 [hidden] { display: none !important; }
 #gen-error { white-space: pre-line; }
+
+.plan { list-style: none; }
+.plan table { margin-top: 8px; }
+.plan-share { max-width: 9rem; }
+.asset { list-style: none; }
+.asset-main { display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
+.asset-preview { max-width: 160px; max-height: 160px; border: 1px solid var(--line); border-radius: 6px; background: repeating-conic-gradient(#0001 0% 25%, transparent 0% 50%) 50% / 12px 12px; }
+.asset table { margin-top: 8px; }
+.creative { list-style: none; }
+.cr-slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; margin: 8px 0; padding: 0; }
+.cr-slot { list-style: none; min-width: 0; }
+.qa ul { margin: 2px 0 8px; }
+.inline-file { display: inline-flex; flex-direction: row; align-items: center; gap: 8px; }
+.inline-filter { display: inline-flex; flex-direction: row; align-items: center; gap: 8px; margin: 4px 0 8px; }
+.inline-filter select { width: auto; }
+.role-note:empty { display: none; }
+#role-pill { margin-left: 8px; }
+.log .what { margin: 4px 0 0; }
+.log pre.answer { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .78rem; margin: 6px 0; }
+
+#provenance-review { margin-top: 1rem; padding: .75rem 1rem; border: 1px solid var(--border, #d0d7de); border-radius: 8px; }
+#provenance-review ul { margin: .25rem 0 .25rem 1.1rem; padding: 0; }
+#provenance-review li { margin: .2rem 0; overflow-wrap: anywhere; }

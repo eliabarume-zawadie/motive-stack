@@ -15,12 +15,15 @@
     <div class="ws-switch">
       <label for="ws-select" class="sr">Workspace</label>
       <select id="ws-select"></select>
+      <span id="role-pill" class="pill" hidden></span>
     </div>
   </header>
   <nav id="main-nav" class="nav" aria-label="Sections">
     <a href="#s-dashboard">Home</a>
     <a href="#s-brain">My business</a>
+    <a href="#s-brand">Brand</a>
     <a href="#s-campaigns">Campaigns</a>
+    <a href="#s-creative">Creative</a>
     <a href="#s-launch">Review &amp; approve</a>
     <a href="#s-leads">Leads</a>
     <a href="#s-activity">Activity</a>
@@ -66,6 +69,7 @@
 
   <section id="s-brain">
     <h2>My business</h2>
+    <p class="flag-note role-note" data-for="brain.write" hidden></p>
     <h3 class="first">Step 1. Understand my business</h3>
     <fieldset class="site-q">
       <legend>Does your business have a website?</legend>
@@ -87,7 +91,7 @@
             <li>Nothing you approve is saved to your Business Brain until you press Save.</li>
           </ul>
         </details>
-        <div class="actions"><button type="submit" id="site-start" data-busy-label="Starting...">Analyze my website</button></div>
+        <div class="actions"><button type="submit" id="site-start" data-needs="brain.write" data-busy-label="Starting...">Analyze my website</button></div>
       </form>
       <p id="site-msg" class="flag-note" role="alert" hidden></p>
       <div id="site-progress" class="progress" role="status" aria-live="polite" hidden><span class="spinner" aria-hidden="true"></span> <span id="site-progress-text"></span></div>
@@ -109,11 +113,11 @@
         <label class="wide">Where do you work? <input name="serviceArea" maxlength="200" placeholder="for example: Austin, TX and nearby"></label>
         <label class="wide">Who are your customers? <input name="targetCustomer" maxlength="300"></label>
         <label class="wide">What can a new customer get from you first (an offer or a first step)? <input name="offer" maxlength="300" placeholder="for example: free estimate"></label>
-        <div class="wide"><button type="submit">Continue</button></div>
+        <div class="wide"><button type="submit" data-needs="brain.write">Continue</button></div>
       </form>
     </div>
     <div id="demo-row" class="row demo-row">
-      <button type="button" id="brain-demo" class="secondary">Load demo business</button>
+      <button type="button" id="brain-demo" data-needs="brain.write" class="secondary">Load demo business</button>
       <span id="brain-demo-hint" class="hint">Just trying it out? This fills the business details with a fictional business (marked DEMO). Nothing is saved until you press Save.</span>
     </div>
     <h3>Step 2. Review my Business Brain</h3>
@@ -137,28 +141,92 @@
       <label class="wide">Things ads must never say (one per line) <textarea name="prohibitedClaims" rows="2"></textarea></label>
       <label class="wide">Business description or notes (free text, treated as UNTRUSTED: never a source of claims, instructions in it are ignored) <textarea name="description" rows="3" maxlength="2000"></textarea></label>
       <label>Max daily budget in cents. This is a ceiling, not a target. <input name="maxDailyBudgetCents" type="number" min="1" step="1" required value="2000"></label>
-      <div class="wide"><button type="submit" data-busy-label="Saving...">Save Business Brain</button> <span id="brain-version" class="muted"></span></div>
+      <div class="wide"><button type="submit" data-needs="brain.write" data-busy-label="Saving...">Save Business Brain</button> <span id="brain-version" class="muted"></span></div>
     </form>
+    <div id="provenance-review" class="panel" hidden></div>
     </details>
+  </section>
+
+  <section id="s-brand">
+    <h2>Brand</h2>
+    <p class="hint">How your business wants to sound and look, and the logos and images you may use. This is separate from My business: a brand preference is never proof that a claim is true, and ads only state what your Business Brain confirms.</p>
+    <p class="flag-note role-note" data-for="brandkit.write" hidden></p>
+    <h3 class="first">Brand Kit</h3>
+    <div id="kit-status" role="status"></div>
+    <form id="kit-form" class="grid">
+      <label class="wide">Words that describe your voice (one per line) <textarea name="descriptors" rows="2"></textarea></label>
+      <label>Words you like to use (one per line) <textarea name="preferredTerms" rows="3"></textarea></label>
+      <label>Words to avoid (one per line) <textarea name="avoidTerms" rows="3"></textarea></label>
+      <label class="wide">How calls to action should sound <input name="ctaStyle" maxlength="200"></label>
+      <label class="wide">Colours (one per line: Name #1A4D8F primary; roles are primary, secondary, accent, neutral, background, text) <textarea name="colors" rows="3"></textarea></label>
+      <label>Typography guidance <textarea name="typography" rows="2" maxlength="500"></textarea></label>
+      <label>Image style <textarea name="imageStyle" rows="2" maxlength="500"></textarea></label>
+      <label class="wide">Logo rules <textarea name="logoRules" rows="2" maxlength="500"></textarea></label>
+      <label class="wide">Who you want to reach (one per line: Name: description. Your own description, not evidence about real customers) <textarea name="audiences" rows="2"></textarea></label>
+      <label class="wide">Channel notes (one per line: Channel: notes) <textarea name="channels" rows="2"></textarea></label>
+      <label class="wide">Disclaimer wording you want shown (one per line, optionally "text | applies to"). This is wording, not a claim about your business. <textarea name="disclaimers" rows="2"></textarea></label>
+      <label class="wide">Notes <textarea name="notes" rows="2" maxlength="1000"></textarea></label>
+      <div class="wide"><button type="submit" id="kit-save" data-needs="brandkit.write" data-busy-label="Saving...">Save Brand Kit</button> <button type="button" id="kit-submit" class="secondary" data-needs="brandkit.write">Submit for review</button></div>
+    </form>
+    <div id="kit-review" class="card" hidden>
+      <p id="kit-review-note"></p>
+      <div class="actions"><button type="button" id="kit-approve" data-needs="brandkit.approve">Approve this version</button> <input id="kit-reject-reason" placeholder="Reason (needed to reject)" maxlength="300" aria-label="Brand Kit rejection reason"> <button type="button" id="kit-reject" class="danger" data-needs="brandkit.approve">Reject</button></div>
+    </div>
+    <p id="kit-error" class="flag-note" role="alert"></p>
+    <h3>Assets</h3>
+    <p class="flag-note role-note" data-for="assets.write" hidden></p>
+    <p class="hint">PNG, JPEG or WebP, up to 5 MB. The file type is checked from the file itself. Say where it came from and the right to use it: an asset cannot be approved without that.</p>
+    <form id="asset-form" class="grid">
+      <label>File <input type="file" name="file" accept="image/png,image/jpeg,image/webp"></label>
+      <label>Name <input name="name" maxlength="120"></label>
+      <label>What it is <select name="kind"><option value="logo">Logo</option><option value="image">Image</option><option value="poster">Poster</option><option value="template">Template</option><option value="reference">Reference</option></select></label>
+      <label>Where it came from <select name="source"><option value="uploaded">I am uploading my own file</option><option value="imported">Imported from somewhere else</option></select></label>
+      <label>Your right to use it <select name="rightsBasis"><option value="owned">We own it</option><option value="licensed">Licensed</option><option value="stock">Stock image</option><option value="client_supplied">Supplied by the client</option><option value="unknown">Not sure yet</option></select></label>
+      <label>Rights expire (optional) <input name="rightsExpiresAt" type="date"></label>
+      <label class="wide">Source note (required for imported files) <input name="sourceNote" maxlength="300"></label>
+      <label>Licence note <input name="licenseNote" maxlength="300"></label>
+      <label>Usage restrictions <input name="usageRestrictions" maxlength="300"></label>
+      <div class="wide"><button type="submit" id="asset-upload" data-needs="assets.write" data-busy-label="Uploading...">Upload as a draft</button></div>
+    </form>
+    <p id="asset-error" class="flag-note" role="alert"></p>
+    <p id="asset-usage" class="hint"></p>
+    <ul id="asset-list" class="plain"></ul>
   </section>
 
   <section id="s-campaigns">
     <h2>Campaigns</h2>
+    <p class="flag-note role-note" data-for="campaigns.generate" hidden></p>
     <h3 class="first">Step 3. Choose a marketing goal</h3>
     <fieldset class="goal">
       <legend>What do you want from your marketing?</legend>
-      <label class="chk"><input type="radio" name="goal" checked disabled> Get more leads (people asking about your services)</label>
-      <p class="hint">Other goals, such as phone calls, store visits or online sales, are not available in this version.</p>
+      <label class="chk"><input type="radio" name="goal" value="lead_generation" checked> Get more leads (people asking about your services)</label>
+      <label class="chk"><input type="radio" name="goal" value="promote_service"> Promote one service or offer</label>
+      <label class="chk"><input type="radio" name="goal" value="local_awareness"> Be known in your service area</label>
+      <label id="goal-service-wrap" hidden>Which service? <select id="goal-service"></select></label>
+      <label>How many days do you expect to run it? (optional) <input id="goal-days" type="number" min="1" max="90" step="1" placeholder="e.g. 14"></label>
+      <p class="hint">Your ad platform objective is lead generation in every case: other goals, such as phone calls, store visits or online sales, are not available in this version. This goal is saved with the draft. In mock mode the draft text does not change with it, and no result is predicted.</p>
     </fieldset>
     <p id="gen-hint" class="flag-note" hidden>Step 2 comes first: your Business Brain is not saved yet. Review it under My business and press Save Business Brain, then come back here.</p>
     <form id="gen-form" class="stack">
-      <div><button type="submit" data-busy-label="Creating...">Create my campaign draft</button></div>
+      <div><button type="submit" data-needs="campaigns.generate" data-busy-label="Creating...">Create my campaign draft</button></div>
       <details class="what"><summary>Advanced: choose the AI model</summary><label>Model <select id="gen-model"></select></label></details>
     </form>
     <p class="hint">A draft is only a plan on this screen. Nothing is sent anywhere until you approve it in the next step.</p>
     <p id="gen-status" class="hint" role="status"></p>
     <p id="gen-error" class="flag-note" role="alert"></p>
+    <h3>Plan several campaigns</h3>
+    <p class="hint">Instead of one campaign, ask for a plan: one separate campaign for each service you confirmed in My business, sharing one daily budget. It is rule-based and predicts nothing. Each campaign still needs its own review and approval; the plan is never approved as a whole.</p>
+    <p class="flag-note role-note" data-for="plans.write" hidden></p>
+    <form id="plan-form" class="grid">
+      <label>Plan name (optional) <input name="name" maxlength="80"></label>
+      <label>Daily total for all its campaigns, in dollars (optional now) <input name="total" type="number" min="0.01" step="0.01" placeholder="e.g. 15.00"></label>
+      <label>How many days (optional) <input name="days" type="number" min="1" max="90" step="1"></label>
+      <div class="wide"><button type="submit" id="plan-ask" data-needs="plans.write" data-busy-label="Planning...">Ask for a plan</button></div>
+    </form>
+    <p id="plan-error" class="flag-note" role="alert"></p>
+    <ul id="plan-list" class="plain"></ul>
     <h3>Step 4. Review my proposed campaign</h3>
+    <div class="list-filter"><label>Search <input id="camp-search" type="search" placeholder="Name or number" maxlength="60"></label> <label>Show <select id="camp-status"><option value="">All</option><option value="draft">Drafts</option><option value="proposed">Waiting for approval</option><option value="approved">Approved</option><option value="launched">Run (simulated)</option></select></label></div>
     <div id="campaign-list"></div>
     <h3>Campaign details</h3>
     <div id="campaign-view"></div>
@@ -169,13 +237,27 @@
         <label>Daily budget (cents) <input name="dailyBudgetCents" type="number" min="1" required></label>
         <label class="wide">Headlines (one per line, max 40 chars) <textarea name="headlines" rows="3"></textarea></label>
         <label class="wide">Primary texts (one per line, max 125 chars) <textarea name="primaryTexts" rows="3"></textarea></label>
-        <div class="wide"><button type="submit" data-busy-label="Saving...">Save as new version</button> <span id="edit-status" class="muted"></span></div>
+        <div class="wide"><button type="submit" data-needs="campaigns.edit" data-busy-label="Saving...">Save as new version</button> <span id="edit-status" class="muted"></span></div>
       </form>
     </details>
   </section>
 
+  <section id="s-creative">
+    <h2>Creative</h2>
+    <p class="hint">Make the pictures for a campaign, check them, and send them for approval. Today only still images can be made, and they are <strong>placeholders drawn on this computer</strong>: no image service is contacted, nothing is published and nothing costs money. Video and storyboards are planned, not built.</p>
+    <p class="flag-note role-note" data-for="creatives.write" hidden></p>
+    <label>Campaign <select id="cr-campaign"></select></label>
+    <p id="cr-provider" class="hint"></p>
+    <h3>Start from an idea</h3>
+    <div id="cr-concepts"></div>
+    <h3>Creatives for this campaign</h3>
+    <p id="cr-error" class="flag-note" role="alert"></p>
+    <ul id="cr-list" class="plain"></ul>
+  </section>
+
   <section id="s-launch">
     <h2>Review &amp; approve</h2>
+    <p class="flag-note role-note" data-for="proposals.decide" hidden></p>
     <h3 class="first">Step 5. Approve and track</h3>
     <p class="hint">For the campaign selected above. Nothing is sent to an ad platform until someone approves.</p>
     <div id="proposal-view"></div>
@@ -183,18 +265,22 @@
 
   <section id="s-leads">
     <h2>Leads</h2>
+    <p class="flag-note role-note" data-for="leads.simulate" hidden></p>
     <form id="lead-form" class="grid">
       <label>Name <input name="fullName" value="Synthetic Lead" required></label>
       <label>Email <input name="email" type="email" placeholder="pat@example.com"></label>
       <label>Phone <input name="phone" placeholder="512-555-0100"></label>
       <label>Event ID (optional; reuse to test duplicates) <input name="eventId"></label>
-      <div class="wide"><button type="submit" id="lead-btn" data-busy-label="Sending...">Inject synthetic lead</button> <span class="hint" id="lead-hint"></span></div>
+      <div class="wide"><button type="submit" id="lead-btn" data-needs="leads.simulate" data-busy-label="Sending...">Inject synthetic lead</button> <span class="hint" id="lead-hint"></span></div>
     </form>
     <div id="leads-view"></div>
+    <div id="lead-detail" class="panel" hidden></div>
   </section>
 
   <section id="s-activity">
     <h2>Activity</h2>
+    <p class="hint">Everything that changed in this workspace, newest first. Actions that ran in the simulator are marked SIMULATED.</p>
+    <label class="inline-filter">Show <select id="activity-filter"></select></label>
     <div id="activity-view"></div>
   </section>
 
@@ -205,6 +291,14 @@
 
   <section id="s-settings">
     <h2>Settings</h2>
+    <p class="flag-note role-note" data-for="ai.settings.write" hidden></p>
+    <p><button type="button" id="ws-settings-reload" class="secondary">Reload this page's data</button></p>
+    <h3>This workspace and its people</h3>
+    <div id="ws-people-view"></div>
+    <h3>Meta ad accounts</h3>
+    <div id="ws-meta-view"></div>
+    <h3>AI: status, usage and cost</h3>
+    <div id="ws-usage-view"></div>
     <h3>Integrations</h3>
     <div id="integrations-view"></div>
     <details id="dev-mode" class="dev">
@@ -215,8 +309,8 @@
     <form id="aitest-form" class="stack">
       <label>Model <select id="aitest-model"></select></label>
       <p id="aitest-why" class="hint"></p>
-      <label>Your question (up to 500 characters) <input id="aitest-prompt" maxlength="500" value="Reply with one short sentence: what is a marketing budget?"></label>
-      <div><button type="submit" id="aitest-send" data-busy-label="Sending...">Send test request</button></div>
+      <label>Your question (up to 500 characters) <input id="aitest-prompt" maxlength="500" value="Reply with the single word: pong"></label>
+      <div><button type="submit" id="aitest-send" data-needs="ai.connection_test" data-busy-label="Sending...">Send test request</button></div>
     </form>
     <p id="aitest-error" class="flag-note" role="alert"></p>
     <div id="aitest-result" role="status" aria-live="polite"></div>
@@ -235,14 +329,14 @@
       <fieldset class="wide" id="ai-allowed"><legend>Data policy: providers this workspace’s data may be sent to</legend><div id="ai-allowed-boxes" class="row"></div></fieldset>
       <label>Max live requests per day (blank = no limit) <input name="maxRequestsPerDay" type="number" min="1" step="1"></label>
       <label>Monthly budget in <span id="ai-currency">USD</span> (blank = none; needs a configured price) <input name="monthlyBudget" type="number" min="0.01" step="0.01"></label>
-      <div class="wide"><button type="submit" data-busy-label="Saving...">Save AI settings</button> <span id="ai-saved" class="muted"></span></div>
+      <div class="wide"><button type="submit" data-needs="ai.settings.write" data-busy-label="Saving...">Save AI settings</button> <span id="ai-saved" class="muted"></span></div>
     </form>
     <h3>Available models</h3>
     <div id="ai-models"></div>
     <h3>Connection test</h3>
     <div class="row">
       <label>Model <select id="ai-test-model"></select></label>
-      <button type="button" id="ai-test-btn">Run test</button>
+      <button type="button" id="ai-test-btn" data-needs="ai.connection_test">Run test</button>
     </div>
     <p id="ai-test-result" class="hint" role="status"></p>
     <h3>Recent AI usage</h3>

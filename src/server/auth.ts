@@ -1,9 +1,11 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { AuthRuntime } from "../auth/config.js";
-import { legacyTokenActor, PERSON_ONLY_PERMISSIONS, roleAllows, routeKey, ROUTE_PERMISSIONS, userActor, type AuthzContext, type Permission } from "../auth/authz.js";
+import { authzAllows, legacyTokenActor, routeKey, ROUTE_PERMISSIONS, userActor, type AuthzContext, type Permission } from "../auth/authz.js";
+import { ORG_ROUTE_PERMISSIONS, orgRoleAllows, type OrgRole } from "../auth/orgAuthz.js";
 import { AuthError, type Identity, type Principal } from "../auth/types.js";
 import type { AppContext } from "../app/context.js";
 import { activeMembership } from "../app/memberships.js";
+import { activeOrgMembership, customRolePermissions } from "../app/organizations.js";
 import { findUser, upsertUser } from "../app/users.js";
 import { authenticate } from "../app/workspaces.js";
 
@@ -13,6 +15,8 @@ declare module "fastify" {
     principal: Principal | null;
     /** For workspace routes: the verified workspace, the caller's CURRENT role in it, and the actor to record. */
     authz: AuthzContext | null;
+    /** For organization routes: the verified organization and the caller's CURRENT organization role. Only ever a signed-in person. */
+    orgAuthz: { organizationId: string; role: OrgRole; actor: { kind: "user"; userId: string; label: string } } | null;
   }
   interface FastifyInstance {
     /** Every registered route, so tests can prove each non-public one demands credentials and a permission. */
@@ -35,6 +39,8 @@ export const PUBLIC_ROUTES: ReadonlySet<string> = new Set([
 export const USER_ROUTES: ReadonlySet<string> = new Set([
   "GET /api/me",
   "GET /api/me/workspaces",
+  "GET /api/me/organizations",
+  "POST /api/organizations", // a signed-in person starts an agency organization
   "POST /api/workspaces/claim",
   "POST /api/workspaces", // in oidc mode
 ]);
@@ -82,6 +88,7 @@ export function registerAuth(
 ): void {
   app.decorateRequest("principal", null);
   app.decorateRequest("authz", null);
+  app.decorateRequest("orgAuthz", null);
   const routes: Array<{ method: string; url: string }> = [];
   app.decorate("routeTable", routes);
   app.addHook("onRoute", (r) => {
@@ -112,10 +119,11 @@ export function registerAuth(
     if (PUBLIC_ROUTES.has(publicKey) && !(key === "POST /api/workspaces" && runtime.mode === "oidc")) return;
 
     const wid = (req.params as { wid?: string } | undefined)?.wid;
+    const oid = (req.params as { oid?: string } | undefined)?.oid;
     const isUserRoute = USER_ROUTES.has(key);
-    if (!wid && !isUserRoute) return reject(reply, false); // default deny
+    if (!wid && !oid && !isUserRoute) return reject(reply, false); // default deny
 
-    if (isUserRoute && !runtime.verifier) return notFound(reply, "Resource"); // no identity provider: these routes do not exist
+    if ((isUserRoute || oid) && !runtime.verifier) return notFound(reply, "Resource"); // no identity provider: person-level and organization routes do not exist
 
     const token = bearerToken(req.headers.authorization);
     if (!token) return reject(reply, req.headers.authorization !== undefined);
@@ -130,6 +138,14 @@ export function registerAuth(
       const user = runtime.policy.canRegister(identity) ? upsertUser(ctx, identity) : findUser(ctx, identity);
       if (!user) return reply.status(403).send(body("not_authorized", "This account is not authorized to use this service"));
       req.principal = { kind: "user", userId: user.id, identity, label: userActor(user.id).label };
+      if (oid) {
+        // ---- organization routes: a signed-in person with an ACTIVE organization membership, judged by their CURRENT organization role ----
+        const om = activeOrgMembership(ctx, user.id, oid);
+        if (!om) return notFound(reply, "Organization"); // same answer as an organization that does not exist
+        const orgPermission = ORG_ROUTE_PERMISSIONS[key];
+        if (!orgPermission || !orgRoleAllows(om.role, orgPermission)) return reply.status(403).send(body("forbidden", "Your role does not allow this"));
+        req.orgAuthz = { organizationId: om.organizationId, role: om.role, actor: { kind: "user", userId: user.id, label: userActor(user.id).label } };
+      }
       return;
     }
 
@@ -150,12 +166,17 @@ export function registerAuth(
       if (!user || !m) return notFound(reply, "Workspace"); // same answer as a workspace that does not exist
       req.principal = { kind: "user", userId: user.id, identity, label: userActor(user.id).label };
       authz = { workspaceId: m.workspaceId, role: m.role, actor: userActor(user.id) };
+      if (m.customRoleId) {
+        // a custom role replaces the built-in set; one that no longer exists or was archived grants nothing at all (never more)
+        authz.customPermissions = customRolePermissions(ctx, m.customRoleId) ?? new Set<Permission>();
+        authz.customRoleId = m.customRoleId;
+      }
     } else {
       return reject(reply, true);
     }
 
     const permission = ROUTE_PERMISSIONS[key];
-    if (!permission || !roleAllows(authz.role, permission) || (PERSON_ONLY_PERMISSIONS.has(permission) && authz.actor.kind !== "user")) {
+    if (!permission || !authzAllows(authz, permission)) {
       if (permission) {
         try {
           hooks.denied?.(req, authz, permission);

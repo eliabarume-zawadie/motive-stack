@@ -300,7 +300,7 @@ describe("who may touch credentials", () => {
 });
 
 /** Copy every row of the given tables between two databases (simulates a second process opening the same storage with different keys). */
-function copyInto(src: Db, dst: Db, tables = ["workspaces", "workspace_credentials"]) {
+function copyInto(src: Db, dst: Db, tables = ["organizations", "workspaces", "workspace_credentials"]) {
   for (const t of tables) {
     for (const row of src.prepare(`SELECT * FROM ${t}`).all() as Array<Record<string, unknown>>) {
       const cols = Object.keys(row);
@@ -445,7 +445,7 @@ describe("master-key rotation", () => {
     // the operator adds k2 and makes it active
     const rotated = world(ring(keys, "k2"));
     // same database, new key provider: move the data over by reusing the rows
-    for (const t of ["workspaces", "workspace_credentials"]) {
+    for (const t of ["organizations", "workspaces", "workspace_credentials"]) {
       for (const row of w.db.prepare(`SELECT * FROM ${t}`).all() as Array<Record<string, unknown>>) {
         const cols = Object.keys(row);
         rotated.db.prepare(`INSERT INTO ${t} (${cols.join(",")}) VALUES (${cols.map(() => "?").join(",")})`).run(...Object.values(row));
@@ -460,6 +460,7 @@ describe("master-key rotation", () => {
 
     // with k1 retired entirely, everything still opens
     const retired = world(ring({ k2: keys.k2! }, "k2"));
+    for (const row of rotated.db.prepare("SELECT * FROM organizations").all() as Array<Record<string, unknown>>) retired.db.prepare(`INSERT INTO organizations (${Object.keys(row).join(",")}) VALUES (${Object.keys(row).map(() => "?").join(",")})`).run(...Object.values(row));
     for (const row of rotated.db.prepare("SELECT * FROM workspaces").all() as Array<Record<string, unknown>>) retired.db.prepare(`INSERT INTO workspaces (${Object.keys(row).join(",")}) VALUES (${Object.keys(row).map(() => "?").join(",")})`).run(...Object.values(row));
     for (const row of rotated.db.prepare("SELECT * FROM workspace_credentials").all() as Array<Record<string, unknown>>) retired.db.prepare(`INSERT INTO workspace_credentials (${Object.keys(row).join(",")}) VALUES (${Object.keys(row).map(() => "?").join(",")})`).run(...Object.values(row));
     await retired.vault.use(b, "meta_graph", (s) => expect(s.toString()).toBe(SECRET2));
@@ -474,7 +475,7 @@ describe("master-key rotation", () => {
     const { workspace } = w.ws();
     await w.vault.store(w.as(workspace.id, "owner"), { kind: "openai", secret: SECRET });
     const orphan = world(ring({ k2: keys.k2! }, "k2"));
-    for (const t of ["workspaces", "workspace_credentials"]) for (const row of w.db.prepare(`SELECT * FROM ${t}`).all() as Array<Record<string, unknown>>) orphan.db.prepare(`INSERT INTO ${t} (${Object.keys(row).join(",")}) VALUES (${Object.keys(row).map(() => "?").join(",")})`).run(...Object.values(row));
+    for (const t of ["organizations", "workspaces", "workspace_credentials"]) for (const row of w.db.prepare(`SELECT * FROM ${t}`).all() as Array<Record<string, unknown>>) orphan.db.prepare(`INSERT INTO ${t} (${Object.keys(row).join(",")}) VALUES (${Object.keys(row).map(() => "?").join(",")})`).run(...Object.values(row));
     await expect(orphan.vault.use(workspace.id, "openai", () => 1)).rejects.toMatchObject({ status: 503, code: "credential_key_unavailable" }); // an unavailable key is an outage (503), not an internal fault
     expect(await orphan.vault.rewrapAll()).toEqual({ rewrapped: 0, skipped: 0, failed: 1 });
     const reasons = (orphan.db.prepare("SELECT type, detail FROM audit_events WHERE type IN ('credential.integrity_failure','credential.rewrap_failed') ORDER BY id").all() as Array<{ type: string; detail: string }>).map((e) => [e.type, JSON.parse(e.detail).reason]);
@@ -487,7 +488,7 @@ describe("master-key rotation", () => {
     const { workspace } = w.ws();
     await w.vault.store(w.as(workspace.id, "owner"), { kind: "openai", secret: SECRET });
     const imposter = world(ring(keyMap("k1"), "k1")); // another process with a different "k1"
-    for (const t of ["workspaces", "workspace_credentials"]) for (const row of w.db.prepare(`SELECT * FROM ${t}`).all() as Array<Record<string, unknown>>) imposter.db.prepare(`INSERT INTO ${t} (${Object.keys(row).join(",")}) VALUES (${Object.keys(row).map(() => "?").join(",")})`).run(...Object.values(row));
+    for (const t of ["organizations", "workspaces", "workspace_credentials"]) for (const row of w.db.prepare(`SELECT * FROM ${t}`).all() as Array<Record<string, unknown>>) imposter.db.prepare(`INSERT INTO ${t} (${Object.keys(row).join(",")}) VALUES (${Object.keys(row).map(() => "?").join(",")})`).run(...Object.values(row));
     await expect(imposter.vault.use(workspace.id, "openai", () => 1)).rejects.toMatchObject({ code: "credential_unreadable" });
     expect((imposter.db.prepare("SELECT detail FROM audit_events WHERE type = 'credential.integrity_failure'").get() as { detail: string }).detail).toContain("authentication_failed");
   });
@@ -615,8 +616,9 @@ describe("migration 007", () => {
     const db = oldDb();
     db.prepare("INSERT INTO workspaces (id, name, token_hash, meta_account_id, created_at) VALUES ('ws_old','Old Co','h','act_111','t')").run();
     const before = db.prepare("SELECT * FROM workspaces").all();
-    expect(migrate(db)).toEqual(["007_credentials.sql", "008_drop_credential_hint.sql", "009_website_analysis.sql", "010_website_content_hash.sql"]);
-    expect(db.prepare("SELECT * FROM workspaces").all()).toEqual(before);
+    expect(migrate(db)).toEqual(["007_credentials.sql", "008_drop_credential_hint.sql", "009_website_analysis.sql", "010_website_content_hash.sql", "011_ai_reservations.sql", "012_reservation_state_and_fill_ledger.sql", "013_campaign_plans.sql", "014_lead_status_job_retries.sql", "015_organizations_permissions.sql", "016_brand_kit_assets.sql", "017_plans_lifecycle.sql", "018_creative_studio.sql"]);
+    // later migrations only ADD to this table: every original value is unchanged, and the one new column holds the workspace's own personal organization
+    expect(db.prepare("SELECT * FROM workspaces").all()).toEqual(before.map((w) => ({ ...(w as object), organization_id: `org_${(w as { id: string }).id}` })));
     expect(count(db, "SELECT COUNT(*) n FROM workspace_credentials")).toBe(0);
     const cols = (db.prepare("PRAGMA table_info(workspace_credentials)").all() as Array<{ name: string; type: string }>);
     expect(cols.map((c) => c.name).filter((n) => /secret|plain|password|token|apikey|api_key/i.test(n))).toEqual([]);

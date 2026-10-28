@@ -9,7 +9,7 @@ import { dashboardView } from "../src/app/dashboard.js";
 import { enqueueJob } from "../src/app/jobs.js";
 import { ingestLeadEvent } from "../src/app/leads.js";
 import { addMember, createWorkspaceForUser } from "../src/app/memberships.js";
-import { createProposal, decideProposal } from "../src/app/proposals.js";
+import { createProposal, decideProposal, requestExecution } from "../src/app/proposals.js";
 import { upsertUser } from "../src/app/users.js";
 import { jobsView, leadsView } from "../src/app/views.js";
 import { createWorkspace, putBrain } from "../src/app/workspaces.js";
@@ -20,7 +20,7 @@ import { buildServer } from "../src/server/app.js";
 import { BRAIN, GEN, draftCampaign, makeApp, type App } from "./fixtures.js";
 import { AUDIENCE, ISSUER, NOW_MS, OIDC_REQUIRED, OPEN_POLICY, claims, makeKey, signJwt } from "./support/jwt.js";
 
-const approve = (a: App, ws: string, pid: string) => decideProposal(a.ctx, ws, pid, "approve", { decidedBy: "dash tester" });
+const approve = (a: App, ws: string, pid: string) => { const p = decideProposal(a.ctx, ws, pid, "approve", { decidedBy: "dash tester" }); requestExecution(a.ctx, ws, pid, "test"); return p; }; // approving does not run anything: the tests that need it run also ask for it
 
 /** One workspace holding a campaign in every state the dashboard must tell apart. */
 async function populated() {
@@ -200,5 +200,103 @@ describe("GET /api/workspaces/:wid/dashboard", () => {
     expect(out.json().error.code).toBe("not_found");
     void outsider;
     afters.push(() => a.ctx.db.close());
+  });
+});
+
+describe("Phase 1: Business Brain completeness, claims, blocking questions and the attention list (server-side)", () => {
+  it("an empty workspace says what to do first, and nothing is invented", async () => {
+    const a = makeApp();
+    const { workspace } = createWorkspace(a.ctx, "Fresh Co");
+    const d = dashboardView(a.ctx, workspace.id, "admin");
+    expect(d.brain).toMatchObject({ saved: false, version: 0, requiredFilled: 0, requiredTotal: 6, recommendedFilled: 0 });
+    expect(d.analysis).toBeNull();
+    expect(d.blockingQuestions).toEqual([]);
+    expect(d.attention.map((x) => x.kind)).toEqual(["brain_not_saved"]);
+    expect(d.attention[0]).toMatchObject({ target: "s-brain" });
+    expect(d.attention[0]!.why).toMatch(/nothing can be drafted/);
+  });
+
+  it("a saved Business Brain reports what is filled and what would make it richer, from the saved data", async () => {
+    const a = makeApp();
+    const { workspace } = createWorkspace(a.ctx, "Brain Co");
+    putBrain(a.ctx, workspace.id, { ...BRAIN, differentiators: [], verifiedFacts: [], tone: "friendly and professional" });
+    const bare = dashboardView(a.ctx, workspace.id, "admin").brain;
+    expect(bare).toMatchObject({ saved: true, version: 1, requiredFilled: 6, requiredTotal: 6, recommendedFilled: 0, recommendedTotal: 5 });
+    expect(bare.missingRecommended).toEqual(expect.arrayContaining(["Strengths ads may use", "Credentials and verified facts", "A pricing statement", "A business summary"]));
+    putBrain(a.ctx, workspace.id, { ...BRAIN, differentiators: ["Family run"], verifiedFacts: ["Licensed"], approvedPricing: "Free estimates", description: "Plumbers", tone: "warm and plain" });
+    expect(dashboardView(a.ctx, workspace.id, "admin").brain).toMatchObject({ version: 2, recommendedFilled: 5, missingRecommended: [] });
+  });
+
+  it("counts the statements waiting for the owner on the latest analysis, and only for that workspace", async () => {
+    const a = makeApp();
+    const w1 = createWorkspace(a.ctx, "Claims Co").workspace, w2 = createWorkspace(a.ctx, "Other Co").workspace;
+    const ins = a.ctx.db.prepare("INSERT INTO website_insights (id, analysis_id, workspace_id, position, category, text, original_text, basis, evidence, flags, status) VALUES (?,?,?,?,?,?,?,?,?,?,?)");
+    a.ctx.db.prepare("INSERT INTO website_analyses (id, workspace_id, url, site, status, step, created_at, created_by, completed_at, analysis_mode) VALUES ('wsa_1', ?, 'https://x.example.com/', 'x.example.com', 'ready', 'Done', '2026-10-20T10:00:00Z', 't', '2026-10-20T10:01:00Z', 'simulated')").run(w1.id);
+    ins.run("i1", "wsa_1", w1.id, 0, "claim_evidence", "Licensed & Insured", "Licensed & Insured", "found_on_site", "[]", '["risky_claim"]', "proposed");
+    ins.run("i2", "wsa_1", w1.id, 1, "claim_evidence", "Since 2009", "Since 2009", "found_on_site", "[]", '["risky_claim"]', "proposed");
+    ins.run("i3", "wsa_1", w1.id, 2, "claim_evidence", "Award winning", "Award winning", "found_on_site", "[]", '["risky_claim"]', "approved"); // already decided: not waiting
+    ins.run("i4", "wsa_1", w1.id, 3, "product_service", "Roof repair", "Roof repair", "found_on_site", "[]", "[]", "proposed"); // not a claim
+    const d = dashboardView(a.ctx, w1.id, "admin");
+    expect(d.analysis).toMatchObject({ site: "x.example.com", status: "ready", mode: "simulated", claimsWaiting: 2 });
+    const item = d.attention.find((x) => x.kind === "claims_waiting")!;
+    expect(item.text).toMatch(/^2 statements from your website need your confirmation/);
+    expect(item.why).toMatch(/can prove/);
+    expect(dashboardView(a.ctx, w2.id, "admin").analysis).toBeNull(); // another workspace sees none of it
+  });
+
+  it("lists draft campaigns whose current version has blocking questions, names them, and links to the campaign", async () => {
+    const a = makeApp();
+    const { ws, campaign } = await draftCampaign(a, "Blocking Co");
+    const rec = getCampaignRecord(a.ctx, ws.id, campaign.id) as unknown as { brief: Record<string, unknown> };
+    updateBrief(a.ctx, ws.id, campaign.id, { ...rec.brief, openQuestions: [{ question: "Which areas do you cover?", impact: "targeting", blocking: true }, { question: "Hours?", impact: "", blocking: false }] });
+    const d = dashboardView(a.ctx, ws.id, "admin");
+    expect(d.blockingQuestions).toEqual([{ campaignId: campaign.id, campaignName: expect.any(String), count: 1 }]);
+    const item = d.attention.find((x) => x.kind === "blocking_questions")!;
+    expect(item).toMatchObject({ target: "s-campaigns", campaignId: campaign.id });
+    expect(item.text).toMatch(/1 question that must be answered before launch/);
+  });
+
+  it("who can decide is told honestly: an admin sees your decision, an operator sees an admin's decision", async () => {
+    const a = makeApp();
+    const { ws, campaign } = await draftCampaign(a, "Approvals Co");
+    createProposal(a.ctx, ws.id, campaign.id);
+    expect(dashboardView(a.ctx, ws.id, "admin").attention.find((x) => x.kind === "approvals_waiting")!.text).toMatch(/waiting for your decision/);
+    expect(dashboardView(a.ctx, ws.id, "operator").attention.find((x) => x.kind === "approvals_waiting")!.text).toMatch(/waiting for an admin.s decision/);
+  });
+});
+
+describe("Phase 1: the workspace response carries the caller's role and permissions (derived on the server)", () => {
+  const rsa = makeKey("RS256", "rsa-1");
+  it("a legacy workspace token is admin-equivalent but never gets the person-only credential permissions; each OIDC role gets its own set", async () => {
+    const a = makeApp();
+    const runtime = buildAuthRuntime(loadAuthConfig({ AUTH_MODE: "oidc", OIDC_ISSUER: ISSUER, OIDC_AUDIENCE: AUDIENCE, OIDC_JWKS_URI: "https://idp.example.test/jwks", ...OIDC_REQUIRED }), { keys: new StaticJwks([rsa.jwk]), now: () => NOW_MS, policy: OPEN_POLICY });
+    const app = buildServer(a.ctx, runtime);
+    const person = (name: string) => upsertUser(a.ctx, { issuer: ISSUER, subject: `idp|${name}`, email: null, displayName: name });
+    const owner = person("owner"), viewer = person("viewer"), operator = person("operator"), admin = person("admin");
+    const wsId = createWorkspaceForUser(a.ctx, userActor(owner.id) as never, "Perm Co").id;
+    for (const [u, r] of [[viewer, "viewer"], [operator, "operator"], [admin, "admin"]] as const) addMember(a.ctx, userActor(owner.id), wsId, u.id, r);
+    const jwt = (name: string) => signJwt(rsa, claims({ aud: AUDIENCE, sub: `idp|${name}`, azp: undefined }));
+    const get = async (name: string) => (await app.inject({ method: "GET", url: `/api/workspaces/${wsId}`, headers: { authorization: `Bearer ${jwt(name)}` } })).json();
+    const v = await get("viewer"), o = await get("operator"), ad = await get("admin"), ow = await get("owner");
+    expect([v.role, o.role, ad.role, ow.role]).toEqual(["viewer", "operator", "admin", "owner"]);
+    expect(v.permissions).toEqual(expect.arrayContaining(["workspace.read", "brain.read", "campaigns.read"]));
+    for (const denied of ["brain.write", "campaigns.generate", "proposals.decide", "leads.simulate", "jobs.read"]) expect(v.permissions, `viewer ${denied}`).not.toContain(denied);
+    expect(o.permissions).toEqual(expect.arrayContaining(["campaigns.generate", "campaigns.edit", "proposals.create", "leads.simulate", "jobs.read"]));
+    expect(o.permissions).not.toContain("proposals.decide"); // approval-first: an operator cannot approve
+    expect(ad.permissions).toEqual(expect.arrayContaining(["proposals.decide", "brain.write", "ai.settings.write"]));
+    expect(ad.permissions).not.toContain("members.manage");
+    expect(ow.permissions).toEqual(expect.arrayContaining(["members.manage", "credentials.manage"]));
+    a.ctx.db.close();
+    // the legacy token
+    const b = makeApp();
+    const bApp = buildServer(b.ctx);
+    const made = createWorkspace(b.ctx, "Legacy Co");
+    const r = (await bApp.inject({ method: "GET", url: `/api/workspaces/${made.workspace.id}`, headers: { authorization: `Bearer ${made.token}` } })).json();
+    expect(r.role).toBe("admin");
+    expect(r.permissions).toEqual(expect.arrayContaining(["brain.write", "proposals.decide"]));
+    expect(r.permissions).not.toContain("credentials.manage");
+    expect(r.permissions).not.toContain("members.manage");
+    expect(JSON.stringify(r)).not.toContain(made.token); // never the token itself
+    b.ctx.db.close();
   });
 });

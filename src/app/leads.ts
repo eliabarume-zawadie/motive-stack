@@ -1,10 +1,10 @@
 import type { z } from "zod";
 import { audit, iso } from "./core.js";
 import type { AppContext } from "./context.js";
-import { conflict, notFound } from "./errors.js";
+import { AppError, conflict, notFound } from "./errors.js";
 import { getCampaignRow } from "./campaigns.js";
 import { enqueueJob, RetryableError } from "./jobs.js";
-import { newId } from "./util.js";
+import { newId, safeError } from "./util.js";
 import { CrmError, normalizeEmail, normalizePhone } from "../integrations/crm.js";
 import type { SimulatedLeadSchema } from "../domain/schemas.js";
 
@@ -39,6 +39,47 @@ export function ingestLeadEvent(
   audit(c, wsId, "system", "lead.event_received", "lead_event", rowId, { eventId, simulated: true });
   enqueueJob(c, wsId, "process_lead", { leadEventId: rowId }, `lead:${wsId}:${SOURCE}:${eventId}`);
   return { duplicate: false, eventId };
+}
+
+export const LEAD_STATUSES = ["new", "contacted", "qualified", "won", "lost"] as const;
+export type LeadStatus = (typeof LEAD_STATUSES)[number];
+
+/** Where a lead stands with the owner. Any change to a different status is allowed and recorded; setting the same status again is refused (nothing to record). */
+export function setLeadStatus(c: AppContext, wsId: string, leadId: string, input: unknown, actor: string): ReturnType<typeof leadDetail> {
+  const o = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
+  const to = o.status;
+  const note = typeof o.note === "string" ? o.note.trim().slice(0, 300) : "";
+  if (typeof to !== "string" || !(LEAD_STATUSES as readonly string[]).includes(to)) throw new AppError(400, "invalid_status", "Status must be one of: " + LEAD_STATUSES.join(", ") + ".");
+  const cur = c.db.prepare("SELECT status FROM leads WHERE id = ? AND workspace_id = ?").get(leadId, wsId) as { status: LeadStatus } | undefined;
+  if (!cur) throw notFound("Lead");
+  if (cur.status === to) throw conflict("status_unchanged", "This lead is already marked " + to + ".");
+  c.db.transaction(() => {
+    c.db.prepare("UPDATE leads SET status = ? WHERE id = ? AND workspace_id = ?").run(to, leadId, wsId);
+    c.db.prepare("INSERT INTO lead_status_history (id, workspace_id, lead_id, from_status, to_status, note, actor, at) VALUES (?,?,?,?,?,?,?,?)")
+      .run(newId("lsh"), wsId, leadId, cur.status, to, note || null, actor, iso(c));
+    audit(c, wsId, actor, "lead.status_changed", "lead", leadId, { from: cur.status, to });
+  })();
+  return leadDetail(c, wsId, leadId);
+}
+
+/** One lead with where it came from, how its event was processed, its CRM state and its status history. */
+export function leadDetail(c: AppContext, wsId: string, leadId: string) {
+  const r = c.db.prepare(
+    `SELECT l.id, l.campaign_id, l.full_name, l.email, l.phone, l.simulated, l.status, l.crm_status, l.crm_error, l.created_at,
+            e.event_id, e.source, e.received_at, k.name AS campaign_name, s.contact_id, s.created_contact, s.platform
+     FROM leads l JOIN lead_events e ON e.id = l.lead_event_id AND e.workspace_id = l.workspace_id
+     LEFT JOIN campaigns k ON k.id = l.campaign_id LEFT JOIN crm_syncs s ON s.lead_id = l.id AND s.workspace_id = l.workspace_id
+     WHERE l.id = ? AND l.workspace_id = ?`,
+  ).get(leadId, wsId) as Record<string, any> | undefined;
+  if (!r) throw notFound("Lead");
+  const dup = c.db.prepare("SELECT COUNT(*) n FROM audit_events WHERE workspace_id = ? AND type = 'lead.duplicate_event' AND entity_id = ?").get(wsId, r.event_id) as { n: number };
+  const history = c.db.prepare("SELECT from_status, to_status, note, actor, at FROM lead_status_history WHERE lead_id = ? AND workspace_id = ? ORDER BY at, id").all(leadId, wsId) as Array<Record<string, any>>;
+  return {
+    id: r.id, campaignId: r.campaign_id, campaignName: r.campaign_name ?? null, fullName: r.full_name, email: r.email, phone: r.phone, simulated: r.simulated === 1,
+    status: r.status as LeadStatus, source: r.source, eventId: r.event_id, capturedAt: r.received_at, createdAt: r.created_at, duplicateEventsIgnored: dup.n,
+    crm: { status: r.crm_status, error: r.crm_error, platform: r.platform ?? null, contactId: r.contact_id ?? null, contactCreated: r.created_contact == null ? null : r.created_contact === 1, simulated: true },
+    history: history.map((h) => ({ from: h.from_status, to: h.to_status, note: h.note, by: h.actor, at: h.at })),
+  };
 }
 
 interface EventRow {
@@ -79,7 +120,7 @@ export async function processLeadEvent(
       audit(c, wsId, "system", "lead.crm_synced", "lead", lead.id, { contactId: out.contactId, createdContact: out.created, simulated: crm.simulated });
     })();
   } catch (e) {
-    const msg = (e instanceof Error ? e.message : "error").slice(0, 300);
+    const msg = safeError(e, 300);
     const transient = e instanceof CrmError && e.kind === "transient";
     const exhausted = attempt.attempts >= attempt.maxAttempts;
     if (transient && !exhausted) {

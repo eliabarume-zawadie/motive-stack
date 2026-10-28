@@ -1,8 +1,16 @@
 import { initAi } from "./ai.js";
+import { initActivity } from "./activity.js";
 import { initAiTest } from "./aitest.js";
 import { initClaimsReview } from "./claims.js";
 import { initDashboard } from "./dashboard.js";
+import { initGoal } from "./goal.js";
+import { initLeads } from "./leads.js";
+import { initWorkspaceSettings } from "./workspace.js";
+import { initBrand } from "./brand.js";
+import { initPlans } from "./plans.js";
+import { initCreative } from "./creative.js";
 import { initOnboarding } from "./onboarding.js";
+import { initProvenance } from "./provenance.js";
 import { DEMO_BUSINESS, formatRecoveryCode, parseRecoveryCode } from "./recovery.js";
 
 // MotiveStack local UI. Talks only to this server's API. Uses textContent everywhere (no innerHTML),
@@ -21,7 +29,7 @@ const h = (tag, attrs = {}, ...kids) => {
 };
 const lines = (s) => s.split("\n").map((x) => x.trim()).filter(Boolean);
 
-const state = { config: null, sessions: [], current: null, campaigns: [], campaign: null, campaignId: null, dash: null, workspace: null, analysis: null, brainVersion: 0 };
+const state = { config: null, sessions: [], current: null, campaigns: [], campaign: null, campaignId: null, dash: null, workspace: null, analysis: null, brainVersion: 0, brainMissing: [], role: null, permissions: null, loading: false, loadError: null };
 
 // ---- session storage (workspace id + token live only in this browser) ----
 const SKEY = "ms_sessions", CKEY = "ms_current";
@@ -54,12 +62,46 @@ const busy = new Set();
 function setBusy(controls, on) {
   for (const el of controls) {
     if (!el) continue;
-    el.disabled = on;
+    el.disabled = on || el.dataset.denied === "1"; // a control the role may not use stays disabled when its action ends
     el.setAttribute("aria-busy", on ? "true" : "false");
     if (el.dataset.idleLabel === undefined) el.dataset.idleLabel = el.textContent;
     if (el.dataset.busyLabel) el.textContent = on ? el.dataset.busyLabel : el.dataset.idleLabel;
   }
 }
+// ---- what the signed-in role may do: the server derives it and the screen only SHOWS it (every route is still checked on the server) ----
+/** True when the role allows it. Before the workspace has loaded nothing is hidden, and the server decides anyway. */
+const can = (permission) => state.permissions === null || state.permissions.includes(permission);
+const ROLE_LABEL = { viewer: "viewer", operator: "operator", admin: "admin", owner: "owner" };
+const DENIED_TEXT = {
+  "brain.write": "You can read the Business Brain, but your role does not allow changing it. Ask an admin or owner.",
+  "campaigns.generate": "You can read campaigns, but your role does not allow creating or editing them. Ask an operator, admin or owner.",
+  "proposals.decide": "Only an admin or owner can approve or reject a proposal. Your role can look, and an operator can propose.",
+  "plans.write": "You can look at plans, but your role does not allow asking for one or changing it. Ask an operator, admin or owner.",
+  "brandkit.write": "You can read the Brand Kit, but your role does not allow changing it. Ask an operator, admin or owner.",
+  "creatives.write": "You can look at creatives, but your role does not allow making or editing them. Ask an operator, admin or owner.",
+  "assets.write": "You can look at the assets, but your role does not allow uploading them. Ask an operator, admin or owner.",
+  "proposals.execute": "Approving does not run anything. Someone allowed to run approved actions (an admin or owner, or a custom role with that permission) has to press Run.",
+  "leads.simulate": "Your role does not allow adding test leads. Ask an operator, admin or owner.",
+  "ai.settings.write": "Your role does not allow changing AI settings or running AI tests. Ask an admin or owner.",
+};
+function applyPermissions() {
+  const pill = $("role-pill");
+  pill.hidden = !state.role;
+  if (state.role) pill.textContent = `Your role: ${ROLE_LABEL[state.role] || state.role}`;
+  for (const el of document.querySelectorAll("[data-needs]")) {
+    const denied = !can(el.dataset.needs);
+    const wasDenied = el.dataset.denied === "1";
+    el.dataset.denied = denied ? "1" : "";
+    if (denied) el.disabled = true; else if (wasDenied) el.disabled = false; // other reasons for a control being off are re-applied by the view that owns it
+    if (denied) el.setAttribute("title", "Your role does not allow this."); else el.removeAttribute("title");
+  }
+  for (const note of document.querySelectorAll(".role-note")) {
+    const p = note.dataset.for;
+    note.textContent = can(p) ? "" : DENIED_TEXT[p] || "Your role does not allow this.";
+    note.hidden = can(p);
+  }
+}
+
 async function once(key, controls, fn) {
   if (busy.has(key)) return undefined; // already running: a repeat click or Enter does nothing
   busy.add(key);
@@ -139,7 +181,7 @@ function renderWorkspaces() {
 function fillBrainForm(brain, version) {
   const f = $("brain-form");
   state.brainVersion = brain ? version : 0;
-  if (!brain) { $("brain-version").textContent = "Not saved yet"; return; }
+  if (!brain) { $("brain-version").textContent = "Not saved yet"; provUi?.render(null); return; }
   $("brain-details").open = true; // there is something to review
   for (const k of ["businessName", "industry", "serviceArea", "targetCustomer", "offer", "tone", "maxDailyBudgetCents"]) f.elements[k].value = brain[k];
   f.elements.services.value = brain.services.join("\n");
@@ -151,7 +193,9 @@ function fillBrainForm(brain, version) {
   f.elements.description.value = brain.description || "";
   state.brainFacts = brain.facts || []; // records with provenance are not editable in this form, but must survive a save
   claimsUi?.render();
+  updateBrainMissing();
   $("brain-version").textContent = `Saved (version ${version})`;
+  provUi?.load();
 }
 
 function fillEditForm(c) {
@@ -165,19 +209,31 @@ function fillEditForm(c) {
 // Dashboard, campaign list, operations and integrations are re-drawn only when their data changed, so a click or keyboard focus is not lost on every poll.
 let lastViewsKey = "";
 function renderDashboardViews() {
-  const key = JSON.stringify([state.dash, state.campaignId, state.workspace?.id, state.config?.mode, state.brainVersion, state.analysis?.id, state.analysis?.status, state.current], (k, v) => (k === "generatedAt" ? undefined : v));
+  const key = JSON.stringify([state.loading, state.loadError, state.role, state.dash, state.campaignId, state.workspace?.id, state.config?.mode, state.brainVersion, state.analysis?.id, state.analysis?.status, state.current, state.brainMissing, state.analysis?.insights?.filter((i) => i.status === "proposed").length, state.campaign?.brief?.openQuestions?.length], (k, v) => (k === "generatedAt" ? undefined : v));
   if (key === lastViewsKey) return;
   lastViewsKey = key;
   updateGenHint();
+  if (state.loadError && !state.dash) { dashUi.renderError(state.loadError, () => { state.loadError = null; state.loading = true; renderDashboardViews(); refresh(); }); return; }
+  if (state.loading && !state.dash) { dashUi.renderLoading(); return; }
   dashUi.renderPath(state);
   dashUi.renderDashboard(state.dash);
   dashUi.renderCampaignList(state.dash);
-  dashUi.renderOps(state.dash);
+  dashUi.renderOps(state.dash, state.role);
   dashUi.renderIntegrations(state.dash, state.workspace);
 }
 
 const usd = (cents) => "$" + (cents / 100).toFixed(2);
 const list = (items, empty) => (items && items.length ? h("ul", { class: "plain" }, items.map((x) => h("li", {}, x))) : h("span", { class: "muted" }, empty));
+
+/** Archive (any campaign not queued to run) and Complete (a campaign that was run): explicit, audited, and the server refuses an invalid change. */
+function lifecycleButtons(c) {
+  if (!c.lifecycle || !can("campaigns.archive")) return null;
+  const s = c.lifecycle.state, kids = [];
+  const go = (path, ok) => () => once("life-" + path + c.id, [], () => act(async () => { await api("/campaigns/" + c.id + path, { method: "POST" }); showNotice(ok); }));
+  if (s === "executed_simulated" || s === "executed_external") kids.push(h("button", { type: "button", class: "secondary", onclick: go("/complete", "Marked completed.") }, "Mark completed"));
+  if (!["archived", "ready_for_execution"].includes(s)) kids.push(h("button", { type: "button", class: "secondary", onclick: go("/archive", "Archived.") }, "Archive this campaign"));
+  return kids.length ? h("div", { class: "actions" }, ...kids) : null;
+}
 
 function renderCampaign() {
   const c = state.campaign, v = $("campaign-view");
@@ -212,6 +268,10 @@ function renderCampaign() {
   v.replaceChildren(
     h("div", { class: "card" },
       h("strong", {}, b.name), " ", pill(c.status === "draft" ? "draft (nothing external)" : "paused draft launched", c.status === "draft" ? "" : "ok"), " ", pill("version " + c.currentVersion),
+      c.lifecycle ? [" ", pill(c.lifecycle.label, ["draft", "needs_review"].includes(c.lifecycle.state) ? "warn" : c.lifecycle.state === "archived" ? "" : "ok")] : null,
+      c.marketingPlan ? h("p", { class: "hint" }, `Part of the plan "${c.marketingPlan.name}": ${c.marketingPlan.plannedShareCents == null ? "no planned share set" : "planned share " + usd(c.marketingPlan.plannedShareCents) + " per day"}, plan total ${c.marketingPlan.totalDailyCents == null ? "not set" : usd(c.marketingPlan.totalDailyCents) + " per day"}. ${c.marketingPlan.reviewDone ? "The plan budget has been reviewed." : "The plan budget still needs a review before this campaign can be proposed."}`) : null,
+      lifecycleButtons(c),
+      c.plan ? kv([["Your goal", c.plan.goalLabel + (c.plan.focusService ? ": " + c.plan.focusService : "") + (c.plan.durationDays ? ", about " + c.plan.durationDays + " days" : "")]]) : h("p", { class: "hint" }, "No goal was recorded with this draft."),
       h("h3", {}, "Budget"), kv(budgetRows),
       h("h3", {}, "Targeting recommendation"), kv(targetingRows),
       h("p", { class: "hint" }, c.applicableTargetingNote || ""),
@@ -229,7 +289,15 @@ function renderCampaign() {
       kv([["Assumptions made", list(b.assumptions, "None stated")]]),
       h("h3", {}, "Meta platform checks"),
       checks.length ? h("ul", { class: "plain" }, checks) : h("p", { class: "hint" }, "Save the Business Brain to see these."),
-      h("div", { class: "hint" }, "Versions: ", c.versions.map((x) => "v" + x.version + " " + (x.source === "ai" ? "AI (" + x.aiProvider + "/" + x.aiModel + ")" : "human edit")).join(" → ")),
+      h("h3", {}, "Version history"),
+      h("ul", { class: "plain version-history" }, (c.versionHistory || []).map((x) => {
+        const v = c.versions.find((y) => y.version === x.version);
+        const who = x.source === "ai" ? "Written by AI (" + (v?.aiProvider || "?") + "/" + (v?.aiModel || "?") + ")" : "Edited by a person";
+        return h("li", {}, h("strong", {}, "Version " + x.version + (x.version === c.currentVersion ? " (current)" : "")), " ", h("span", { class: "muted" }, who + ", " + new Date(x.createdAt).toLocaleString()),
+          x.version === 1 ? h("div", { class: "hint" }, "First version.") : x.changes.length
+            ? h("ul", { class: "plain" }, x.changes.map((ch) => h("li", {}, h("strong", {}, ch.label + ": "), h("span", { class: "muted" }, "was "), ch.from, h("span", { class: "muted" }, " → now "), ch.to)))
+            : h("div", { class: "hint" }, "Saved with no changes."));
+      })),
     ),
   );
 }
@@ -242,7 +310,7 @@ function renderProposals() {
   const nodes = [];
   if (c.status === "draft" && !open) {
     const key = `propose:${c.id}`;
-    const propose = h("button", { type: "button", disabled: busy.has(key), onclick: () => once(key, [propose], () => act(() => api(`/campaigns/${c.id}/proposals`, { method: "POST", body: {} }))) }, "Propose a paused draft on the ad platform");
+    const propose = h("button", { type: "button", disabled: busy.has(key) || !can("proposals.create"), title: can("proposals.create") ? null : "Your role does not allow this.", onclick: () => once(key, [propose], () => act(() => api(`/campaigns/${c.id}/proposals`, { method: "POST", body: {} }))) }, "Propose a paused draft on the ad platform");
     nodes.push(propose);
     nodes.push(h("p", { class: "hint" }, "Proposing changes nothing outside this app. An explicit approval is required before any simulated platform write."));
   }
@@ -276,11 +344,31 @@ function proposalCard(p) {
     ]),
   );
   if (flags.length) card.append(h("div", { class: "card" }, pill("NEEDS REVIEW", "warn"), h("ul", { class: "plain" }, flags.map((f) => h("li", {}, f)))));
+  if (p.status === "proposed" && p.budgetImpact && p.budgetImpact.ceilingCents != null) {
+    const bi = p.budgetImpact;
+    card.append(h("p", { class: bi.wouldFit ? "hint" : "flag-note" }, bi.blocked ? "A budget already committed cannot be read as a daily amount, so the remaining limit cannot be worked out. It must be reviewed before anything else is approved." : `Approving this commits ${usd(bi.requestedCents)} per day. ${usd(bi.committedCents)} of your ${usd(bi.ceilingCents)} daily limit is already committed, leaving ${usd(bi.availableCents)}.${bi.wouldFit ? "" : " It does not fit: approving it will be refused until something is archived or completed, or the limit is raised."}`));
+  }
   if (p.status === "proposed") {
     if (flags.length) card.append(h("label", { class: "chk" }, ack, "I read the review reasons above"));
-    card.append(h("div", { class: "actions" }, h("label", {}, "Approver (a typed note; the server records who actually signed in)", by), (approveBtn = h("button", { type: "button", disabled: busy.has(key), onclick: decide("approve") }, "Approve")), (rejectBtn = h("button", { type: "button", class: "danger", disabled: busy.has(key), onclick: decide("reject") }, "Reject"))));
+    if (!can("proposals.decide")) {
+      card.append(h("p", { class: "flag-note" }, DENIED_TEXT["proposals.decide"]));
+    } else card.append(h("div", { class: "actions" }, h("label", {}, "Approver (a typed note; the server records who actually signed in)", by), (approveBtn = h("button", { type: "button", disabled: busy.has(key), onclick: decide("approve") }, "Approve")), (rejectBtn = h("button", { type: "button", class: "danger", disabled: busy.has(key), onclick: decide("reject") }, "Reject"))));
   }
   if (p.approval) card.append(h("p", { class: "hint" }, `${p.approval.decision === "approve" ? "Approved" : "Rejected"} by ${p.approval.decided_by}${p.approval.claimed_label ? ` (typed name, not verified: ${p.approval.claimed_label})` : ""} at ${p.approval.decided_at}`));
+  const SEPARATION = {
+    enforced: "A different person approved this: separation of duties was enforced.",
+    not_enforceable_token_mode: "Local sign-in is in use: everyone shares one access token, so the app cannot tell who proposed and who approved. Separation of duties is NOT enforced here (it needs real sign-in).",
+    policy_off: "Separation of duties is switched off for this workspace, so the proposer could approve.",
+  };
+  if (p.approval && p.approval.decision === "approve" && SEPARATION[p.approval.separation]) card.append(h("p", { class: p.approval.separation === "enforced" ? "hint" : "flag-note" }, SEPARATION[p.approval.separation]));
+  if (p.status === "approved") {
+    // Approving does not run anything: running is its own step with its own permission.
+    const runKey = `run:${p.id}`;
+    let runBtn;
+    card.append(h("p", {}, pill("NOT RUN YET", "warn"), " Approved, but nothing has happened. ", p.mode === "mock" ? "Running creates a PAUSED draft in the simulator only." : "Running creates a PAUSED draft on the real ad platform."));
+    if (!can("proposals.execute")) card.append(h("p", { class: "flag-note" }, DENIED_TEXT["proposals.execute"]));
+    else card.append(h("div", { class: "actions" }, (runBtn = h("button", { type: "button", disabled: busy.has(runKey), onclick: () => once(runKey, [runBtn], () => act(() => api(`/proposals/${p.id}/execute`, { method: "POST" }))) }, p.mode === "mock" ? "Run (simulated)" : "Run"))));
+  }
   if (p.attempts.length) {
     card.append(h("table", {}, h("thead", {}, h("tr", {}, ...["Attempt", "Result", "Error"].map((x) => h("th", {}, x)))),
       h("tbody", {}, p.attempts.map((a) => h("tr", {}, h("td", {}, a.attempt_no), h("td", {}, a.status), h("td", {}, a.error_kind ? `${a.error_kind}: ${a.error_message ?? ""}` : "-"))))));
@@ -297,28 +385,21 @@ function proposalCard(p) {
 function renderLeads(leads) {
   const v = $("leads-view");
   const launched = state.campaign?.status === "launched_paused";
-  $("lead-btn").disabled = !launched || !!state.config?.live.meta || busy.has("lead");
+  $("lead-btn").disabled = !launched || !!state.config?.live.meta || busy.has("lead") || $("lead-btn").dataset.denied === "1";
   $("lead-hint").textContent = state.config?.live.meta ? "Disabled: synthetic leads are not allowed when Meta is live." : launched ? "" : "Available after the paused draft exists.";
-  if (!leads.length) { v.replaceChildren(h("p", { class: "hint" }, "No leads yet.")); return; }
-  v.replaceChildren(h("table", {}, h("thead", {}, h("tr", {}, ...["Lead", "Contact", "CRM sync", "CRM contact"].map((x) => h("th", {}, x)))),
-    h("tbody", {}, leads.map((l) => h("tr", {},
-      h("td", {}, l.fullName, " ", l.simulated ? simBadge() : null),
-      h("td", {}, [l.email, l.phone].filter(Boolean).join(" / ")),
-      h("td", {}, pill(l.crmStatus, l.crmStatus === "synced" ? "ok" : l.crmStatus === "failed" ? "bad" : "warn"), l.crmError ? ` ${l.crmError}` : ""),
-      h("td", {}, l.crmContactId ? `${l.crmContactId} (${l.crmContactCreated ? "created" : "matched existing"})` : "-"))))));
+  leadsUi.render(leads);
 }
 
-function renderActivity(items) {
-  $("activity-view").replaceChildren(...(items.length ? items.map((a) => h("div", { class: "log" }, h("time", {}, a.at.replace("T", " ").slice(0, 19)), h("strong", {}, a.type), h("span", { class: "muted" }, `${a.actor}`), h("span", {}, JSON.stringify(a.detail)))) : [h("p", { class: "hint" }, "No activity yet.")]));
-}
+function renderActivity(items) { activityUi.render(items); }
 
 // ---- data loading ----
-async function act(fn) { try { await fn(); } catch { /* error already shown */ } await refresh(); }
+async function act(fn) { try { await fn(); } catch { /* error already shown */ } await refresh(); plansUi.load(); /* a campaign change can change its plan (budget sum, review) */ }
 
 async function refresh({ fillForms = false } = {}) {
   if (!session()) { state.dash = null; state.campaigns = []; renderDashboardViews(); renderCampaign(); renderProposals(); renderLeads([]); renderActivity([]); return; }
   try {
     state.dash = await api("/dashboard", { quiet: true }); // one summary: campaigns, approvals, failures, jobs, usage, integrations
+    state.loadError = null; state.loading = false;
     state.campaigns = state.dash.campaigns.list;
     if (!state.campaigns.find((c) => c.id === state.campaignId)) state.campaignId = state.campaigns[0]?.id ?? null;
     renderDashboardViews();
@@ -328,26 +409,39 @@ async function refresh({ fillForms = false } = {}) {
     renderLeads(await api("/leads", { quiet: true }));
     renderActivity(await api("/activity", { quiet: true }));
     await aiUi.load();
-  } catch (e) { showError(e.message); }
+  } catch (e) { state.loading = false; state.loadError = e.message; showError(e.message); renderDashboardViews(); }
 }
 
 // Scrolling is a convenience: where the browser cannot do it, the action still completes.
 function scrollToEl(el, block) { if (typeof el.scrollIntoView === "function") el.scrollIntoView({ behavior: "smooth", block }); }
 
 async function selectWorkspace(id) {
-  state.current = id || null; saveSessions(); state.campaignId = null; state.campaign = null; state.dash = null; state.workspace = null; state.brainVersion = 0;
+  state.current = id || null; saveSessions(); state.campaignId = null; state.campaign = null; state.dash = null; state.workspace = null; state.brainVersion = 0; state.role = null; state.permissions = null; state.loadError = null; state.loading = !!session();
+  applyPermissions();
   $("brain-form").reset();
   claimsUi.render();
+  updateBrainMissing();
   $("brain-details").open = false;
   if (session()) {
     state.brainFacts = [];
-    try { state.workspace = await api("", { quiet: true }); } catch { /* shown by the next call if the session is bad */ }
+    try { state.workspace = await api("", { quiet: true }); state.role = state.workspace.role ?? null; state.permissions = Array.isArray(state.workspace.permissions) ? state.workspace.permissions : null; applyPermissions(); } catch { /* shown by the next call if the session is bad */ }
     try { const b = await api("/brain", { quiet: true }); fillBrainForm(b.brain, b.version); } catch (e) { showError(e.message); }
     try { await aiUi.load({ refillForm: true }); } catch (e) { showError(e.message); }
   }
   await onboardUi.load();
   if (session()) aiTestUi.load();
   await refresh({ fillForms: true });
+  settingsUi.load();
+  brandUi.load();
+  plansUi.load();
+  creativeUi.load();
+}
+
+async function retryJob(id, button) {
+  await once("job-retry-" + id, [button], async () => {
+    try { await api(`/jobs/${id}/retry`, { method: "POST" }); showNotice("The job was put back in the queue."); } catch { /* shown */ }
+    await refresh();
+  });
 }
 
 async function openCampaign(id) {
@@ -360,10 +454,20 @@ async function goProposal(id) {
   await refresh({ fillForms: true });
   scrollToEl($("s-launch"), "start");
 }
-const dashUi = initDashboard({ $, h, pill, simBadge, usd, state, openCampaign, goProposal });
+const dashUi = initDashboard({ $, h, pill, simBadge, usd, state, openCampaign, goProposal, can, retryJob });
 const aiUi = initAi({ $, h, api, state, session, pill, simBadge, showError, once });
 const claimsUi = initClaimsReview({ $, h, pill });
-const onboardUi = initOnboarding({ $, h, api, state, showNotice, once, pill, simBadge, onFormChanged: () => claimsUi.render() });
+const provUi = initProvenance({ $, h, api, pill });
+const goalUi = initGoal({ $, h });
+const settingsUi = initWorkspaceSettings({ $, h, api, state, can, once, pill, simBadge, showNotice, session });
+// A file is fetched with the same credentials as every other call, then drawn on a canvas: no image URL (and no blob: URL) is ever needed.
+const fetchFile = async (path) => { const s = session(); const res = await fetch(`/api/workspaces/${s.id}${path}`, { headers: { authorization: Auth.header(s) } }); if (!res.ok) throw new Error("file unavailable"); return res.blob(); };
+const plansUi = initPlans({ $, h, api, state, can, once, pill, usd, showNotice, openCampaign: (id) => openCampaign(id), session, reloadCampaigns: () => refresh() });
+const creativeUi = initCreative({ $, h, api, state, can, once, pill, showNotice, session, fetchFile });
+const brandUi = initBrand({ $, h, api, state, can, once, pill, simBadge, showNotice, session, fetchFile });
+const leadsUi = initLeads({ $, h, api, pill, simBadge, can, once, showNotice, state, reload: async () => { if (session()) renderLeads(await api("/leads", { quiet: true })); } });
+const activityUi = initActivity({ $, h, pill, simBadge, state });
+const onboardUi = initOnboarding({ $, h, api, state, showNotice, once, pill, simBadge, can, onFormChanged: () => { claimsUi.render(); updateBrainMissing(); renderDashboardViews(); refreshDashIfAnalysisChanged(); } });
 const aiTestUi = initAiTest({ $, h, api, once, pill, simBadge });
 $("dev-mode").addEventListener("toggle", () => { if ($("dev-mode").open && session()) aiTestUi.load(); });
 
@@ -514,6 +618,26 @@ function whereInBrain(message) {
   return [...found].join(", ");
 }
 
+// The server builds the attention list from stored data, so when the analysis or the owner's decisions on it change, ask for the figures again straight away
+// (instead of waiting for the next regular refresh).
+let lastAnalysisSig = "";
+async function refreshDashIfAnalysisChanged() {
+  const a = state.analysis;
+  const sig = a ? `${a.id}|${a.status}|${a.insights.filter((i) => i.status === "proposed").length}` : "";
+  if (sig === lastAnalysisSig || !session()) return;
+  lastAnalysisSig = sig;
+  try { state.dash = await api("/dashboard", { quiet: true }); renderDashboardViews(); } catch { /* the regular refresh will show the problem */ }
+}
+
+/** The required Business Brain fields that are still empty, by their plain names (for "what is missing" on Home). */
+function updateBrainMissing() {
+  const f = $("brain-form").elements;
+  const need = [["businessName", "business name"], ["industry", "type of business"], ["services", "services"], ["serviceArea", "where you work"], ["targetCustomer", "who you serve"], ["offer", "your offer"]];
+  const missing = need.filter(([k]) => !String(f[k].value || "").trim()).map(([, label]) => label);
+  if (JSON.stringify(missing) !== JSON.stringify(state.brainMissing)) { state.brainMissing = missing; renderDashboardViews(); }
+}
+$("brain-form").addEventListener("input", updateBrainMissing);
+
 // Shown next to the button, so it is clear why a draft cannot be created yet
 function updateGenHint() { $("gen-hint").hidden = !session() || state.brainVersion > 0; }
 
@@ -528,7 +652,7 @@ $("gen-form").addEventListener("submit", async (e) => {
       ? "Generating with the local model. On a CPU this can take a few minutes; keep this page open."
       : "Generating...";
     try {
-      const c = await api("/campaigns/generate", { method: "POST", body: aiUi.generateBody() });
+      const c = await api("/campaigns/generate", { method: "POST", body: { ...aiUi.generateBody(), ...goalUi.body() } });
       state.campaignId = c.id;
       await refresh({ fillForms: true });
       showNotice("Your campaign draft was created. It is only a plan: nothing is sent anywhere until you approve it.");

@@ -248,3 +248,231 @@ describe("status and routes", () => {
     expect((await call("POST", `${base}/test-request`, w.token, { provider: "mock", model: "m", prompt: "hi", extra: 1 })).status).toBe(400);
   });
 });
+
+describe("spend is reserved before a paid request, so concurrent requests cannot exceed the ceiling", () => {
+  class Slow extends Fake {
+    async generateText(r: GenerateTextRequest): Promise<ProviderResult> { await new Promise((res) => setTimeout(res, 40)); return super.generateText(r); }
+  }
+  const held = (c: ReturnType<typeof liveApp>) => (c.ctx.db.prepare("SELECT COUNT(*) n FROM ai_reservations").get() as { n: number }).n;
+  const small = { inputTokens: 10, outputTokens: 5, source: "provider" as const };
+
+  it("two requests at the same time, room for one: exactly one is sent, and the reservation is released afterwards", async () => {
+    const p = new Slow(small);
+    const a = liveApp(p, { AI_LIVE_BUDGET_MICROS: "150" }); // one request reserves ~100 micros (200 output tokens at 0.5/M tokens plus input)
+    const results = await Promise.allSettled([test(a), test(a)]);
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    const refused = results.find((r) => r.status === "rejected") as PromiseRejectedResult;
+    expect(refused.reason).toMatchObject({ kind: "budget_exhausted", message: expect.stringContaining("held for requests in progress") });
+    expect(p.calls).toBe(1);
+    expect(held(a)).toBe(0);
+    await expect(test(a)).resolves.toMatchObject({ status: "ok" }); // the actual spend was tiny, so a later request fits again
+  });
+
+  it("the daily request cap counts requests that are still running", async () => {
+    const p = new Slow(small);
+    const a = liveApp(p, { AI_LIVE_BUDGET_MICROS: "1000000", AI_LIVE_MAX_REQUESTS_PER_DAY: "1" });
+    const results = await Promise.allSettled([test(a), test(a), test(a)]);
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    expect(p.calls).toBe(1);
+    expect(held(a)).toBe(0);
+  });
+
+  it("a failed request releases its reservation too", async () => {
+    const p = new Fake(undefined, new AiError("rate_limit", "slow down", { retryable: true }));
+    const a = liveApp(p, { AI_LIVE_BUDGET_MICROS: "1000000" });
+    await expect(test(a)).resolves.toMatchObject({ status: "error", errorKind: "rate_limit" });
+    expect(held(a)).toBe(0);
+  });
+
+  it("a reservation left behind by a crash keeps counting for the month (it may have been billed unrecorded), and is cleared when the month ends", async () => {
+    const p = new Fake(small);
+    const a = liveApp(p, { AI_LIVE_BUDGET_MICROS: "150" });
+    a.ctx.db.prepare("INSERT INTO ai_reservations (id, workspace_id, micros, reserved_at) VALUES ('rsv_crash', ?, 140, ?)").run(a.ws.id, new Date(a.ctx.now().getTime() - 6 * 60 * 60_000).toISOString()); // hours old, same month
+    await expect(test(a)).rejects.toMatchObject({ kind: "budget_exhausted", message: expect.stringContaining("held for requests in progress") });
+    expect(p.calls).toBe(0);
+    expect(held(a)).toBe(1); // nothing was removed or released by the refusal
+    // next month: last month's leftovers are gone and the new month starts clean
+    a.core.setNow("2026-11-02T09:00:00Z");
+    await expect(test(a)).resolves.toMatchObject({ status: "ok" });
+    expect((a.ctx.db.prepare("SELECT COUNT(*) n FROM ai_reservations WHERE id = 'rsv_crash'").get() as { n: number }).n).toBe(0);
+  });
+
+  it("a request that times out may have been billed with no usage reported: its worst case stays held, and the usage row says 'unknown', never zero", async () => {
+    const p = new Fake(small, new AiError("timeout", "Request timed out", { retryable: true }));
+    const a = liveApp(p, { AI_LIVE_BUDGET_MICROS: "250" });
+    const r = await test(a);
+    expect(r).toMatchObject({ status: "error", errorKind: "timeout", estimatedCostMicros: null });
+    const row = a.ctx.db.prepare("SELECT micros, state FROM ai_reservations").get() as { micros: number; state: string };
+    expect(row.state).toBe("unverified");
+    expect(row.micros).toBeGreaterThan(0);
+    expect(row.micros).toBeLessThanOrEqual(110); // one attempt's worst case, not the whole multi-attempt reservation
+    const usage = listUsage(a.ctx, a.ws.id)[0]!;
+    expect(usage).toMatchObject({ outcome: "timeout", estimatedCostMicros: null, costStatus: "unknown_no_usage", inputTokens: null, outputTokens: null });
+    const status = aiProviderStatus(a.ctx).budget;
+    expect(status).toMatchObject({ unverifiedHolds: 1 });
+    expect(status.heldMicros).toBe(row.micros);
+    // it keeps counting: with 250 micros and 103 held, a second request (103 reserved) still fits, a third does not
+    p.failWith = undefined;
+    await expect(test(a)).resolves.toMatchObject({ status: "ok" });
+    p.failWith = new AiError("timeout", "Request timed out", { retryable: true });
+    await test(a); // times out again: a second unverified hold
+    p.failWith = undefined;
+    await expect(test(a)).rejects.toMatchObject({ kind: "budget_exhausted" });
+  });
+
+  it("a request can only release its own reservation: another request's failure leaves a running request's hold in place", async () => {
+    let n = 0;
+    let seenDuringSlow = -1;
+    const p = new Fake(small);
+    const a = liveApp(p, { AI_LIVE_BUDGET_MICROS: "1000000" });
+    const original = p.generateText.bind(p);
+    p.generateText = async (r: GenerateTextRequest) => {
+      const mine = ++n;
+      if (mine === 1) { await new Promise((res) => setTimeout(res, 80)); seenDuringSlow = held(a); return original(r); } // the slow one reads the table after the other has failed and released
+      throw new AiError("rate_limit", "no", { retryable: true });
+    };
+    const [slow, fast] = await Promise.all([test(a), new Promise<void>((res) => setTimeout(res, 10)).then(() => test(a))]);
+    expect(fast).toMatchObject({ status: "error", errorKind: "rate_limit" });
+    expect(seenDuringSlow).toBe(1); // only the slow request's own hold was there: the failed one released ITS hold and nothing else
+    expect(slow).toMatchObject({ status: "ok" });
+    expect(held(a)).toBe(0);
+  });
+
+  it("the monthly figure and the daily cap survive a restart (they live in the database, not in memory)", async () => {
+    const p = new Fake({ inputTokens: 1_000_000, outputTokens: 0, source: "provider" }); // each real request costs 100_000
+    const first = liveApp(p, { AI_LIVE_BUDGET_MICROS: "150000", AI_LIVE_MAX_REQUESTS_PER_DAY: "2" });
+    await test(first);
+    const restart = () => buildContext({ db: first.core.db, now: first.core.now, env: { ...LIVE, AI_LIVE_BUDGET_MICROS: "150000", AI_LIVE_MAX_REQUESTS_PER_DAY: "2" }, aiProviders: [p], registry: new ModelRegistry([{ provider: "fake", model: "m", label: "fake", enabled: true, tasks: ["connection_test"], capabilities: { text: true, structuredOutput: true }, costTier: "low" }]), pricing: new PricingTable("USD", [PRICE]), gateway: { sleep: async () => {}, maxRetries: 0 } });
+    const second = restart();
+    expect(aiProviderStatus(second).budget).toMatchObject({ spentMicros: 100000, requestsToday: 1 });
+    await test({ ...first, ctx: second }); // 100_000 used + ~100 reserved fits under 150_000
+    const third = restart(); // another restart: 200_000 used now, over the ceiling
+    await expect(test({ ...first, ctx: third })).rejects.toMatchObject({ kind: "budget_exhausted" });
+    // and the daily cap of 2 is reached too, whichever process asks
+    const capped = restart();
+    await expect(test({ ...first, ctx: capped })).rejects.toMatchObject({ kind: "budget_exhausted" });
+    expect(p.calls).toBe(2);
+  });
+});
+
+describe("retry accounting equals the real maximum number of provider attempts", () => {
+  // The gateway allows 1 first try + AI_MAX_RETRIES retries (rate limit, timeout, outage) + AI_REPAIR_ATTEMPTS repair (after unusable output): it does not matter
+  // whether the call is text or structured, because empty text counts as unusable output and is repaired too. The reservation must cover exactly that many.
+  class Scripted implements AiProvider {
+    readonly id = "fake"; readonly label = "fake"; readonly models = ["m"] as const; readonly simulated = false;
+    calls = 0;
+    constructor(private script: Array<"rate_limit" | "empty" | "ok">) {}
+    isAvailable() { return true; }
+    async generateObject<T>(_r: GenerateObjectRequest<T>): Promise<ProviderResult> { throw new Error("unused"); }
+    async generateText(r: GenerateTextRequest): Promise<ProviderResult> {
+      const step = this.script[this.calls++] ?? "ok";
+      if (step === "rate_limit") throw new AiError("rate_limit", "slow", { retryable: true });
+      return { text: step === "empty" ? "" : "fine", model: r.model, simulated: false, usage: { inputTokens: 10, outputTokens: 1, source: "provider" } };
+    }
+  }
+  const build = (p: Scripted, env: Record<string, string>) => {
+    const core = makeCore();
+    const registry = new ModelRegistry([{ provider: "fake", model: "m", label: "fake", enabled: true, tasks: ["connection_test"], capabilities: { text: true, structuredOutput: true }, costTier: "low" }]);
+    const ctx = buildContext({ db: core.db, now: core.now, env: { AI_PROVIDER_MODE: "live", ALLOW_LIVE_PROVIDER_CALLS: "true", AI_LIVE_BUDGET_MICROS: "1000000", ...env }, aiProviders: [p], registry, pricing: new PricingTable("USD", [PRICE]), gateway: { sleep: async () => {} } });
+    return { ctx, ws: createWorkspace(ctx, "Attempts Co").workspace };
+  };
+  const cases: Array<[string, Record<string, string>, number]> = [["defaults (2 retries, 1 repair)", {}, 4], ["no retries, no repair", { AI_MAX_RETRIES: "0", AI_REPAIR_ATTEMPTS: "0" }, 1], ["5 retries, 1 repair", { AI_MAX_RETRIES: "5" }, 7], ["retries capped at 5", { AI_MAX_RETRIES: "50" }, 7], ["no repair", { AI_REPAIR_ATTEMPTS: "0" }, 3]];
+  it.each(cases)("%s: the worst case really is the reserved number of attempts", async (_n, env, expected) => {
+    // every attempt fails in the way that allows the most further attempts: rate limits first (retries), then unusable output (repair)
+    const retries = Math.min(Number(env.AI_MAX_RETRIES ?? 2), 5);
+    const repair = env.AI_REPAIR_ATTEMPTS === "0" ? 0 : 1;
+    const script: Array<"rate_limit" | "empty"> = [...Array(retries).fill("rate_limit"), ...Array(1 + repair).fill("empty")];
+    const p = new Scripted(script);
+    const { ctx, ws } = build(p, env);
+    expect(ctx.aiPolicy.attemptsPerRequest).toBe(expected);
+    await runTestRequest(ctx, ws.id, "fake", "m", "hi").catch(() => undefined);
+    expect(p.calls).toBe(expected); // the provider was called exactly as many times as the reservation allows for, and not once more
+  });
+  it("the reservation is that many times the single-attempt worst case", async () => {
+    const { ctx, ws } = build(new Scripted([]), {});
+    // inspect the reservation while the request is running
+    let heldMicros = 0;
+    const p = new Scripted([]);
+    p.generateText = async (r: GenerateTextRequest) => { heldMicros = (ctx.db.prepare("SELECT SUM(micros) m FROM ai_reservations").get() as { m: number }).m; return { text: "ok", model: r.model, simulated: false, usage: { inputTokens: 1, outputTokens: 1, source: "provider" } }; };
+    const registry = new ModelRegistry([{ provider: "fake", model: "m", label: "fake", enabled: true, tasks: ["connection_test"], capabilities: { text: true, structuredOutput: true }, costTier: "low" }]);
+    const c2 = buildContext({ db: ctx.db, now: ctx.now, env: { AI_PROVIDER_MODE: "live", ALLOW_LIVE_PROVIDER_CALLS: "true", AI_LIVE_BUDGET_MICROS: "1000000" }, aiProviders: [p], registry, pricing: new PricingTable("USD", [PRICE]) });
+    await runTestRequest(c2, ws.id, "fake", "m", "Reply with the single word: pong");
+    const single = Math.round((26 * 100_000 + 200 * 500_000) / 1e6); // 26 estimated input tokens, 200 output tokens, the price list's rates
+    expect(single).toBe(103);
+    expect(heldMicros).toBe(single * 4);
+  });
+});
+
+describe("a provider key is only sent to the official host", () => {
+  const live = { AI_PROVIDER_MODE: "live", ALLOW_LIVE_PROVIDER_CALLS: "true", AI_LIVE_BUDGET_MICROS: "50000", OPENAI_API_KEY: "sk-TEST-FAKE-host-000000000000000000" };
+  const make = (extra: Record<string, string>) => { const core = makeCore(); return buildContext({ db: core.db, now: core.now, env: { ...live, ...extra } }); };
+  it("accepts the official address, and no address at all", () => {
+    expect(() => make({})).not.toThrow();
+    expect(() => make({ OPENAI_BASE_URL: "https://api.openai.com/v1" })).not.toThrow();
+    expect(make({ OPENAI_BASE_URL: "https://api.openai.com/v1" }).aiPolicy.customBaseUrls).toEqual([]);
+  });
+  it.each(["https://evil.example.com/v1", "https://api.openai.com.evil.example.com/v1", "http://api.openai.com/v1", "https://api.openai.com:8443/v1", "https://user:pw@api.openai.com/v1", "http://localhost:4010/v1", "not a url"])("refuses %s by default, naming the setting and never the value", (bad) => {
+    let msg = "";
+    try { make({ OPENAI_BASE_URL: bad }); } catch (e) { msg = (e as Error).message; }
+    expect(msg).toMatch(/OPENAI_BASE_URL/);
+    const host = (() => { try { return new URL(bad).hostname; } catch { return null; } })();
+    if (host && host !== "api.openai.com") expect(msg).not.toContain(host); // the message never echoes the configured address
+    expect(msg).not.toContain("sk-TEST");
+  });
+  it("allows another host only with the explicit development override, over https (or http on this machine), and flags it", () => {
+    const c = make({ OPENAI_BASE_URL: "https://stub.example.com/v1", ALLOW_CUSTOM_PROVIDER_BASE_URL: "true" });
+    expect(c.aiPolicy.customBaseUrls).toEqual(["OPENAI_BASE_URL"]);
+    expect(aiProviderStatus(c).nextStep).toMatch(/^WARNING: OPENAI_BASE_URL points to a custom host/);
+    expect(make({ OPENAI_BASE_URL: "http://127.0.0.1:4010/v1", ALLOW_CUSTOM_PROVIDER_BASE_URL: "true" }).aiPolicy.customBaseUrls).toEqual(["OPENAI_BASE_URL"]);
+    expect(() => make({ OPENAI_BASE_URL: "http://stub.example.com/v1", ALLOW_CUSTOM_PROVIDER_BASE_URL: "true" })).toThrow(/https/);
+    expect(() => make({ OPENAI_BASE_URL: "https://user:pw@stub.example.com/v1", ALLOW_CUSTOM_PROVIDER_BASE_URL: "true" })).toThrow(/username or password/);
+  });
+  it("is ignored (and never used) when no key can be used: mock mode does not care what the address says", async () => {
+    const core = makeCore();
+    const c = buildContext({ db: core.db, now: core.now, env: { OPENAI_BASE_URL: "https://evil.example.com/v1", OPENAI_API_KEY: "sk-TEST-FAKE-host-000000000000000000" } });
+    expect(c.aiPolicy.customBaseUrls).toEqual([]);
+  });
+  it("the same rule covers the Anthropic address", () => {
+    expect(() => make({ ANTHROPIC_BASE_URL: "https://evil.example.com" })).toThrow(/ANTHROPIC_BASE_URL/);
+    expect(() => make({ ANTHROPIC_BASE_URL: "https://api.anthropic.com" })).not.toThrow();
+  });
+});
+
+describe("the processing tier is pinned so the price list stays true", () => {
+  it("sends service_tier=default unless the operator chooses otherwise", async () => {
+    const seen: Array<Record<string, unknown>> = [];
+    const aiFetch = (async (_u: string | URL | Request, init: RequestInit = {}) => {
+      seen.push(JSON.parse(String(init.body)));
+      return new Response(JSON.stringify({ object: "response", id: "resp_1", model: "gpt-6-luna", status: "completed", output: [{ type: "message", role: "assistant", id: "m", status: "completed", content: [{ type: "output_text", text: "ok", annotations: [] }] }], usage: { input_tokens: 5, output_tokens: 1 } }), { status: 200, headers: { "content-type": "application/json" } });
+    }) as unknown as typeof fetch;
+    for (const [extra, expected] of [[{}, "default"], [{ OPENAI_SERVICE_TIER: "flex" }, "flex"]] as const) {
+      const core = makeCore();
+      const ctx = buildContext({ db: core.db, now: core.now, env: { AI_PROVIDER_MODE: "live", ALLOW_LIVE_PROVIDER_CALLS: "true", OPENAI_API_KEY: "sk-TEST-FAKE-tier-000000000000000000", AI_LIVE_BUDGET_MICROS: "50000", ...extra }, aiFetch, gateway: { sleep: async () => {}, maxRetries: 0 } });
+      const ws = createWorkspace(ctx, "Tier Co").workspace;
+      await runTestRequest(ctx, ws.id, "openai", "gpt-6-luna", "hi");
+      expect(seen.at(-1)?.service_tier).toBe(expected);
+      expect(seen.at(-1)?.store).toBe(false);
+    }
+  });
+});
+
+describe("live mode fails safely without a usable key", () => {
+  it("with no key at all, the request is refused before anything is sent, and nothing is reserved or recorded as spend", async () => {
+    let sent = 0;
+    const aiFetch = (async () => { sent++; throw new Error("must not be called"); }) as unknown as typeof fetch;
+    for (const key of [undefined, "", "your-key-here", "   "]) {
+      const core = makeCore();
+      const ctx = buildContext({ db: core.db, now: core.now, env: { AI_PROVIDER_MODE: "live", ALLOW_LIVE_PROVIDER_CALLS: "true", AI_LIVE_BUDGET_MICROS: "50000", ...(key === undefined ? {} : { OPENAI_API_KEY: key }) }, aiFetch });
+      const ws = createWorkspace(ctx, "No Key Co").workspace;
+      await expect(runTestRequest(ctx, ws.id, "openai", "gpt-6-luna", "hi")).rejects.toMatchObject({ kind: "not_eligible" });
+      expect(aiProviderStatus(ctx).providers.find((p) => p.id === "openai")).toMatchObject({ keyConfigured: false, available: false });
+      expect((ctx.db.prepare("SELECT COUNT(*) n FROM ai_reservations").get() as { n: number }).n).toBe(0);
+    }
+    expect(sent).toBe(0);
+  });
+  it("says that a key being present does not prove it works", () => {
+    const core = makeCore();
+    const ctx = buildContext({ db: core.db, now: core.now, env: { AI_PROVIDER_MODE: "live", ALLOW_LIVE_PROVIDER_CALLS: "true", AI_LIVE_BUDGET_MICROS: "50000", OPENAI_API_KEY: "sk-TEST-FAKE-present-0000000000000000" } });
+    expect(aiProviderStatus(ctx).nextStep).toMatch(/present does not prove it is valid or unexpired/);
+  });
+});
