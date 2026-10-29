@@ -10,6 +10,7 @@ import { buildContext, type AppContext } from "../src/app/context.js";
 import { migrate, openDb } from "../src/db/db.js";
 import { buildServer } from "../src/server/app.js";
 import { getBrain, putBrain } from "../src/app/workspaces.js";
+import { importLeads } from "../src/app/leadIntake.js";
 import { BRAIN } from "./fixtures.js";
 
 const HTML = readFileSync("public/index.html", "utf8");
@@ -419,6 +420,27 @@ describe("campaign view shows budget, targeting, decisions, questions and platfo
     button.click();
     await vi.waitFor(() => expect($text(ui, "proposal-view")).toMatch(/proposed|NEEDS REVIEW/), { timeout: 4000 });
     expect(find()).toBeUndefined();
+  });
+
+  it("opening a lead does not reload it at the next poll: its Erase button stays the same element and a typed reason is kept", async () => {
+    const s = server();
+    const ui = await openPage(s);
+    await withBrain(ui, BRAIN);
+    const session = JSON.parse(ui.storage().ms_sessions as string)[0] as { id: string };
+    const campaignId = (s.db.prepare("SELECT id FROM campaigns LIMIT 1").get() as { id: string }).id;
+    importLeads(s.ctx, session.id, "test", { campaignId, sourceNote: "list", rows: [{ fullName: "Pat Example", email: "pat@example.com" }] });
+    await ui.w.refresh();
+    const detailsButton = () => Array.from(ui.$("leads-view").querySelectorAll("button")).find((b) => /Details|Showing below/.test(b.textContent ?? "")) as HTMLButtonElement;
+    detailsButton().click();
+    const eraseButton = () => Array.from(ui.$("lead-detail").querySelectorAll("button")).find((b) => b.textContent === "Erase personal data") as HTMLButtonElement | undefined;
+    await vi.waitFor(() => expect(eraseButton()).toBeTruthy(), { timeout: 4000 });
+    const button = eraseButton()!;
+    const reason = ui.$("lead-detail").querySelector("input[aria-label='Reason for erasing']") as HTMLInputElement;
+    reason.value = "They asked us to";
+    for (let i = 0; i < 4; i++) { await ui.w.refresh(); await new Promise((r) => setTimeout(r, 30)); } // what the page does every 1.5 seconds (the first poll is the one that used to reload the lead)
+    expect(eraseButton()).toBe(button); // the very same element: a click on it cannot be lost to a rebuild
+    expect((ui.$("lead-detail").querySelector("input[aria-label='Reason for erasing']") as HTMLInputElement).value).toBe("They asked us to");
+    expect(detailsButton().textContent).toBe("Showing below"); // the list itself did redraw once, to say which lead is open
   });
 
   it("a flagged proposal shows its review reasons and cannot be approved until the reviewer acknowledges them", async () => {

@@ -55,6 +55,7 @@ await app.listen({ host: "127.0.0.1", port }); // localhost only: never exposed 
 
 const i = ctx.integrations;
 console.log(`MotiveStack listening on http://localhost:${port}`);
+console.log("Server errors are logged to standard error as JSON lines (see docs/operations-runbook.md)");
 console.log(`Database: ${dbPath}${applied.length ? ` (applied ${applied.join(", ")})` : ""}`);
 if (lifecycleFixed) console.log(`Lifecycle sync: ${lifecycleFixed} campaign(s) brought in line with their records`);
 if (tenancy.organizationsCreated || tenancy.policiesCreated) console.log(`Tenancy backfill: ${tenancy.organizationsCreated} organization(s), ${tenancy.policiesCreated} policy row(s) created`);

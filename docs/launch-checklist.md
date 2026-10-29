@@ -14,6 +14,25 @@ Status as of 2026-10-29 (Phase 10 baseline). **Not ready for a public launch.** 
 | B6 | **No retention policy and no workspace deletion** | Only per-lead erasure and export exist | Open |
 | B7 | **No third-party penetration test** | Internal review only | Open |
 
+## Controlled-pilot gates (small number of real businesses)
+
+The target is a restricted pilot, not a public launch. A gate is **Closed** only with evidence; "Prepared" means the work exists but the gate is not met.
+
+| Gate | Status | Evidence / what is missing |
+|---|---|---|
+| Production refuses live or external execution flags | **Closed (code and tests)** | `liveExecutionProblems` in `src/deployment.ts`; `test/productionSafety.test.ts` (13 tests, incl. spawned web-server and standalone-worker starts that exit 1 before opening a database, run from a neutral folder so a developer's `.env.local` cannot change the result); the worker was found unguarded in review and is now covered, and a misspelt `DEPLOYMENT_ENV` is refused before any database file is created; no override exists. Live execution stays disabled until separately authorised |
+| Server error visibility | **Closed in code; alerting not connected** | One JSON line per 5xx with request id, route template, status, category (`src/server/errorLog.ts`, `test/errorLog.test.ts`, 9 tests, nothing sensitive logged); a repeated-error alert line. Someone must still connect the keyword alert and the readiness check to a notifier on the real host |
+| Runbook: startup, health, incidents, rollback | **Prepared** | `docs/operations-runbook.md`. The rollback decision rule has not been rehearsed on a real host |
+| Data and secrets outside OneDrive | **Prepared, not done** | `docs/move-data-outside-onedrive.md`, steps 1 to 6 rehearsed on a scratch copy. The data is still in OneDrive until a person runs it |
+| Verified sign-in and allow-list in the browser | **Open** | No browser sign-in yet; needs the identity-provider decision and a staging tenant |
+| TLS and hosting | **Open** | Needs the hosting decision |
+| Recoverable off-host, encrypted backups | **Open** | Local backup and restore check work; the schedule, retention (14 daily, 8 weekly), encryption and off-host copy are not built |
+| Reviewed retention and workspace-closure procedure | **Open** | Defaults proposed (12 months leads, 30 days backups); closure by anonymisation and tombstoning to be designed and tested |
+| Tenant isolation | **Verified offline** | Default-deny permission map and cross-tenant tests; real identity-provider mapping unverified |
+| End-to-end pilot acceptance scenarios | **Localhost plan written and run; staging not run** | `docs/localhost-acceptance-plan.md`: automated suite (1800 passed, 3 runs) and 11 browser flows passed on localhost with mock providers; manual steps and a staging host are not run, and there is no real sign-in to test |
+
+Public-launch gates stay separate and open: the Zod 4 migration, an independent security review, self-service registration, automated workspace deletion, and the other blockers B1 to B7 above.
+
 ## Other open gaps (not launch-stopping alone)
 
 - Suite reliability under heavy load is improved but not proven: a global `testTimeout: 20000` is set, and 5 consecutive full runs passed (1777 tests, 71 files) at 28-57% background CPU; earlier timeouts happened under heavier load that has not been re-tested. Keep watching.

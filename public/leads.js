@@ -97,12 +97,17 @@ export function initLeads({ $, h, api, pill, simBadge, can, once, showNotice, st
 
   // The page re-reads the leads every 1.5 seconds. Rebuilding an unchanged list would replace its buttons and selects (a click can be lost, an open menu closes) and reload the
   // open lead, wiping what was typed in it. The list is redrawn only when it, the open lead or the person's permission has changed.
-  let lastKey = null;
+  // Opening a lead changes openId, which redraws the list once (its button now says "Showing below"); that must NOT reload the lead that was just opened, or its Erase button is
+  // replaced under the pointer and a reason typed into it is lost. The open lead is reloaded only when the lead data changed or its panel is empty.
+  let lastKey = null, lastData = null;
   function render(leads) {
     const v = $("leads-view");
-    const key = JSON.stringify([leads, openId, can("leads.erase")]);
+    const dataKey = JSON.stringify([leads, can("leads.erase")]);
+    const key = `${dataKey}|${openId}`;
     if (key === lastKey && v.childNodes.length) return;
     lastKey = key;
+    const dataChanged = dataKey !== lastData;
+    lastData = dataKey;
     if (!leads.length) { v.replaceChildren(h("p", { class: "hint" }, "No leads yet.")); $("lead-detail").hidden = true; return; }
     v.replaceChildren(h("table", {}, h("thead", {}, h("tr", {}, ...["Lead", "Contact", "Status", "CRM sync", ""].map((x) => h("th", {}, x)))),
       h("tbody", {}, leads.map((l) => h("tr", {},
@@ -111,7 +116,7 @@ export function initLeads({ $, h, api, pill, simBadge, can, once, showNotice, st
         h("td", {}, statusSelect(l)),
         h("td", {}, pill(l.crmStatus, l.crmStatus === "synced" ? "ok" : l.crmStatus === "failed" ? "bad" : "warn"), l.crmError ? ` ${l.crmError}` : ""),
         h("td", {}, h("button", { type: "button", class: "secondary", onclick: () => showDetail(l.id) }, openId === l.id ? "Showing below" : "Details")))))));
-    if (openId && leads.some((l) => l.id === openId)) showDetail(openId); else if (!leads.some((l) => l.id === openId)) $("lead-detail").hidden = true;
+    if (openId && leads.some((l) => l.id === openId)) { const box = $("lead-detail"); if (dataChanged || box.hidden || !box.childNodes.length) showDetail(openId); } else if (!leads.some((l) => l.id === openId)) $("lead-detail").hidden = true;
   }
 
   return { render, showDetail };

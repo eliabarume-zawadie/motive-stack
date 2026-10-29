@@ -76,6 +76,7 @@ Acceptance evidence for the whole roadmap: [docs/acceptance-report.md](docs/acce
 | **mock** (default) | `INTEGRATION_MODE=mock` or unset | Meta, GoHighLevel and AI are simulated and persisted locally. No external calls, no spend, no messages. |
 | **live** (opt-in) | `INTEGRATION_MODE=live` **and** a per-provider flag | Only the providers you switch on are real. |
 
+- **Production never goes live.** With `DEPLOYMENT_ENV=production` the server refuses to start if `INTEGRATION_MODE` is not `mock`, `AI_PROVIDER_MODE` is `live`, or any of `LIVE_META`, `LIVE_GHL`, `ALLOW_LIVE_PROVIDER_CALLS`, `ALLOW_CUSTOM_PROVIDER_BASE_URL` (or any `LIVE_*` / `ALLOW_LIVE*` switch) is on. There is no override. See `docs/operations-runbook.md`.
 - Meta live switch: `LIVE_META=true` (with `INTEGRATION_MODE=live`). `LIVE_GHL=true` is **rejected at startup**: there is no live GoHighLevel connector yet.
 - **AI has its own two switches**: `AI_PROVIDER_MODE=live` **and** `ALLOW_LIVE_PROVIDER_CALLS=true`. Live without the second is a startup error; the second alone does nothing. See "AI models" below.
 - Having credentials in the environment never enables live mode. API keys are only read when live AI is on.

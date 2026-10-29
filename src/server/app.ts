@@ -35,6 +35,7 @@ import { analyticsView } from "../app/analytics.js";
 import { assignees, calendar, createWorkItem, inbox, listNotifications, listWorkItems, markNotificationsRead, ownershipOf, ownerSubject, setOwnership, updateWorkItem } from "../app/teamOps.js";
 import { VIDEO_SUPPORT } from "../creative/video.js";
 import { bodyShapeProblem } from "./bodyShape.js";
+import { createErrorLog, newRequestId, type ErrorLog } from "./errorLog.js";
 import { addAssetVersion, archiveAsset, assetBodyLimit, assetDetail, createAsset, decideAssetVersion, listAssets, readAssetFile, submitAssetVersion } from "../app/assets.js";
 import { CUSTOMIZABLE_PERMISSIONS, PERMISSION_CATALOG } from "../auth/orgAuthz.js";
 import { authzAllows, permissionsFor, type AuthzContext } from "../auth/authz.js";
@@ -67,9 +68,11 @@ const CREDENTIAL_BODY_LIMIT = 8 * 1024;
 
 const MIGRATION_FILE_COUNT = readdirSync(fileURLToPath(new URL("../db/migrations/", import.meta.url))).filter((f) => f.endsWith(".sql")).length;
 
-export function buildServer(ctx: AppContext, auth: AuthRuntime = workspaceTokenRuntime, extra: { rateLimits?: CredentialRateLimits; claimLimits?: ClaimRateLimits; apiLimits?: ApiRateLimits; security?: SecurityConfig; now?: () => number; /** Tests: a limiter with a small table. */ limiter?: RateLimiter } = {}): FastifyInstance {
+export function buildServer(ctx: AppContext, auth: AuthRuntime = workspaceTokenRuntime, extra: { rateLimits?: CredentialRateLimits; claimLimits?: ClaimRateLimits; apiLimits?: ApiRateLimits; security?: SecurityConfig; now?: () => number; /** Tests: a limiter with a small table. */ limiter?: RateLimiter; /** Tests: where server-error log lines go. Default: standard error. */ errorLog?: ErrorLog } = {}): FastifyInstance {
   // logger is OFF: request bodies (which carry secrets on the credential routes) are never written to a log.
-  const app = Fastify({ logger: false, bodyLimit: 256 * 1024 });
+  // Request ids are made here and never read from the client (requestIdHeader: false), so nobody can put text of their choosing into the error log.
+  const app = Fastify({ logger: false, bodyLimit: 256 * 1024, genReqId: newRequestId, requestIdHeader: false });
+  const errorLog = extra.errorLog ?? createErrorLog();
   const limits = extra.rateLimits ?? DEFAULT_CREDENTIAL_RATE_LIMITS;
   const limiter = extra.limiter ?? new RateLimiter(extra.now);
   const windowMs = limits.windowSec * 1000;
@@ -125,8 +128,10 @@ export function buildServer(ctx: AppContext, auth: AuthRuntime = workspaceTokenR
     done(null, parsed);
   });
 
-  app.setErrorHandler((err: unknown, _req: FastifyRequest, reply: FastifyReply) => {
-    if (err instanceof AppError) return reply.status(err.status).send(errorBody(err.code, err.message));
+  app.setErrorHandler((err: unknown, req: FastifyRequest, reply: FastifyReply) => {
+    // Every server-side failure (HTTP 5xx) is written to the error log once, with the request id, route template, status and category only: see errorLog.ts for what is never logged.
+    const logged = (status: number, category: string) => { if (status >= 500) errorLog.record({ requestId: req.id, method: req.method, route: req.routeOptions?.url, status, category, error: err }); };
+    if (err instanceof AppError) { logged(err.status, err.status >= 500 ? err.code : "client"); return reply.status(err.status).send(errorBody(err.code, err.message)); }
     if (err instanceof ZodError) {
       return reply.status(400).send(errorBody("validation", "Invalid input", { issues: err.issues.map((i) => ({ path: i.path.join("."), message: i.message })) }));
     }
@@ -136,12 +141,14 @@ export function buildServer(ctx: AppContext, auth: AuthRuntime = workspaceTokenR
         provider_unavailable: 503, invalid_output: 502, auth: 502, insufficient_balance: 502, timeout: 504, rate_limit: 429,
         budget_exhausted: 429, budget_unverifiable: 409, live_disabled: 409, not_eligible: 409, cancelled: 499,
       };
+      logged(status[err.kind] ?? 400, "provider");
       return reply.status(status[err.kind] ?? 400).send(errorBody(err.kind, err.message, err.requestId ? { requestId: err.requestId } : {}));
     }
-    if (typeof (err as { code?: unknown })?.code === "string" && (err as { code: string }).code.startsWith("SQLITE_BUSY")) return reply.status(503).send(errorBody("busy", "The workspace is being changed by another request; try again in a moment"));
+    if (typeof (err as { code?: unknown })?.code === "string" && (err as { code: string }).code.startsWith("SQLITE_BUSY")) { logged(503, "database_busy"); return reply.status(503).send(errorBody("busy", "The workspace is being changed by another request; try again in a moment")); }
     const fe = err as { statusCode?: number; code?: string };
     if (fe.statusCode && fe.statusCode < 500) return reply.status(fe.statusCode).send(errorBody(fe.code ?? "bad_request", "Bad request"));
-    return reply.status(500).send(errorBody("internal", "Internal error")); // never echo internals or secrets
+    logged(500, "internal");
+    return reply.status(500).send(errorBody("internal", "Internal error", { requestId: req.id })); // never echo internals or secrets; the id lets a report be matched to the log line
   });
 
   // ---- public routes ----
