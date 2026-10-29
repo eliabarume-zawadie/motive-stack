@@ -34,6 +34,7 @@ import { createForm, formDetail, importLeads, listForms, listImportBatches, revi
 import { analyticsView } from "../app/analytics.js";
 import { assignees, calendar, createWorkItem, inbox, listNotifications, listWorkItems, markNotificationsRead, ownershipOf, ownerSubject, setOwnership, updateWorkItem } from "../app/teamOps.js";
 import { VIDEO_SUPPORT } from "../creative/video.js";
+import { bodyShapeProblem } from "./bodyShape.js";
 import { addAssetVersion, archiveAsset, assetBodyLimit, assetDetail, createAsset, decideAssetVersion, listAssets, readAssetFile, submitAssetVersion } from "../app/assets.js";
 import { CUSTOMIZABLE_PERMISSIONS, PERMISSION_CATALOG } from "../auth/orgAuthz.js";
 import { authzAllows, permissionsFor, type AuthzContext } from "../auth/authz.js";
@@ -110,11 +111,18 @@ export function buildServer(ctx: AppContext, auth: AuthRuntime = workspaceTokenR
   // so treat it as "no body" and let each route's schema decide whether a body is required.
   app.addContentTypeParser("application/json", { parseAs: "string" }, (_req, body, done) => {
     if (typeof body !== "string" || body.trim() === "") return done(null, undefined);
+    let parsed: unknown;
     try {
-      done(null, JSON.parse(body));
+      parsed = JSON.parse(body);
     } catch {
-      done(Object.assign(new Error("Malformed JSON"), { statusCode: 400, code: "invalid_json" }), undefined);
+      return done(Object.assign(new Error("Malformed JSON"), { statusCode: 400, code: "invalid_json" }), undefined);
     }
+    // Order of events for a request: onRequest hooks (sign-in, rate limits, role checks: an unauthenticated caller is refused here and its body is never parsed), then this parser,
+    // then validation inside the route. Checking the shape here, once for every JSON route, means an oversized or over-nested body is refused before any zod schema or business code
+    // sees it. Only JSON bodies reach this parser (uploads are base64 inside JSON, not multipart; text/plain reaches a route only as a plain string, which no list schema accepts; every other
+    // content type is refused with 415), and Fastify enforces each route's bodyLimit before the body gets here.
+    if (bodyShapeProblem(parsed)) return done(new AppError(400, "body_too_complex", "The request has too many items in a list or is nested too deeply"), undefined);
+    done(null, parsed);
   });
 
   app.setErrorHandler((err: unknown, _req: FastifyRequest, reply: FastifyReply) => {

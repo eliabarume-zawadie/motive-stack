@@ -50,7 +50,7 @@ export const AiSettingsInputSchema = z.object({
   model: z.string().min(1).nullable().default(null),
   fallbackProvider: z.string().min(1).nullable().default(null),
   fallbackModel: z.string().min(1).nullable().default(null),
-  allowedProviders: z.array(z.string().min(1)).min(1).nullable().default(null),
+  allowedProviders: z.array(z.string().min(1)).min(1).max(20).nullable().default(null),
   maxRequestsPerDay: z.number().int().positive().nullable().default(null),
   monthlyBudgetMicros: z.number().int().positive().nullable().default(null),
 }).strict();

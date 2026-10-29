@@ -120,4 +120,38 @@ No database was reset or migrated in this follow-up; no commit or push was made;
 
 ## 9. Residual advisory: `zod`
 
-Unchanged and still open: `zod` 3.25.76, GHSA-mrhx-c7xc-m3w5 (high). The interim bounded-array mitigation is **proposed, not implemented**; see the plan in the hand-off message. Migrating to Zod 4 remains a **mandatory pre-public-launch task**.
+Still open: `zod` 3.25.76, GHSA-mrhx-c7xc-m3w5 (high). An **interim mitigation** is now implemented (section 10); the vulnerable code is still installed. Migrating to Zod 4 remains a **mandatory pre-public-launch task**.
+
+## 10. Interim zod mitigation and test timeout (uncommitted)
+
+- **Structural guard:** `src/server/bodyShape.ts` (new) and the JSON parser in `src/server/app.ts`. Every JSON body is refused with `400 body_too_complex` (fixed wording, no numbers echoed) if any list has more than 200 items or nesting exceeds 12 levels, before any route validation. Order of events: sign-in and rate limits (`onRequest`) first, so an unauthenticated caller gets 401 and its body is never parsed; then this parser; then each route's own schema. Only `application/json` is parsed into objects; there is no multipart handling (uploads are base64 inside JSON); other content types are not turned into lists. Malformed JSON (`invalid_json`), empty JSON bodies and the dedicated limits for lead imports, credentials (8 KB) and asset uploads are unchanged.
+- **Measured basis:** 11,382 request bodies parsed during one full run: largest list 40, deepest nesting 5, 99.9th-percentile size 2.7 KB, largest legitimate body about 8 KB (a 200-row import). The only bodies over the new limits were the two deliberate negative tests (201 and 60,000 rows).
+- **No route-specific body limits were added.** The measurements show typical bodies are small, but they do not prove a worst case per route (for example a 200-row import with long fields can legitimately be tens of KB), and the guard, not the byte size, is what neutralises the advisory's attack. Choosing byte limits without a schema-derived maximum would be a guess, so the global 256 KB limit stays, with the existing dedicated limits.
+- **`allowedProviders`** is capped at 20 in `src/app/aiService.ts`.
+- **Tests:** `test/arrayBounds.test.ts`, 13 tests (pure check; ordinary requests; exactly 200 rows accepted; 201 and 60,000 refused with the guard's code and nothing stored, not even an audit row; the guard on a second route; depth 12 vs 13 and a 5,000-deep hostile body; malformed, empty and wrong-content-type bodies; unauthenticated caller; asset and credential limits; the `allowedProviders` cap). With the guard disabled, 4 of them fail. The two older tests that send 201 and 60,000 rows still pass unchanged (they expect 400).
+- **Limitations:** the guard bounds list length and depth only. It does not bound the number of object keys or total node count (those are limited only by the 256 KB body), and it does not remove the vulnerable code. Rate limits are per signed-in principal, so one authenticated user can still send many requests, each now bounded.
+- **Global test timeout:** `vitest.config.ts` now sets `testTimeout: 20000`. The deliberate per-test timeouts (30 s and 40 s in `guidedFlow.dom.test.ts`, 20 s in `credentialsCloseout44b.test.ts`) are kept. No assertion was changed and no test skipped.
+
+### Repeated full-suite runs after sections 8-10 (nothing retried; every run reported)
+
+Each run: `npx vitest run --reporter=json` from the repository on the same Windows machine, which also runs the person's other programs (Chrome, MetaTrader, OneDrive). CPU load was sampled for 4 s just before each run.
+
+| Run | Hook | CPU before | Wall time | Files | Passed | Failed | Skipped | Tests over 5 s | Slowest |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | none | 32% | 134 s | 71 | 1777 | 0 | 20 | 13 | 16.8 s |
+| 2 | network audit | 31% | 163 s | 71 | 1777 | 0 | 20 | 20 | 19.1 s |
+| 3 | none | 37% | 149 s | 71 | 1777 | 0 | 20 | 11 | 16.4 s |
+| 4 | network audit | 28% | 152 s | 71 | 1777 | 0 | 20 | 10 | 18.5 s |
+| 5 | none | 57% | 159 s | 71 | 1777 | 0 | 20 | 17 | 17.7 s |
+
+The slowest test in every run is the same spawned-process test in `evalSafeguards.test.ts`, which has its own deliberate timeout. Network audit (runs 2 and 4): 374 socket events each, 359 to 127.0.0.1, 15 refused by the SSRF guard before connecting, **0 external connections, 0 external DNS lookups**. `npx tsc --noEmit -p .` is clean.
+
+**What this does and does not show.** Five consecutive clean runs at 28-57% background CPU, with 10-20 tests per run taking longer than the old 5 s default, is good evidence that the 20 s global timeout removes the intermittent failures seen earlier (one run with 12 timeouts, one with 15 failures). It is not proof: those failures came during heavier load than any of these five runs, and nobody has yet run the suite under that load again. Backup and restore were not re-run, because nothing in this change touches database or backup logic. The browser scenarios were not re-run, because only the server's JSON parser, one schema and the test configuration changed (no front-end file).
+
+### Pre-commit review of the guard (2026-10-29)
+
+- **Cost of the guard itself:** it walks the already-parsed value once, without recursion, and stops at the first violation. Worst cases measured on inputs within the 256 KB body limit: a 128,000-element array is refused in 0.2 ms, 130,000 nested arrays in 0.4 ms, 40,000 nested objects in 0.1 ms, and the slowest accepted shape (a 25,000-key object) takes about 11 ms. `JSON.parse` itself costs the same as before the guard (up to about 36 ms for 130,000 nested arrays), so the guard adds no new unbounded work. A legal-shaped tree with the widest fan-out measured 21 ms but is 531 KB, so it cannot get past the body limit.
+- **Body-size limit and ordering preserved:** `bodyLimit` values in `src/server/app.ts` are untouched (256 KB default; the credential routes' 8 KB; the asset upload limit) and Fastify enforces them before the parser; an existing test (`launchReadiness.test.ts`) still sees 413 for a 300 KB body. Sign-in, rate limits and the credential routes' `requireJson` check are `onRequest` hooks and run before the parser, unchanged.
+- **Content types:** only `application/json` is parsed into an object. `text/plain` is accepted by Fastify's built-in parser as a plain string, which no list schema accepts (the route answers 400 `validation`); `application/x-www-form-urlencoded`, `multipart/form-data`, `application/octet-stream` and vendor JSON types get 415. A code comment that said all other types are "refused" was corrected.
+- **Audit and failure counting:** a rejected request writes no audit row, the same as a malformed-JSON or schema-validation rejection (the test checks the audit table is unchanged). On the credential routes any non-429 4xx counts toward the person's failure lockout, so a guard rejection counts like any other bad request there.
+- **Reliability under heavier CPU load remains unverified.** Five clean runs at 28-57% background CPU are encouraging, not proof; the earlier timeouts occurred under heavier load that has not been re-tested.

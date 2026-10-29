@@ -7,7 +7,7 @@ Status as of 2026-10-29 (Phase 10 baseline). **Not ready for a public launch.** 
 | # | Blocker | Why it blocks | Status |
 |---|---|---|---|
 | B1 | **No browser sign-in; real identity provider never tested** | Production start requires `AUTH_MODE=oidc`, but the UI has no sign-in flow and only a simulated IdP has been used | Open |
-| B2 | **High `zod` advisory** (GHSA-mrhx-c7xc-m3w5, memory exhaustion on huge arrays) | Denial of service in a multi-tenant deployment | Open: interim mitigation B approved but not yet implemented (plan submitted for review); the Zod 4 migration is mandatory before any public launch |
+| B2 | **High `zod` advisory** (GHSA-mrhx-c7xc-m3w5, memory exhaustion on huge arrays) | Denial of service in a multi-tenant deployment | **Open.** Interim mitigation implemented (list length 200 and depth 12 refused before validation; `allowedProviders` capped at 20; see report section 10). The vulnerable code is still installed: the Zod 4 migration is **mandatory before any public launch** |
 | B3 | **Deployment, TLS, monitoring and off-site backups not in the repo** | The app refuses to start without https origins and HSTS, but nothing provisions them; backups are local files | Open |
 | B4 | **Single-node SQLite** | No horizontal scale or failover | Open (accepted for a small first launch only if B3 is closed) |
 | B5 | **No managed key provider** for stored credentials | Keys live in a local file | Open |
@@ -16,7 +16,7 @@ Status as of 2026-10-29 (Phase 10 baseline). **Not ready for a public launch.** 
 
 ## Other open gaps (not launch-stopping alone)
 
-- Full suite still times out intermittently under heavy machine load (12 timeouts in 1 of 3 recent runs; dozens of tests are near the 5 s default). Proposed: one `testTimeout: 20000` in `vitest.config.ts`, awaiting a decision. The two tests that were individually fixed are fixed.
+- Suite reliability under heavy load is improved but not proven: a global `testTimeout: 20000` is set, and 5 consecutive full runs passed (1777 tests, 71 files) at 28-57% background CPU; earlier timeouts happened under heavier load that has not been re-tested. Keep watching.
 - Browser QA harness lives outside the repo; results cannot be re-run from the repo.
 - No screen-reader or full keyboard audit. (Panel redraw and the 4.4:1 contrast are fixed locally, uncommitted; see the Phase 10 report, section 8.)
 - Dev-toolchain advisories (vitest, vite, esbuild, tinypool); not shipped to production.
@@ -24,7 +24,7 @@ Status as of 2026-10-29 (Phase 10 baseline). **Not ready for a public launch.** 
 
 ## Done and verified (offline)
 
-- [x] Type check clean; 70/70 test files, 1764 passed, 20 skipped by design (2 of 3 latest full runs; see "Other open gaps" for the third).
+- [x] Type check clean; 71/71 test files, 1777 passed, 20 skipped by design (5 of 5 latest full runs; see "Other open gaps" on load).
 - [x] Zero external network connections and DNS lookups across the whole suite.
 - [x] Tenant isolation, default-deny route permissions (139 workspace + 15 organisation routes).
 - [x] Audit events append-only (migration 023); export and per-lead erasure; per-workspace quotas.
