@@ -534,7 +534,7 @@ await vi.waitFor(() => expect((s.ctx.db.prepare("SELECT COUNT(*) n FROM website_
     ui.click(ui.$("site-use"));
     await vi.waitFor(() => expect(ui.$("site-fill-summary").hidden).toBe(false), { timeout: 3000 });
     expect(form(ui).services.value).toBe(before);
-  });
+  }, 30000); // two website analyses and several waits: slow only when the whole suite runs in parallel (3.4-5.0 s there, 2.9 s alone)
 });
 
 describe("the server's record of what a website put in the form", () => {

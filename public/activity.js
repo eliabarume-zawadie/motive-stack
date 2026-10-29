@@ -73,11 +73,16 @@ export function initActivity({ $, h, pill, simBadge, state }) {
   /** Simulated actions are marked: synthetic leads always, and anything that ran while Meta and the CRM are simulated. */
   const simulated = (e) => /^lead\./.test(e.type) || e.detail?.simulated === true || e.detail?.mode === "mock" || (/^execution\./.test(e.type) && state.config && !state.config.live.meta);
 
+  let lastKey = null;
   function render(next) {
     if (next) items = next;
     const root = $("activity-view");
     const group = $("activity-filter").value || "all";
     const shown = items.filter((e) => group === "all" || acGroupOf(e.type) === group);
+    // Redrawn only when what it shows has changed: the 1.5-second refresh would otherwise close any "Details" the person has opened.
+    const key = JSON.stringify([group, state.config?.live?.meta, items]);
+    if (key === lastKey && root.childNodes.length) return;
+    lastKey = key;
     if (!items.length) { root.replaceChildren(h("p", { class: "hint" }, "Nothing has happened in this workspace yet. Saving your Business Brain, analyzing a website or creating a campaign will appear here.")); return; }
     if (!shown.length) { root.replaceChildren(h("p", { class: "hint" }, "No activity of that kind. Choose “Everything” to see all of it.")); return; }
     root.replaceChildren(...shown.map((e) => h("div", { class: "log" },

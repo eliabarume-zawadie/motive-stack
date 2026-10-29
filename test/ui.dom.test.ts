@@ -403,6 +403,24 @@ describe("campaign view shows budget, targeting, decisions, questions and platfo
     expect(v).not.toMatch(/\bfail\b/);
   });
 
+  it("a background refresh does not rebuild a panel that has not changed, so a button is never replaced under the pointer", async () => {
+    const ui = await openPage(server());
+    await withBrain(ui, BRAIN);
+    const find = () => Array.from(ui.$("proposal-view").querySelectorAll("button")).find((b) => /Propose/.test(b.textContent ?? "")) as HTMLButtonElement;
+    await ui.w.refresh(); // the first poll after a change may legitimately redraw once; the steady state is what must be stable
+    const button = find(), campaignPanel = ui.$("campaign-view").firstElementChild, activityRow = ui.$("activity-view").firstElementChild;
+    expect(activityRow).toBeTruthy();
+    expect(button).toBeTruthy();
+    for (let i = 0; i < 3; i++) await ui.w.refresh(); // what the page does every 1.5 seconds
+    expect(find()).toBe(button); // the very same element: a click on it cannot be lost to a rebuild
+    expect(ui.$("campaign-view").firstElementChild).toBe(campaignPanel);
+    expect(ui.$("activity-view").firstElementChild).toBe(activityRow); // and an opened "Details" is not closed by the refresh
+    // a real change still redraws: once the proposal exists the button is replaced by the review card
+    button.click();
+    await vi.waitFor(() => expect($text(ui, "proposal-view")).toMatch(/proposed|NEEDS REVIEW/), { timeout: 4000 });
+    expect(find()).toBeUndefined();
+  });
+
   it("a flagged proposal shows its review reasons and cannot be approved until the reviewer acknowledges them", async () => {
     const ui = await openPage(server());
     // a $1/day ceiling: the starting budget can only equal it, so the brief carries a review flag

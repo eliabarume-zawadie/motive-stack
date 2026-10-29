@@ -34,6 +34,7 @@ const jwtFor = (name: string) => signJwt(rsa, claims({ sub: `idp|${name}`, name 
 const ident = (n: string) => ({ issuer: ISSUER, subject: `idp|${n}`, email: null, displayName: n });
 const ROOMY: CredentialRateLimits = { callerMax: 1000, workspaceMax: 10_000, windowSec: 60, failureMax: 1000, failureWindowSec: 300, lockoutSec: 900, deniedAuditMax: 1000 };
 const b64 = () => randomBytes(KEY_BYTES).toString("base64");
+const SLOW_BUILD_MS = 20_000;
 
 const cleanups: Array<() => void> = [];
 afterEach(() => {
@@ -160,6 +161,9 @@ describe("DEPLOYMENT_ENV", () => {
     expect(buildContext({ db, env: { DEPLOYMENT_ENV: "production" }, keyProvider: managedFake() }).credentials.available).toBe(true);
   });
 
+  // These two tests build 2 and 5 complete servers, each applying every migration to a fresh in-memory database (about 75 ms each when the machine is idle; 0.9 s per test).
+  // That is CPU-bound work with no shared state, so it slows several-fold when the full suite runs many files at once: one of five full runs exceeded the 5 s default (5.9 s).
+  // The timeout is raised for these two tests only; the assertions are unchanged.
   it("production without an approved managed provider: every credential write answers 503, the list says 'not available', nothing is stored", async () => {
     const keyring = { CREDENTIAL_KEYRING: `k1:${b64()}`, CREDENTIAL_ACTIVE_KEY: "k1", CREDENTIAL_ALLOW_LOCAL_KEYRING: "true", DEPLOYMENT_ENV: "production" };
     for (const keys of ["env", new LocalKeyring({ k1: randomBytes(KEY_BYTES) }, "k1")] as const) {
@@ -172,7 +176,7 @@ describe("DEPLOYMENT_ENV", () => {
       expect((await w.list()).body).toEqual({ available: false, credentials: [] });
       expect(count(w.db, "SELECT COUNT(*) n FROM workspace_credentials")).toBe(0);
     }
-  });
+  }, SLOW_BUILD_MS);
 
   it("production WITH a managed provider works end to end; development and test still need the explicit opt-in", async () => {
     const prod = build({ env: { DEPLOYMENT_ENV: "production" }, keys: managedFake() });
@@ -184,7 +188,7 @@ describe("DEPLOYMENT_ENV", () => {
       expect((await build({ env: keyring, keys: "env" }).put("openai", SECRET)).status, `${dep} without opt-in`).toBe(503);
       expect((await build({ env: { ...keyring, CREDENTIAL_ALLOW_LOCAL_KEYRING: "true" }, keys: "env" }).put("openai", SECRET)).status, `${dep} with opt-in`).toBe(201);
     }
-  });
+  }, SLOW_BUILD_MS);
 
   it("startup notes tell the operator the truth without repeating any configured value", () => {
     const key = b64();

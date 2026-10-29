@@ -95,8 +95,14 @@ export function initLeads({ $, h, api, pill, simBadge, can, once, showNotice, st
     } catch { box.hidden = true; }
   }
 
+  // The page re-reads the leads every 1.5 seconds. Rebuilding an unchanged list would replace its buttons and selects (a click can be lost, an open menu closes) and reload the
+  // open lead, wiping what was typed in it. The list is redrawn only when it, the open lead or the person's permission has changed.
+  let lastKey = null;
   function render(leads) {
     const v = $("leads-view");
+    const key = JSON.stringify([leads, openId, can("leads.erase")]);
+    if (key === lastKey && v.childNodes.length) return;
+    lastKey = key;
     if (!leads.length) { v.replaceChildren(h("p", { class: "hint" }, "No leads yet.")); $("lead-detail").hidden = true; return; }
     v.replaceChildren(h("table", {}, h("thead", {}, h("tr", {}, ...["Lead", "Contact", "Status", "CRM sync", ""].map((x) => h("th", {}, x)))),
       h("tbody", {}, leads.map((l) => h("tr", {},

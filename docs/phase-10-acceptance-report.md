@@ -1,6 +1,6 @@
 # Phase 10 acceptance report: offline QA baseline
 
-Date: 2026-10-29. Branch `phases-1-4-master-prd`, HEAD `c0c0f38`. Phases 8 and 9 are implemented and verified but **not committed** (50 pending paths). Nothing was pushed. This report is evidence, not a launch approval: **MotiveStack is not ready for a public launch** (see `docs/launch-checklist.md` for the blockers).
+Date: 2026-10-29. Branch `phases-1-4-master-prd`. Phases 8-10 were committed locally as checkpoint `1a07a0b` (52 paths, on top of `c0c0f38`); the follow-up fixes in section 8 are **uncommitted**, awaiting review. Nothing was pushed. This report is evidence, not a launch approval: **MotiveStack is not ready for a public launch** (see `docs/launch-checklist.md` for the blockers).
 
 Statuses: **Verified** (checked by a command or test whose result is quoted), **Unverified** (not checked, or only checked indirectly), **Deferred** (a known gap, justified), **Blocker** (must be closed before public launch).
 
@@ -21,7 +21,7 @@ Statuses: **Verified** (checked by a command or test whose result is quoted), **
 | Real-browser scenarios 5-15 | headless Edge via CDP, one fresh server and database per scenario | **First attempt: 8 of 11 passed.** After fixing the harness (3.3 and 3.4), all of 5-15 passed on the first attempt of the re-run (5: 24/24, 8: 12/12, 9: 10/10). See 3 |
 | Accessibility scan, scenario 16 | structural probe at 320/390/768/1366 px | No overflow, no heading skips, 1 h1, one labelled nav, no duplicate ids, no positive tabindex. **15 low-contrast elements (4.41:1)**; see 3.5 |
 
-The browser harness lives **outside the repository** (session scratchpad). Its results are real but a reviewer cannot re-run them from the repo. That is listed as a gap.
+(Superseded by section 8 for the items marked fixed there.) The browser harness lives **outside the repository** (session scratchpad). Its results are real but a reviewer cannot re-run them from the repo. That is listed as a gap.
 
 ## 2. Pending changes review (50 paths)
 
@@ -37,7 +37,7 @@ No secrets, generated files, stray dependency changes or out-of-scope edits foun
 
 3.4 **Panels are redrawn under the pointer.** Scenarios 8 and 9 failed because the "Propose a paused draft" button was replaced by a background load between being found and clicked (logged 4 times, plus 1 for "Archive this campaign"). The app is unchanged; the harness now retries and logs. For a person this is a real, minor usability risk (a click lost to a redraw). **Not fixed**; recommended follow-up.
 
-3.5 **Accessibility, structural only (not a formal audit).** Real: warning text `#9a6700` on `#fff3d6` is 4.41:1, just under the 4.5:1 AA threshold (15 elements). The probe's "no focus outline" and "keyboard stuck" readings are artefacts of the probe (script focus does not trigger `:focus-visible`; CSS has a 3 px outline); keyboard order is therefore **Unverified**. No screen-reader testing was done.
+3.5 **Accessibility, structural only (not a formal audit).** Real: warning text `#9a6700` on `#fff3d6` was 4.41:1, just under the 4.5:1 AA threshold (15 elements); a wider scan then found the green `ok` pills at 4.43:1 (32 elements). Both are fixed in section 8. The probe's "no focus outline" and "keyboard stuck" readings are artefacts of the probe (script focus does not trigger `:focus-visible`; CSS has a 3 px outline); keyboard order is therefore **Unverified**. No screen-reader testing was done.
 
 ## 4. The remaining high `zod` advisory (GHSA-mrhx-c7xc-m3w5)
 
@@ -100,3 +100,24 @@ No secrets, generated files, stray dependency changes or out-of-scope edits foun
 ## 7. Changes made during Phase 10
 
 Repository files: this report, `docs/launch-checklist.md`, and one correction in `docs/launch-readiness.md` ("~140" to the exact 139). Nothing else in the repo. All other work (QA scripts, harness fixes, scenario 5 update) is in the session scratchpad, outside the repository. A new backup folder was created under the git-ignored `data/backups/`.
+
+## 8. Follow-up fixes after the checkpoint commit (uncommitted)
+
+Changed files (repository): `public/app.js`, `public/leads.js`, `public/activity.js`, `public/style.css`, `test/ui.dom.test.ts`, `test/credentialsCloseout44b.test.ts`, `test/guidedFlow.dom.test.ts`, and this report and the launch checklist. The browser harness (click helper, scenario 5, retry logging) is **not** in the repository; it lives in the session scratchpad.
+
+| Item | Cause found | Change | Result |
+|---|---|---|---|
+| Lost clicks (application) | The page re-reads everything every 1.5 s and rebuilt the campaign, proposal, lead-list and activity panels even when nothing had changed, replacing buttons and selects under the pointer, closing opened "Details", and reloading the open lead (wiping what was typed in it). | Each panel is redrawn only when the data it shows, the person's permissions, or a pending action has changed (the same pattern `renderDashboardViews` already used). The `once()` guard still prevents double submits. | New DOM regression test passes, and fails when the guard is removed (checked for the proposal and for the activity guard). Browser scenarios 5-15: 11/11 on the first attempt, **0** redraw retries (before: 5 retries across scenarios 8, 9 and 15) |
+| Contrast | `--warn` 4.41:1 and `--ok` 4.43:1 on their tinted backgrounds (light theme) | `--warn` `#9a6700` to `#946200` (4.75:1); `--ok` `#1a7f4b` to `#187a47` (4.74:1). Dark theme already 5.99-7.94:1 | Scenario 16 re-scan: 0 low-contrast elements, 0 horizontal overflow at 320/390/768/1366 px |
+| `credentialsCloseout44b` timeout | CPU-bound work with no shared state or leak: each test builds a full server and applies 23 migrations to a fresh in-memory database (about 75 ms per build; 0.5-0.9 s per test alone, 2.9 s under 8 CPU burners) | 20 s timeout on the two production tests only, with the evidence in a comment; assertions unchanged | Passes alone and in full runs (up to 4.1 s under load) |
+| `guidedFlow` "same website again" timeout | Two website analyses and waits that sum to 23 s inside a 5 s default; 2.9 s alone, 3.4-5.0 s in full runs; reproduced with the **old** `app.js` too, so not caused by the redraw fix | 30 s timeout, matching the six sibling tests in that file | Passes |
+
+Verification (all offline): `npx tsc --noEmit` clean. Three consecutive full-suite runs: run 2 and run 3 **70/70 files, 1764 passed, 20 skipped, 0 failed**; run 1 (the one with the network audit hook, during heavy unrelated load on the machine: CPU was 65% with nothing of this project running, and Chrome, MetaTrader and OneDrive among the top users) had **12 failures, all "timed out in 5000ms"** across six files (guidedFlow 7, launchReadiness 2, authz, experiments, securityBoundary), each of which passes alone. Network audit over run 1: 358 socket events, 343 to 127.0.0.1, 15 refused by the SSRF guard, **0 external connections or DNS lookups**.
+
+**Not resolved:** the suite is still intermittently timing out under heavy machine load because dozens of heavy tests run close to the 5 s Vitest default (about 30 tests exceed 3 s under full-suite load). Fixing them one by one has not been enough. The proposed fix is a single `testTimeout: 20000` in `vitest.config.ts`; it changes no assertion but would let a hung test run for 20 s before failing, so it needs a decision.
+
+No database was reset or migrated in this follow-up; no commit or push was made; no live provider call occurred.
+
+## 9. Residual advisory: `zod`
+
+Unchanged and still open: `zod` 3.25.76, GHSA-mrhx-c7xc-m3w5 (high). The interim bounded-array mitigation is **proposed, not implemented**; see the plan in the hand-off message. Migrating to Zod 4 remains a **mandatory pre-public-launch task**.

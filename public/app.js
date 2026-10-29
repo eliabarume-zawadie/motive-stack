@@ -65,6 +65,16 @@ function showError(msg) {
 }
 // ---- pending actions: the same action cannot be started twice while it is running ----
 const busy = new Set();
+
+// The page re-reads everything every 1.5 seconds. Rebuilding a panel that has not changed replaces its buttons, so a click that lands during the rebuild is lost (and
+// anything half-typed would be wiped). A panel is therefore redrawn only when what it shows has changed: its data, the person's permissions, or a pending action.
+const lastDrawn = new Map();
+function unchangedSince(panel) {
+  const signature = JSON.stringify([state.campaign, state.permissions, state.role, state.config?.mode, state.config?.live, [...busy]]);
+  if (lastDrawn.get(panel) === signature && panel.childNodes.length) return true;
+  lastDrawn.set(panel, signature);
+  return false;
+}
 function setBusy(controls, on) {
   for (const el of controls) {
     if (!el) continue;
@@ -249,6 +259,7 @@ function lifecycleButtons(c) {
 
 function renderCampaign() {
   const c = state.campaign, v = $("campaign-view");
+  if (unchangedSince(v)) return;
   if (!c) { v.replaceChildren(h("p", { class: "hint" }, "Generate a brief to create a campaign.")); return; }
   const b = c.brief, t = b.targeting || {};
   const ceiling = c.ceilingCents;
@@ -317,6 +328,7 @@ function renderCampaign() {
 function renderProposals() {
   const c = state.campaign, v = $("proposal-view");
   if (v.contains(document.activeElement) && document.activeElement.tagName === "INPUT") return; // don't wipe what the user is typing
+  if (unchangedSince(v)) return;
   if (!c) { v.replaceChildren(h("p", { class: "hint" }, "Select a campaign first.")); return; }
   const open = c.proposals.find((p) => ["proposed", "approved", "executing"].includes(p.status));
   const nodes = [];
