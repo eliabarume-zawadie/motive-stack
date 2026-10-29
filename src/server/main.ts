@@ -1,3 +1,4 @@
+import { productionProblems } from "../deployment.js";
 import { config as loadEnv } from "dotenv";
 import { buildAuthRuntime, loadAuthConfig } from "../auth/config.js";
 import { loadConfig } from "../config.js";
@@ -14,6 +15,11 @@ import { loadSecurityConfig } from "./security.js";
 
 loadEnv({ path: ".env.local" });
 const env = process.env;
+{
+  // Refuse to start a production deployment with a setting that is unsafe in front of the public (see productionProblems in deployment.ts).
+  const problems = productionProblems(env);
+  if (problems.length) { for (const p of problems) console.error(`Refusing to start: ${p}`); process.exit(1); }
+}
 
 const dbPath = env.DATABASE_PATH ?? "./data/motivestack.db";
 const db = openDb(dbPath);

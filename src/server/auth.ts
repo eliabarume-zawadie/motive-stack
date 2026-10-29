@@ -31,6 +31,7 @@ declare module "fastify" {
  */
 export const PUBLIC_ROUTES: ReadonlySet<string> = new Set([
   "GET /api/health", "HEAD /api/health",
+  "GET /api/health/ready", "HEAD /api/health/ready", // readiness for a monitor: says yes or no and which check, nothing else
   "GET /api/config", "HEAD /api/config",
   "POST /api/workspaces",
 ]);

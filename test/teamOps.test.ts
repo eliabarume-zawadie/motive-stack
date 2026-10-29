@@ -322,8 +322,7 @@ describe("isolation", () => {
     expect((await call(w.s.app, "GET", `${b2}/work-items`, other.token)).body.workItems).toEqual([]);
     expect((await call(w.s.app, "GET", `${b2}/calendar?from=2030-03-01&to=2030-03-31`, other.token)).body.entries).toEqual([]);
     expect((await call(w.s.app, "GET", `${b2}/inbox`, other.token)).body.assignedToYou).toEqual([]);
-    expect((await call(w.s.app, "GET", `${b2}/ownerships/campaign/${w.cid}`, other.token)).status).toBe(200); // empty record for an id that is not theirs: nothing is revealed
-    expect((await call(w.s.app, "GET", `${b2}/ownerships/campaign/${w.cid}`, other.token)).body).toMatchObject({ ownerUserId: null, reviewerUserId: null });
+    expect((await call(w.s.app, "GET", `${b2}/ownerships/campaign/${w.cid}`, other.token)).status).toBe(404); // another workspace's campaign id is not found, not answered as an empty record
     const id = (await call(w.s.app, "GET", `${w.base}/work-items`, w.viewer.token)).body.workItems[0].id as string;
     expect((await call(w.s.app, "PATCH", `${b2}/work-items/${id}`, other.token, { status: "done" })).status).toBe(404);
     expect((await call(w.s.app, "PUT", `${b2}/ownerships`, other.token, { subjectType: "campaign", subjectId: w.cid, ownerUserId: other.id })).status).toBe(404);

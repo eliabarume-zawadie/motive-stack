@@ -19,6 +19,7 @@ import type { Core } from "./core.js";
 import { DEFAULT_ASSET_LIMITS, type AssetLimits } from "./assets.js";
 import { MockImageProvider, type ImageProvider } from "../creative/image.js";
 import { DEFAULT_CREATIVE_LIMITS, type CreativeLimits } from "./creatives.js";
+import { DEFAULT_QUOTAS, type Quotas } from "./quotas.js";
 import { MemoryAssetStore, type AssetStore } from "../storage/assetStore.js";
 import { DEFAULT_CRAWL, type CrawlConfig } from "../web/crawler.js";
 import type { FetchDeps } from "../web/safeFetch.js";
@@ -107,6 +108,8 @@ export interface AppContext extends Core {
   /** The image generator. Only the offline placeholder exists; no live image provider is wired in this release. */
   imageProvider: ImageProvider;
   creativeLimits: CreativeLimits;
+  /** Per-workspace row limits (see quotas.ts). */
+  quotas: Quotas;
   maxExecutionAttempts: number;
   jobMaxAttempts: number;
   backoffMs: (attempt: number) => number;
@@ -135,6 +138,7 @@ export interface BuildOptions {
   assetLimits?: Partial<AssetLimits>;
   imageProvider?: ImageProvider;
   creativeLimits?: Partial<CreativeLimits>;
+  quotas?: Partial<Quotas>;
 }
 
 const positiveInt = (env: Record<string, string | undefined>, name: string): number | null => {
@@ -197,6 +201,7 @@ export function buildContext(o: BuildOptions): AppContext {
     assetLimits: { ...DEFAULT_ASSET_LIMITS, ...(o.assetLimits ?? {}) },
     imageProvider: o.imageProvider ?? new MockImageProvider(),
     creativeLimits: { ...DEFAULT_CREATIVE_LIMITS, ...(o.creativeLimits ?? {}) },
+    quotas: { ...DEFAULT_QUOTAS, ...(o.quotas ?? {}) },
     maxExecutionAttempts: 3,
     jobMaxAttempts: 5,
     backoffMs: o.backoffMs ?? ((n) => Math.min(1000 * 2 ** n, 30_000)),

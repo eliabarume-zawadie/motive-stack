@@ -13,6 +13,7 @@ import { AppError, conflict, notFound } from "./errors.js";
 import { enqueueJob, RetryableError, type Job } from "./jobs.js";
 import { closeWorkItemsFor, notify, ownershipOf, reviewerFor } from "./teamOps.js";
 import { newId, safeError } from "./util.js";
+import { assertQuota } from "./quotas.js";
 import { separationOutcome, type SeparationOutcome } from "./workspacePolicy.js";
 import { getBrain } from "./workspaces.js";
 
@@ -164,9 +165,10 @@ export function suggestConcepts(c: Core, wsId: string, campaignId: string) {
 
 const visualKey = (k: Concept) => JSON.stringify([k.visualDescription, k.palette.background, k.palette.foreground, k.palette.accent]);
 
-export function createCreative(c: Core, wsId: string, actor: string, campaignId: string, input: unknown) {
+export function createCreative(c: AppContext, wsId: string, actor: string, campaignId: string, input: unknown) {
   const body = CreativeCreateSchema.parse(input);
   const camp = getCampaignRow(c, wsId, campaignId);
+  assertQuota(c, wsId, "creatives");
   const id = newId("crt");
   const at = iso(c);
   c.db.transaction(() => {

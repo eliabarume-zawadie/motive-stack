@@ -64,7 +64,8 @@ describe("public routes are narrow and explicit", () => {
     expect((await call(s.app, "POST", "/api/workspaces", { payload: { name: "Open Signup" } })).status).toBe(201);
     expect((await s.app.inject({ method: "GET", url: "/" })).statusCode).toBe(200);
     expect((await s.app.inject({ method: "GET", url: "/app.js" })).statusCode).toBe(200);
-    expect([...PUBLIC_ROUTES].sort()).toEqual(["GET /api/config", "GET /api/health", "HEAD /api/config", "HEAD /api/health", "POST /api/workspaces"]);
+    (await call(s.app, "GET", "/api/health/ready")).status === 200 || expect.fail("readiness must answer without credentials");
+    expect([...PUBLIC_ROUTES].sort()).toEqual(["GET /api/config", "GET /api/health", "GET /api/health/ready", "HEAD /api/config", "HEAD /api/health", "HEAD /api/health/ready", "POST /api/workspaces"]); // readiness (Phase 9) is the only addition: it says yes or no and which check failed
   });
   it("answers an unknown /api path with 404 and no data", async () => {
     const s = boot();
@@ -299,7 +300,7 @@ describe("migration 004 is additive", () => {
     db.prepare("INSERT INTO workspaces (id, name, token_hash, created_at) VALUES ('ws_old', 'Old Co', 'hash-old', '2026-01-01')").run();
     const cols = "id, name, token_hash, meta_account_id, created_at";
     const before = db.prepare(`SELECT ${cols} FROM workspaces`).all();
-    expect(migrate(db)).toEqual(["004_users.sql", "005_memberships.sql", "006_meta_accounts.sql", "007_credentials.sql", "008_drop_credential_hint.sql", "009_website_analysis.sql", "010_website_content_hash.sql", "011_ai_reservations.sql", "012_reservation_state_and_fill_ledger.sql", "013_campaign_plans.sql", "014_lead_status_job_retries.sql", "015_organizations_permissions.sql", "016_brand_kit_assets.sql", "017_plans_lifecycle.sql", "018_creative_studio.sql", "019_team_operations.sql", "020_lead_lineage_forms.sql", "021_experiments_learnings.sql"]);
+    expect(migrate(db)).toEqual(["004_users.sql", "005_memberships.sql", "006_meta_accounts.sql", "007_credentials.sql", "008_drop_credential_hint.sql", "009_website_analysis.sql", "010_website_content_hash.sql", "011_ai_reservations.sql", "012_reservation_state_and_fill_ledger.sql", "013_campaign_plans.sql", "014_lead_status_job_retries.sql", "015_organizations_permissions.sql", "016_brand_kit_assets.sql", "017_plans_lifecycle.sql", "018_creative_studio.sql", "019_team_operations.sql", "020_lead_lineage_forms.sql", "021_experiments_learnings.sql", "022_integration_tests.sql", "023_audit_append_only.sql"]);
     expect(db.prepare(`SELECT ${cols} FROM workspaces`).all()).toEqual(before);
     expect((db.prepare("SELECT COUNT(*) n FROM users").get() as { n: number }).n).toBe(0);
     const approvalCols = (db.prepare("PRAGMA table_info(approvals)").all() as Array<{ name: string }>).map((c) => c.name);

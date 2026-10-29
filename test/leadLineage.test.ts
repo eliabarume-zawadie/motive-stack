@@ -74,7 +74,7 @@ describe("migration 020 on a database that already has leads", () => {
     db.prepare("INSERT INTO lead_events (id, workspace_id, source, event_id, campaign_id, payload, simulated, received_at) VALUES ('e1','ws_a','simulated','x','c1','{}',1,'2026-01-02T00:00:00.000Z')").run();
     db.prepare("INSERT INTO leads (id, workspace_id, campaign_id, lead_event_id, full_name, email, phone, simulated, created_at) VALUES ('l1','ws_a','c1','e1','Sam','s@x.com',NULL,1,'2026-01-02T00:00:01.000Z')").run();
     const before = db.prepare("SELECT id, workspace_id, campaign_id, lead_event_id, full_name, email, phone, simulated, status, crm_status, created_at FROM leads").all();
-    expect(migrate(db)).toEqual(["020_lead_lineage_forms.sql", "021_experiments_learnings.sql"]); // 020 is the migration under test; later ones apply after it
+    expect(migrate(db)).toEqual(["020_lead_lineage_forms.sql", "021_experiments_learnings.sql", "022_integration_tests.sql", "023_audit_append_only.sql"]); // 020 is the migration under test; later ones apply after it
     expect(db.prepare("SELECT id, workspace_id, campaign_id, lead_event_id, full_name, email, phone, simulated, status, crm_status, created_at FROM leads").all()).toEqual(before);
     expect(db.prepare("SELECT origin, campaign_version, attribution_status, attribution_basis, captured_at, consent_status FROM leads").get()).toEqual({ origin: "synthetic", campaign_version: null, attribution_status: "observed", attribution_basis: "simulator", captured_at: "2026-01-02T00:00:00.000Z", consent_status: "not_recorded" });
     expect(migrate(db)).toEqual([]);

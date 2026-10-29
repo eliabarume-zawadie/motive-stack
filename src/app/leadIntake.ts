@@ -5,6 +5,7 @@ import type { AppContext } from "./context.js";
 import { audit, iso, type Core } from "./core.js";
 import { AppError, conflict, notFound } from "./errors.js";
 import { newId } from "./util.js";
+import { assertQuota } from "./quotas.js";
 import { normalizeEmail, normalizePhone } from "../integrations/crm.js";
 
 /**
@@ -54,11 +55,12 @@ export const LeadImportSchema = z.object({
 }).strict();
 export const MAX_IMPORT_ROWS = 200;
 
-export function importLeads(c: Core, wsId: string, actor: string, input: unknown) {
+export function importLeads(c: AppContext, wsId: string, actor: string, input: unknown) {
   const b = LeadImportSchema.parse(input);
   getCampaignRow(c, wsId, b.campaignId);
   // The importer may say which campaign VERSION the leads were captured under (their statement; it must be a version that exists). Without it a lead cannot be assigned to an experiment variant.
   if (b.campaignVersion !== undefined && !c.db.prepare("SELECT 1 FROM campaign_versions WHERE campaign_id = ? AND version = ? AND workspace_id = ?").get(b.campaignId, b.campaignVersion, wsId)) throw notFound("Campaign version");
+  assertQuota(c, wsId, "leads", b.rows.length); // the whole batch must fit: nothing is half-imported
   const batchId = newId("imp");
   const rejected: Array<{ row: number; reason: string }> = [];
   let imported = 0, duplicates = 0;
@@ -148,9 +150,10 @@ export function listForms(c: Core, wsId: string, campaignId: string) {
   return { forms: (c.db.prepare("SELECT id FROM lead_forms WHERE workspace_id = ? AND campaign_id = ? AND archived_at IS NULL ORDER BY created_at DESC, id").all(wsId, campaignId) as Array<{ id: string }>).map((r) => formDetail(c, wsId, r.id)) };
 }
 
-export function createForm(c: Core, wsId: string, actor: string, campaignId: string, input: unknown) {
+export function createForm(c: AppContext, wsId: string, actor: string, campaignId: string, input: unknown) {
   const b = FormCreateSchema.parse(input);
   const camp = getCampaignRow(c, wsId, campaignId);
+  assertQuota(c, wsId, "forms");
   const id = newId("frm");
   c.db.transaction(() => {
     c.db.prepare("INSERT INTO lead_forms (id, workspace_id, campaign_id, name, current_version, created_at, created_by) VALUES (?,?,?,?,1,?,?)").run(id, wsId, campaignId, b.name, iso(c), actor);
@@ -196,6 +199,7 @@ export function testSubmit(c: AppContext, wsId: string, actor: string, formId: s
     if (!c.db.prepare("SELECT 1 FROM creative_versions WHERE creative_id = ? AND version = ? AND workspace_id = ?").get(b.creativeId, cv, wsId)) throw notFound("Creative version");
   }
   const camp = getCampaignRow(c, wsId, f.campaign_id);
+  assertQuota(c, wsId, "leads");
   const eventId = b.eventId ?? newId("evt");
   const evId = newId("lev");
   const ins = c.db.prepare("INSERT OR IGNORE INTO lead_events (id, workspace_id, source, event_id, campaign_id, payload, simulated, received_at) VALUES (?,?,?,?,?,?,1,?)")

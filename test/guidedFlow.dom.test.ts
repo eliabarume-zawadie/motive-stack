@@ -22,7 +22,7 @@ import { decideProposal, requestExecution } from "../src/app/proposals.js";
 
 const HTML = readFileSync("public/index.html", "utf8");
 const asScript = (f: string) => readFileSync(`public/${f}`, "utf8").replace(/^export /gm, "").replace(/^import .*\n/gm, "");
-const SCRIPT = [asScript("recovery.js"), asScript("dashboard.js"), asScript("activity.js"), asScript("claims.js"), asScript("onboarding.js"), asScript("provenance.js"), asScript("goal.js"), asScript("leads.js"), asScript("workspace.js"), asScript("brand.js"), asScript("plans.js"), asScript("creative.js"), asScript("team.js"), asScript("intake.js"), asScript("results.js"), asScript("learning.js"), asScript("aitest.js"), asScript("ai.js"), asScript("app.js")].join("\n");
+const SCRIPT = [asScript("recovery.js"), asScript("dashboard.js"), asScript("activity.js"), asScript("claims.js"), asScript("onboarding.js"), asScript("provenance.js"), asScript("goal.js"), asScript("leads.js"), asScript("workspace.js"), asScript("brand.js"), asScript("plans.js"), asScript("creative.js"), asScript("team.js"), asScript("intake.js"), asScript("results.js"), asScript("learning.js"), asScript("integrations.js"), asScript("privacy.js"), asScript("aitest.js"), asScript("ai.js"), asScript("app.js")].join("\n");
 
 const cleanup: Array<() => void> = [];
 afterEach(() => { while (cleanup.length) cleanup.pop()?.(); });
@@ -580,7 +580,7 @@ describe("Phase 1: permission-denied, loading and error states, and a readable A
   }
   const VIEWER = ["workspace.read", "brain.read", "campaigns.read", "proposals.read", "leads.read", "activity.read", "ai.settings.read", "ai.usage.read", "brandkit.read", "assets.read", "plans.read", "creatives.read", "tasks.read", "forms.read", "analytics.read", "experiments.read", "learnings.read", "recommendations.read"];
   const OPERATOR = [...VIEWER, "jobs.read", "campaigns.generate", "campaigns.edit", "proposals.create", "leads.simulate", "leads.update", "brandkit.write", "assets.write", "plans.write", "creatives.write", "tasks.write", "leads.import", "forms.write", "experiments.write", "learnings.write"];
-  const ADMIN = [...OPERATOR, "proposals.decide", "proposals.execute", "brain.write", "workspace.update", "ai.settings.write", "ai.connection_test", "jobs.retry", "brandkit.approve", "assets.review", "assets.archive", "plans.review", "campaigns.archive", "creatives.review", "assignments.manage", "experiments.decide", "learnings.confirm", "recommendations.decide"];
+  const ADMIN = [...OPERATOR, "proposals.decide", "proposals.execute", "brain.write", "workspace.update", "ai.settings.write", "ai.connection_test", "jobs.retry", "brandkit.approve", "assets.review", "assets.archive", "plans.review", "campaigns.archive", "creatives.review", "assignments.manage", "experiments.decide", "learnings.confirm", "recommendations.decide", "data.export", "leads.erase", "usage.read"];
   const disabled = (ui: UI, sel: string) => (ui.doc.querySelector(sel) as HTMLButtonElement).disabled;
 
   it("a viewer sees what their role is, every control they cannot use is disabled, and each section says why", async () => {
@@ -1201,4 +1201,47 @@ describe("Phase 1: permission-denied, loading and error states, and a readable A
     await vi.waitFor(() => expect(ui.text("ln-learnings")).toMatch(/HUMAN-CONFIRMED/), { timeout: 5000 });
     expect(ui.text("ln-recs")).toMatch(/derived from records in this workspace/);
   }, 40000);
+
+  it("Integrations: the registry says nothing can reach the outside world, lists exact capabilities and what is not built, runs a SIMULATED self-test, and previews a run without changing anything", async () => {
+    const s = server();
+    const ui = await openPage(s);
+    await ui.createWorkspace();
+    ui.click(ui.$("brain-demo"));
+    ui.submit(ui.$("brain-form"));
+    await vi.waitFor(() => expect(ui.text("brain-version")).toMatch(/Saved \(version 1\)/), { timeout: 4000 });
+    const wsId = (ui.$("ws-select") as HTMLSelectElement).value;
+    const rec = await generateCampaign(s.ctx, wsId, { providerId: "mock", model: "mock-deterministic-1" });
+    const prop = createProposal(s.ctx, wsId, rec.id, "user:proposer");
+    ui.$("ws-select").dispatchEvent(new ui.w.Event("change", { bubbles: true }));
+    await vi.waitFor(() => expect(ui.text("integ-registry")).toMatch(/Nothing here can reach the outside world/), { timeout: 6000 });
+    const r = ui.text("integ-registry");
+    expect(r).toMatch(/Meta is simulated/);
+    expect(r).toMatch(/cannot switch one on/);
+    expect(r).toMatch(/Meta Ads.*SIMULATED/);
+    expect(r).toMatch(/GoHighLevel CRM.*SIMULATED/);
+    expect(r).toMatch(/Credential vault.*DISABLED/);
+    expect(r).toMatch(/Set a real budget or activate a campaign.*NOT BUILT/);
+    expect(r).toMatch(/Future channels \(declared, not built\)/);
+    expect(r).toMatch(/Google Ads.*NOT BUILT/);
+    expect(r).toMatch(/Indicative scopes: ads_management/);
+    expect(r).toMatch(/checked against the vendor's documentation/);
+    expect(r).not.toMatch(/sk-|Bearer /);
+    // there is no control in the registry that turns anything on: the only buttons are self-tests and read-only previews
+    const labels = Array.from(ui.$("integ-registry").querySelectorAll("button")).map((b) => b.textContent);
+    expect(labels.every((l) => /self-test|^Preview/.test(String(l)))).toBe(true);
+
+    const before = JSON.stringify([s.db.prepare("SELECT id, status FROM action_proposals").all(), s.db.prepare("SELECT COUNT(*) n FROM jobs").get()]);
+    ui.click(ui.buttonIn("integ-registry", "Run a simulated self-test"));
+    await vi.waitFor(() => expect(ui.text("integ-registry")).toMatch(/Last test \(SIMULATED\): passed/), { timeout: 5000 });
+    expect(ui.text("integ-registry")).toMatch(/Nothing was contacted/);
+
+    await vi.waitFor(() => expect((ui.$("integ-registry").querySelector("select[aria-label=Proposal]") as HTMLSelectElement | null)?.value).toBe(prop.id), { timeout: 5000 });
+    ui.click(ui.buttonIn("integ-registry", "Preview this proposal's run"));
+    await vi.waitFor(() => expect(ui.text("integ-preview-out")).toMatch(/SIMULATED: the built-in simulator would create a paused draft/), { timeout: 5000 });
+    expect(ui.text("integ-preview-out")).toMatch(/budget sent: no/);
+    expect(ui.text("integ-preview-out")).toMatch(/not everything is met/); // it is only proposed, not approved
+    expect(ui.text("integ-preview-out")).toMatch(/The proposal has been approved/);
+    expect(ui.text("integ-preview-out")).toMatch(/read-only preview. It changed nothing and queued nothing/);
+    expect(JSON.stringify([s.db.prepare("SELECT id, status FROM action_proposals").all(), s.db.prepare("SELECT COUNT(*) n FROM jobs").get()])).toBe(before); // looking changed nothing
+  }, 30000);
 });

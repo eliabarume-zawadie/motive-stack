@@ -36,3 +36,5 @@ No critical or high-severity issue was found in the reviewed code.
 - **Spending ceiling is the app's own estimate**, not the provider's billing limit. Set a limit at the provider too.
 - **Self-approval.** A person who proposes a campaign can also approve it if their role allows. Documented, not blocked.
 - **Live Meta and live CRM** are not enabled and have not been reviewed for production.
+
+**Superseded for launch decisions.** This review covered Phases 1 to 5. The current, evidence-based assessment (all phases, with severities, fixes and open blockers) is [launch-readiness.md](launch-readiness.md); operations are in [operations-runbook.md](operations-runbook.md). Two statements above are updated there: audit immutability is now enforced by the database, and `npm audit` was run (one high production advisory, `zod`, remains).

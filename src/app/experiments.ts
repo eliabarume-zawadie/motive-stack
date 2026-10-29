@@ -3,6 +3,8 @@ import { getCampaignRow } from "./campaigns.js";
 import { audit, iso, type Core } from "./core.js";
 import { AppError, conflict, notFound } from "./errors.js";
 import { newId } from "./util.js";
+import { assertQuota } from "./quotas.js";
+import type { AppContext } from "./context.js";
 
 /**
  * Experiments. A plan (hypothesis, ONE principal variable, audience and placement, variants pinned to exact versions, success metric, duration, minimum data and a decision
@@ -95,9 +97,10 @@ function designWarnings(plan: { principalVariable: string }, vars: VarRow[]): st
   return w;
 }
 
-export function createExperiment(c: Core, wsId: string, actor: string, input: unknown) {
+export function createExperiment(c: AppContext, wsId: string, actor: string, input: unknown) {
   const plan = ExperimentPlanSchema.parse(input);
   const vars = resolveVariants(c, wsId, plan);
+  assertQuota(c, wsId, "experiments");
   const id = newId("exp");
   c.db.transaction(() => {
     c.db.prepare(`INSERT INTO experiments (id, workspace_id, name, status, hypothesis, principal_variable, variable_note, audience_note, placement_note, success_metric, duration_days, min_sample, decision_rule, created_at, created_by)

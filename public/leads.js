@@ -30,6 +30,23 @@ export function initLeads({ $, h, api, pill, simBadge, can, once, showNotice, st
     return sel;
   }
 
+  function eraseControl(d) {
+    if (!can("leads.erase")) return null;
+    const why = h("input", { placeholder: "Why (kept in the audit trail, without any personal detail)", maxlength: "300", "aria-label": "Reason for erasing" });
+    const sure = h("input", { type: "checkbox", "aria-label": "I understand this cannot be undone" });
+    return h("div", { class: "card" }, h("strong", {}, "Erase this person's personal data"),
+      h("p", { class: "hint" }, "Removes the name, e-mail address and phone number from this app, including the simulated CRM copy and the lead's status history. It cannot be undone. The audit trail keeps only that an erasure happened. A backup taken earlier still holds the data until it is retired."),
+      h("div", { class: "actions" }, why, h("label", { class: "chk" }, sure, " I understand this cannot be undone"),
+        h("button", { type: "button", class: "danger", onclick: () => {
+          if (!why.value.trim()) { showNotice("Say why, so the reason is kept."); return; }
+          if (!sure.checked) { showNotice("Tick the box to confirm."); return; }
+          once("lead-erase-" + d.id, [], async () => {
+            try { await api(`/leads/${d.id}/erase`, { method: "POST", body: { reason: why.value.trim() } }); showNotice("The person's personal data was erased."); openId = null; $("lead-detail").hidden = true; } catch { /* shown */ }
+            await reload();
+          });
+        } }, "Erase personal data")));
+  }
+
   function followUpEditor(d) {
     const date = h("input", { type: "date", value: d.followUp.dueDate || "", "aria-label": "Follow-up date", disabled: !can("leads.update") });
     const note = h("input", { value: d.followUp.note || "", maxlength: "300", placeholder: "What to do", "aria-label": "Follow-up note", disabled: !can("leads.update") });
@@ -72,6 +89,7 @@ export function initLeads({ $, h, api, pill, simBadge, can, once, showNotice, st
         d.history.length
           ? h("ul", { class: "plain" }, d.history.map((x) => h("li", {}, `${stamp(x.at)}: ${LEAD_STATUS_LABEL[x.from] || x.from} → ${LEAD_STATUS_LABEL[x.to] || x.to} by ${x.by}`, x.note ? h("div", { class: "muted" }, x.note) : null)))
           : h("p", { class: "hint" }, "No changes yet. The lead arrived as New."),
+        eraseControl(d),
         h("button", { type: "button", class: "secondary", onclick: () => { openId = null; box.hidden = true; } }, "Close"),
       );
     } catch { box.hidden = true; }

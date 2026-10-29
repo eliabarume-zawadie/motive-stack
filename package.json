@@ -22,7 +22,9 @@
     "test:local:ollama": "cross-env LIVE_TESTS=1 LOCAL_TESTS=1 AI_PROVIDER_MODE=local vitest run test/local/ollama.local.test.ts",
     "eval:campaigns": "tsx scripts/eval-campaigns.ts",
     "eval:plan": "tsx scripts/eval-plan.ts",
-    "live:tier-diagnostic": "tsx scripts/live-tier-diagnostic.ts"
+    "live:tier-diagnostic": "tsx scripts/live-tier-diagnostic.ts",
+    "backup": "tsx scripts/backup.ts",
+    "restore:check": "tsx scripts/restore-check.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.134.0",

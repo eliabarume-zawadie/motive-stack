@@ -4,6 +4,8 @@ import { experimentAnalysis } from "./experiments.js";
 import { audit, iso, type Core } from "./core.js";
 import { AppError, conflict, notFound } from "./errors.js";
 import { newId } from "./util.js";
+import { assertQuota } from "./quotas.js";
+import type { AppContext } from "./context.js";
 import { separationOutcome } from "./workspacePolicy.js";
 
 /**
@@ -61,9 +63,10 @@ function checkSource(c: Core, wsId: string, type: string, ref: string | undefine
 }
 
 /** A person writes a learning down. It starts as a suggestion: another person confirms it. */
-export function createLearning(c: Core, wsId: string, actor: string, input: unknown) {
+export function createLearning(c: AppContext, wsId: string, actor: string, input: unknown) {
   const b = LearningCreateSchema.parse(input);
   checkSource(c, wsId, b.sourceType, b.sourceRef);
+  assertQuota(c, wsId, "learnings");
   const id = newId("lrn");
   c.db.transaction(() => {
     c.db.prepare(`INSERT INTO learnings (id, workspace_id, statement, kind, source_type, source_ref, observed_on, confidence, limitations, origin, status, created_at, created_by) VALUES (?,?,?,?,?,?,?,?,?,'human_entered','suggested',?,?)`)
@@ -93,7 +96,8 @@ export function decideLearning(c: Core, wsId: string, id: string, decision: "con
  * Plain rules, no model: turns records into SUGGESTED learnings, once each (a repeat run adds nothing). Every suggestion is low confidence, carries the limits of its
  * evidence, and waits for a person. Approval of a creative is a judgement about fit, not evidence that it performs; an experiment's outcome is a person's judgement.
  */
-export function suggestLearnings(c: Core, wsId: string, actor: string) {
+export function suggestLearnings(c: AppContext, wsId: string, actor: string) {
+  assertQuota(c, wsId, "learnings"); // suggestions stop at the limit too
   let added = 0;
   const today = iso(c).slice(0, 10);
   const add = (dedupe: string, s: { statement: string; kind: string; sourceType: string; sourceRef: string; observedOn: string; limitations: string }) => {

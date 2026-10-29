@@ -8,6 +8,7 @@ import { newId, safeError } from "./util.js";
 import { CrmError, normalizeEmail, normalizePhone } from "../integrations/crm.js";
 import type { SimulatedLeadSchema } from "../domain/schemas.js";
 import { ATTRIBUTION_BASIS_TEXT } from "./leadIntake.js";
+import { assertQuota } from "./quotas.js";
 
 export type SimulatedLead = z.infer<typeof SimulatedLeadSchema>;
 
@@ -28,6 +29,7 @@ export function ingestLeadEvent(
   const launched = c.db.prepare("SELECT 1 FROM external_resources WHERE campaign_id = ? AND workspace_id = ?").get(campaignId, wsId);
   if (!launched) throw conflict("campaign_not_launched", "Create the paused campaign draft before injecting leads");
 
+  assertQuota(c, wsId, "leads");
   const eventId = input.eventId ?? newId("evt");
   const rowId = newId("lev");
   const r = c.db

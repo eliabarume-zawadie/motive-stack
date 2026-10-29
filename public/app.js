@@ -13,6 +13,8 @@ import { initTeam } from "./team.js";
 import { initIntake } from "./intake.js";
 import { initResults } from "./results.js";
 import { initLearning } from "./learning.js";
+import { initIntegrations } from "./integrations.js";
+import { initPrivacy } from "./privacy.js";
 import { initOnboarding } from "./onboarding.js";
 import { initProvenance } from "./provenance.js";
 import { DEMO_BUSINESS, formatRecoveryCode, parseRecoveryCode } from "./recovery.js";
@@ -449,6 +451,8 @@ async function selectWorkspace(id) {
   intakeUi.load();
   resultsUi.load();
   learningUi.load();
+  integrationsUi.load();
+  privacyUi.load();
 }
 
 async function retryJob(id, button) {
@@ -478,6 +482,8 @@ const settingsUi = initWorkspaceSettings({ $, h, api, state, can, once, pill, si
 const fetchFile = async (path) => { const s = session(); const res = await fetch(`/api/workspaces/${s.id}${path}`, { headers: { authorization: Auth.header(s) } }); if (!res.ok) throw new Error("file unavailable"); return res.blob(); };
 const plansUi = initPlans({ $, h, api, state, can, once, pill, usd, showNotice, openCampaign: (id) => openCampaign(id), session, reloadCampaigns: () => refresh() });
 const intakeUi = initIntake({ $, h, api, state, can, once, pill, showNotice, session, reloadLeads: async () => { if (session()) renderLeads(await api("/leads", { quiet: true })); } });
+const privacyUi = initPrivacy({ $, h, api, can, once, pill, showNotice, session, fetchFile });
+const integrationsUi = initIntegrations({ $, h, api, state, can, once, pill, showNotice, session });
 const learningUi = initLearning({ $, h, api, state, can, once, pill, showNotice, session });
 const resultsUi = initResults({ $, h, api, pill, session });
 const teamUi = initTeam({ $, h, api, state, can, once, pill, showNotice, session });

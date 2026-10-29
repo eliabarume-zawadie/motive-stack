@@ -48,6 +48,11 @@
  *   creatives.read               x        x        x      x     creatives, their pictures, checks and history
  *   creatives.write                       x        x      x     make, edit and archive a creative, make or cancel pictures, attach an approved image, send for review
  *   creatives.review                               x      x     approve or reject a creative version
+ *   data.export                                    x      x     download everything this workspace holds, with secrets removed
+ *   leads.erase                                    x      x     erase one lead's personal data (with a reason; recorded in the audit trail by id only)
+ *   usage.read                                     x      x     what the workspace uses against its limits, and its AI cost by provider
+ *   integrations.read                              x      x     the integration registry: states, capabilities, action contracts and why nothing reaches the outside world
+ *   integrations.test                              x      x     run a SIMULATED self-test of a built-in stand-in (a live service is never contacted)
  *   experiments.read             x        x        x      x     experiment plans, variants, recorded results and their analysis
  *   experiments.write                     x        x      x     plan and start experiments, record which variant was used and the results entered
  *   experiments.decide                             x      x     conclude or abandon an experiment (records a decision; changes nothing else)
@@ -122,6 +127,11 @@ export const PERMISSION_MIN_ROLE = {
   "creatives.write": "operator",
   "creatives.review": "admin",
   "leads.import": "operator",
+  "data.export": "admin",
+  "leads.erase": "admin",
+  "usage.read": "admin",
+  "integrations.read": "admin",
+  "integrations.test": "admin",
   "experiments.read": "viewer",
   "experiments.write": "operator",
   "experiments.decide": "admin",
@@ -238,6 +248,13 @@ export const ROUTE_PERMISSIONS: Readonly<Record<string, Permission>> = {
   "POST /api/workspaces/:wid/forms/:fid/versions": "forms.write",
   "POST /api/workspaces/:wid/forms/:fid/test-submission": "leads.simulate",
   "GET /api/workspaces/:wid/analytics": "analytics.read",
+  "GET /api/workspaces/:wid/export": "data.export",
+  "POST /api/workspaces/:wid/leads/:lid/erase": "leads.erase",
+  "GET /api/workspaces/:wid/usage": "usage.read",
+  "GET /api/workspaces/:wid/integrations": "integrations.read",
+  "POST /api/workspaces/:wid/integrations/:aid/test": "integrations.test",
+  "GET /api/workspaces/:wid/proposals/:pid/dry-run": "proposals.read",
+  "GET /api/workspaces/:wid/leads/:lid/crm-dry-run": "leads.read",
   "GET /api/workspaces/:wid/experiments": "experiments.read",
   "POST /api/workspaces/:wid/experiments": "experiments.write",
   "GET /api/workspaces/:wid/experiments/:eid": "experiments.read",

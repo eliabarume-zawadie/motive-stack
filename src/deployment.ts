@@ -27,3 +27,19 @@ export function deploymentEnv(env: Record<string, string | undefined>): Deployme
   if (s.kind === "invalid") throw new Error(`Invalid configuration (DEPLOYMENT_ENV: must be one of ${DEPLOYMENT_ENVS.join(", ")})`);
   return s.kind === "set" ? s.env : null;
 }
+
+/**
+ * Settings a PRODUCTION deployment must have, checked at start-up (only when DEPLOYMENT_ENV=production). Each problem names the variable, never a value. A development or test
+ * process is never affected. This does not make a deployment production-ready: it stops the most dangerous accident, running the shared local-token mode in front of the public.
+ */
+export function productionProblems(env: Record<string, string | undefined>): string[] {
+  if (readDeployment(env).kind !== "set" || deploymentEnv(env) !== "production") return [];
+  const problems: string[] = [];
+  if ((env.AUTH_MODE ?? "workspace_token") !== "oidc") problems.push("AUTH_MODE: production requires oidc. The local workspace token is a shared, admin-equivalent secret with no accounts and must not face the public.");
+  const origins = (env.PUBLIC_ORIGINS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  if (!origins.some((o) => o.startsWith("https://"))) problems.push("PUBLIC_ORIGINS: production requires at least one https origin, so the browser boundary matches how the app is served.");
+  const hsts = Number((env.HSTS_MAX_AGE_SEC ?? "0").trim() || "0");
+  if (!Number.isFinite(hsts) || hsts <= 0) problems.push("HSTS_MAX_AGE_SEC: production requires a value above 0, set once TLS is confirmed.");
+  if (!(env.DATABASE_PATH ?? "").trim()) problems.push("DATABASE_PATH: production requires an explicit database path, so the data is never created in a default working directory.");
+  return problems;
+}

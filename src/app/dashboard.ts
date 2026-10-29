@@ -17,7 +17,7 @@ import { activityView } from "./views.js";
  *   - Error text is reduced to its first line and a fixed length, so no stack trace or long provider message reaches a browser.
  */
 
-const lastAiTest = (db: AppContext["db"], wsId: string): { at: string; ok: boolean; provider: string; model: string; simulated: boolean } | null => {
+export const lastAiTest = (db: AppContext["db"], wsId: string): { at: string; ok: boolean; provider: string; model: string; simulated: boolean } | null => {
   const r = db.prepare("SELECT at, detail FROM audit_events WHERE workspace_id = ? AND type = 'ai.connection_test' ORDER BY id DESC LIMIT 1").get(wsId) as { at: string; detail: string } | undefined;
   if (!r) return null;
   try { const d = JSON.parse(r.detail) as Record<string, unknown>; return { at: r.at, ok: d.ok === true, provider: String(d.provider ?? ""), model: String(d.model ?? ""), simulated: d.provider === "mock" }; } catch { return null; }

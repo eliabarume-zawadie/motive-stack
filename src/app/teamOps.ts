@@ -5,6 +5,8 @@ import { audit, iso, type Core } from "./core.js";
 import { AppError, conflict, notFound } from "./errors.js";
 import { activeMembership, listMembers } from "./memberships.js";
 import { newId } from "./util.js";
+import { assertQuota } from "./quotas.js";
+import type { AppContext } from "./context.js";
 
 /**
  * Team operations: who owns and reviews what, dated work, an inbox of what needs a person, a calendar, and in-app notifications.
@@ -86,6 +88,9 @@ function subjectName(c: Core, wsId: string, type: "campaign" | "creative", id: s
   return r.name;
 }
 
+/** Throws not-found unless this campaign or creative is in this workspace, so a foreign id is never answered as if it existed. */
+export function ownerSubject(c: Core, wsId: string, type: "campaign" | "creative", id: string): string { return subjectName(c, wsId, type, id); }
+
 export function setOwnership(c: Core, wsId: string, actor: string, input: unknown) {
   const b = OwnershipSchema.parse(input);
   const name = subjectName(c, wsId, b.subjectType, b.subjectId);
@@ -145,9 +150,10 @@ export function listWorkItems(c: Core, wsId: string, status?: string) {
   return { workItems: rows.map((r) => workView(c, r)) };
 }
 
-export function createWorkItem(c: Core, wsId: string, actor: string, input: unknown) {
+export function createWorkItem(c: AppContext, wsId: string, actor: string, input: unknown) {
   const b = WorkItemSchema.parse(input);
   const camp = getCampaignRow(c, wsId, b.campaignId);
+  assertQuota(c, wsId, "workItems");
   let creativeName: string | null = null;
   if (b.creativeId) {
     const cr = c.db.prepare("SELECT name, campaign_id FROM creatives WHERE id = ? AND workspace_id = ?").get(b.creativeId, wsId) as { name: string; campaign_id: string } | undefined;

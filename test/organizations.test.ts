@@ -75,7 +75,7 @@ describe("migration 015: organizations, policy and proposer, added to existing d
       campaigns: db.prepare("SELECT id, workspace_id, name, status, current_version, created_at FROM campaigns").all(), // the original columns (later migrations only add columns)
       audit: db.prepare("SELECT COUNT(*) n FROM audit_events").get(),
     };
-    expect(migrate(db)).toEqual(["015_organizations_permissions.sql", "016_brand_kit_assets.sql", "017_plans_lifecycle.sql", "018_creative_studio.sql", "019_team_operations.sql", "020_lead_lineage_forms.sql", "021_experiments_learnings.sql"]);
+    expect(migrate(db)).toEqual(["015_organizations_permissions.sql", "016_brand_kit_assets.sql", "017_plans_lifecycle.sql", "018_creative_studio.sql", "019_team_operations.sql", "020_lead_lineage_forms.sql", "021_experiments_learnings.sql", "022_integration_tests.sql", "023_audit_append_only.sql"]);
     expect(db.prepare("SELECT id, name, token_hash, created_at FROM workspaces ORDER BY id").all()).toEqual(before.ws);
     expect(db.prepare("SELECT id, workspace_id, name, status, current_version, created_at FROM campaigns").all()).toEqual(before.campaigns);
     expect(db.prepare("SELECT COUNT(*) n FROM audit_events").get()).toEqual(before.audit);

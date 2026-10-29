@@ -24,11 +24,15 @@ import { archiveCampaign, completeCampaign, LIFECYCLE_LABEL } from "../app/lifec
 import { budgetPosition } from "../app/budgetCommitments.js";
 import { brandKitVersions, brandKitView, decideBrandKit, saveBrandKit, submitBrandKit } from "../app/brandKit.js";
 import { archiveCreative, attachImportedVariant, cancelRender, checkCreative, createCreative, creativeDetail, decideCreative, listCampaignCreatives, readVariantFile, requestRenders, retryRender, reviseCreative, submitCreative, suggestConcepts } from "../app/creatives.js";
+import { readdirSync } from "node:fs";
+import { eraseLead, exportWorkspace } from "../app/privacy.js";
+import { usageView } from "../app/quotas.js";
+import { integrationsView, leadCrmDryRun, proposalDryRun, runSimulatedTest } from "../app/integrations.js";
 import { abandonExperiment, concludeExperiment, createExperiment, experimentAnalysis, experimentView, listExperiments, recordObservation, recordUsage, replaceDraftPlan, startExperiment } from "../app/experiments.js";
 import { createLearning, decideLearning, decideRecommendation, listLearnings, recommendations, suggestLearnings } from "../app/learnings.js";
 import { createForm, formDetail, importLeads, listForms, listImportBatches, reviseForm, setFollowUp, testSubmit } from "../app/leadIntake.js";
 import { analyticsView } from "../app/analytics.js";
-import { assignees, calendar, createWorkItem, inbox, listNotifications, listWorkItems, markNotificationsRead, ownershipOf, setOwnership, updateWorkItem } from "../app/teamOps.js";
+import { assignees, calendar, createWorkItem, inbox, listNotifications, listWorkItems, markNotificationsRead, ownershipOf, ownerSubject, setOwnership, updateWorkItem } from "../app/teamOps.js";
 import { VIDEO_SUPPORT } from "../creative/video.js";
 import { addAssetVersion, archiveAsset, assetBodyLimit, assetDetail, createAsset, decideAssetVersion, listAssets, readAssetFile, submitAssetVersion } from "../app/assets.js";
 import { CUSTOMIZABLE_PERMISSIONS, PERMISSION_CATALOG } from "../auth/orgAuthz.js";
@@ -59,6 +63,8 @@ const userActorOf = (p: { userId: string; label: string }) => ({ kind: "user" as
 /** The web client talks only to this API. It never receives provider credentials. */
 /** Largest body the credential write routes accept. A secret is at most 4096 characters; this leaves room for JSON and a label. */
 const CREDENTIAL_BODY_LIMIT = 8 * 1024;
+
+const MIGRATION_FILE_COUNT = readdirSync(fileURLToPath(new URL("../db/migrations/", import.meta.url))).filter((f) => f.endsWith(".sql")).length;
 
 export function buildServer(ctx: AppContext, auth: AuthRuntime = workspaceTokenRuntime, extra: { rateLimits?: CredentialRateLimits; claimLimits?: ClaimRateLimits; apiLimits?: ApiRateLimits; security?: SecurityConfig; now?: () => number; /** Tests: a limiter with a small table. */ limiter?: RateLimiter } = {}): FastifyInstance {
   // logger is OFF: request bodies (which carry secrets on the credential routes) are never written to a log.
@@ -132,6 +138,13 @@ export function buildServer(ctx: AppContext, auth: AuthRuntime = workspaceTokenR
 
   // ---- public routes ----
   app.get("/api/health", async () => ({ ok: true }));
+  // Readiness for a load balancer or monitor: can this process reach its database and is it fully migrated? It says yes or no and which check failed, nothing more.
+  app.get("/api/health/ready", async (_req, reply) => {
+    const checks = { database: false, migrations: false };
+    try { ctx.db.prepare("SELECT 1").get(); checks.database = true; const n = (ctx.db.prepare("SELECT COUNT(*) n FROM schema_migrations").get() as { n: number }).n; checks.migrations = n === MIGRATION_FILE_COUNT; } catch { /* a failed check stays false */ }
+    const ok = checks.database && checks.migrations;
+    return reply.status(ok ? 200 : 503).header("cache-control", "no-store").send({ ok, checks });
+  });
 
   // Mode flags only: no keys, no key presence, nothing a browser could use to reach a provider.
   app.get("/api/config", async () => ({
@@ -325,7 +338,7 @@ export function buildServer(ctx: AppContext, auth: AuthRuntime = workspaceTokenR
     ws.get("/work-items", async (req) => listWorkItems(ctx, wid(req), (req.query as { status?: string } | undefined)?.status));
     ws.post("/work-items", async (req, reply) => reply.status(201).send(createWorkItem(ctx, wid(req), az(req).actor.label, req.body)));
     ws.patch("/work-items/:wiid", async (req) => updateWorkItem(ctx, wid(req), az(req).actor.label, p(req, "wiid"), req.body));
-    ws.get("/ownerships/:stype/:sid", async (req) => { const t = p(req, "stype"); if (t !== "campaign" && t !== "creative") throw new AppError(404, "not_found", "Not found"); return ownershipOf(ctx, wid(req), t, p(req, "sid")); });
+    ws.get("/ownerships/:stype/:sid", async (req) => { const t = p(req, "stype"); if (t !== "campaign" && t !== "creative") throw new AppError(404, "not_found", "Not found"); ownerSubject(ctx, wid(req), t, p(req, "sid")); return ownershipOf(ctx, wid(req), t, p(req, "sid")); });
     ws.put("/ownerships", async (req) => setOwnership(ctx, wid(req), az(req).actor.label, req.body));
     ws.get("/notifications", async (req) => listNotifications(ctx, wid(req), me(req)));
     ws.post("/notifications/read-all", async (req) => markNotificationsRead(ctx, wid(req), me(req)));
@@ -359,6 +372,17 @@ export function buildServer(ctx: AppContext, auth: AuthRuntime = workspaceTokenR
     for (const d of ["confirm", "reject", "retire"] as const) ws.post(`/learnings/:lid/${d}`, async (req) => decideLearning(ctx, wid(req), p(req, "lid"), d, req.body, approverOf(req)));
     ws.get("/recommendations", async (req) => recommendations(ctx, wid(req)));
     ws.post("/recommendations/decide", async (req) => { const b = (req.body ?? {}) as { key?: unknown; decision?: unknown; note?: unknown }; if (typeof b.key !== "string" || (b.decision !== "accept" && b.decision !== "dismiss")) throw new AppError(400, "invalid_request", "Send a key and a decision of accept or dismiss"); return decideRecommendation(ctx, wid(req), b.key, b.decision, { note: b.note }, az(req).actor.label); });
+
+    // ---- Integrations: a read-only description, simulated self-tests of built-in stand-ins, and read-only previews. Nothing here can switch an integration on ----
+    ws.get("/integrations", async (req) => integrationsView(ctx, wid(req), (auth.publicConfig as { mode?: string }).mode ?? "workspace_token"));
+    ws.post("/integrations/:aid/test", async (req) => runSimulatedTest(ctx, wid(req), az(req).actor.label, p(req, "aid")));
+    ws.get("/proposals/:pid/dry-run", async (req) => proposalDryRun(ctx, wid(req), p(req, "pid")));
+    ws.get("/leads/:lid/crm-dry-run", async (req) => leadCrmDryRun(ctx, wid(req), p(req, "lid")));
+
+    // ---- Privacy and operations: export (secrets removed), erase one lead's personal data, usage against limits ----
+    ws.get("/export", async (req, reply) => reply.header("cache-control", "no-store").header("content-disposition", `attachment; filename="motivestack-export-${wid(req)}.json"`).send(exportWorkspace(ctx, wid(req), az(req).actor.label)));
+    ws.post("/leads/:lid/erase", async (req) => eraseLead(ctx, wid(req), p(req, "lid"), req.body, az(req).actor.label));
+    ws.get("/usage", async (req) => usageView(ctx, wid(req)));
     ws.put("/policy", async (req) => setPolicy(ctx, az(req).actor, wid(req), req.body));
 
     // ---- AI configuration, usage and explicit connection test ----
