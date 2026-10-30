@@ -13,7 +13,7 @@ function page() {
   const dom = new JSDOM(HTML, { url: "http://localhost/", runScripts: "outside-only" });
   const w = dom.window as unknown as Window & Record<string, any>;
   w.eval(`${SRC}\nwindow.__c = { donut, stackedBars, sparkline };`);
-  return { c: w.__c as Record<string, (o: any) => HTMLElement>, doc: w.document };
+  return { c: w.__c as Record<"donut" | "stackedBars" | "sparkline", (o: any) => HTMLElement>, doc: w.document };
 }
 
 describe("charts", () => {
