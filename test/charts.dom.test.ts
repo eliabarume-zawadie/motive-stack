@@ -23,7 +23,7 @@ describe("charts", () => {
     const arcs = [...fig.querySelectorAll("circle.ch-arc")];
     expect(arcs).toHaveLength(2);
     const lens = arcs.map((a) => Number(a.getAttribute("stroke-dasharray")!.split(" ")[0]));
-    expect(lens[0] + lens[1]).toBeCloseTo(100, 1);
+    expect(lens[0]! + lens[1]!).toBeCloseTo(100, 1);
     expect(lens[0]).toBeCloseTo(70, 1);
     expect(fig.querySelector("svg")!.getAttribute("role")).toBe("img");
     expect(fig.querySelector("svg")!.getAttribute("aria-label")).toBe("Lead sources: Calls 7, Forms 3");
