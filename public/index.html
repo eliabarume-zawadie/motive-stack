@@ -23,6 +23,7 @@
   <symbol id="i-activity" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2"/></symbol>
   <symbol id="i-problems" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5"/></symbol>
   <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
   <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></symbol>
 </svg>
 <a class="skip" href="#main">Skip to content</a>
@@ -38,6 +39,22 @@
       <select id="ws-select"></select>
       <span id="role-pill" class="pill" hidden></span>
     </div>
+    <details id="ws-menu" class="ws-menu">
+      <summary>Workspaces</summary>
+      <div class="ws-menu-panel">
+        <h3>New workspace</h3>
+        <form id="ws-create" class="stack">
+          <label>New workspace name <input name="name" required minlength="2" maxlength="100" placeholder="Sunrise Plumbing"></label>
+          <button type="submit" data-busy-label="Creating...">Create workspace</button>
+        </form>
+        <h3>Open an existing workspace</h3>
+        <form id="ws-open" class="stack" autocomplete="off">
+          <label>Open an existing workspace with its recovery code <input name="code" type="password" required autocomplete="off" spellcheck="false" placeholder="ws_...:msw_..."></label>
+          <button type="submit" class="secondary" data-busy-label="Opening...">Open workspace</button>
+        </form>
+        <p class="hint">A new workspace shows its recovery code once. This browser also remembers it so you stay signed in, but clearing this browser's data removes that copy, so save the code.</p>
+      </div>
+    </details>
     <div class="top-tools">
       <label class="sr" for="jump">Go to a section</label>
       <input id="jump" type="search" list="jump-list" placeholder="Go to a section..." autocomplete="off" spellcheck="false">
@@ -47,6 +64,7 @@
   </header>
   <div id="nav-scrim" class="nav-scrim" hidden></div>
   <nav id="main-nav" class="nav" aria-label="Sections">
+    <a class="new-campaign" href="#s-new-campaign" title="New campaign"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg><span>New campaign</span></a>
     <span class="nav-group" aria-hidden="true">Plan</span>
     <a href="#s-dashboard" title="Home"><svg class="ico" aria-hidden="true"><use href="#i-home"/></svg><span>Home</span></a>
     <a href="#s-brain" title="My business"><svg class="ico" aria-hidden="true"><use href="#i-business"/></svg><span>My business</span></a>
@@ -88,18 +106,6 @@
     <h2>Home</h2>
     <div id="path-view"></div>
     <div id="dash-view"></div>
-    <h3>Workspaces</h3>
-    <div class="grid">
-      <form id="ws-create" class="stack">
-        <label>New workspace name <input name="name" required minlength="2" maxlength="100" placeholder="Sunrise Plumbing"></label>
-        <button type="submit" data-busy-label="Creating...">Create workspace</button>
-      </form>
-      <form id="ws-open" class="stack" autocomplete="off">
-        <label>Open an existing workspace with its recovery code <input name="code" type="password" required autocomplete="off" spellcheck="false" placeholder="ws_...:msw_..."></label>
-        <button type="submit" class="secondary" data-busy-label="Opening...">Open workspace</button>
-      </form>
-    </div>
-    <p class="hint">A new workspace shows its recovery code once. This browser also remembers it so you stay signed in, but clearing this browser's data removes that copy, so save the code.</p>
   </section>
 
   <section id="s-brain">
@@ -279,6 +285,34 @@
 
   <section id="s-campaigns">
     <h2>Campaigns</h2>
+    <p class="lede">Your drafts and proposals in one place: budgets, platform checks and what changed in each version.</p>
+    <p class="page-actions"><a class="btn-link" href="#s-new-campaign">New campaign</a></p>
+    <div id="camp-budget"></div>
+    <div class="split">
+      <div class="split-list">
+        <h3>Campaigns</h3>
+    <div class="list-filter"><label>Search <input id="camp-search" type="search" placeholder="Name or number" maxlength="60"></label> <label>Show <select id="camp-status"><option value="">All</option><option value="draft">Drafts</option><option value="proposed">Waiting for approval</option><option value="approved">Approved</option><option value="launched">Run (simulated)</option></select></label></div>
+        <div id="campaign-list"></div>
+      </div>
+      <div class="split-detail">
+        <div id="campaign-view"></div>
+    <details id="edit-details">
+      <summary>Edit brief (creates a new version)</summary>
+      <form id="edit-form" class="grid">
+        <label>Name <input name="name" required></label>
+        <label>Daily budget (cents) <input name="dailyBudgetCents" type="number" min="1" required></label>
+        <label class="wide">Headlines (one per line, max 40 chars) <textarea name="headlines" rows="3"></textarea></label>
+        <label class="wide">Primary texts (one per line, max 125 chars) <textarea name="primaryTexts" rows="3"></textarea></label>
+        <div class="wide"><button type="submit" data-needs="campaigns.edit" data-busy-label="Saving...">Save as new version</button> <span id="edit-status" class="muted"></span></div>
+      </form>
+    </details>
+      </div>
+    </div>
+  </section>
+
+  <section id="s-new-campaign">
+    <h2>New campaign</h2>
+    <p class="lede">Tell MotiveStack what you want from your marketing and it writes a draft for you to read. Nothing is sent anywhere until you approve it.</p>
     <p class="flag-note role-note" data-for="campaigns.generate" hidden></p>
     <h3 class="first">Choose a marketing goal</h3>
     <fieldset class="goal">
@@ -309,21 +343,6 @@
     </form>
     <p id="plan-error" class="flag-note" role="alert"></p>
     <ul id="plan-list" class="plain"></ul>
-    <h3>Review my proposed campaign</h3>
-    <div class="list-filter"><label>Search <input id="camp-search" type="search" placeholder="Name or number" maxlength="60"></label> <label>Show <select id="camp-status"><option value="">All</option><option value="draft">Drafts</option><option value="proposed">Waiting for approval</option><option value="approved">Approved</option><option value="launched">Run (simulated)</option></select></label></div>
-    <div id="campaign-list"></div>
-    <h3>Campaign details</h3>
-    <div id="campaign-view"></div>
-    <details id="edit-details">
-      <summary>Edit brief (creates a new version)</summary>
-      <form id="edit-form" class="grid">
-        <label>Name <input name="name" required></label>
-        <label>Daily budget (cents) <input name="dailyBudgetCents" type="number" min="1" required></label>
-        <label class="wide">Headlines (one per line, max 40 chars) <textarea name="headlines" rows="3"></textarea></label>
-        <label class="wide">Primary texts (one per line, max 125 chars) <textarea name="primaryTexts" rows="3"></textarea></label>
-        <div class="wide"><button type="submit" data-needs="campaigns.edit" data-busy-label="Saving...">Save as new version</button> <span id="edit-status" class="muted"></span></div>
-      </form>
-    </details>
   </section>
 
   <section id="s-creative">

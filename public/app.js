@@ -594,6 +594,16 @@ function initJump() {
 // "Live setup" is a pointer, not a switch: going live is decided by how the server is configured, so it opens the Integrations tab that says exactly what each connection can do.
 $("banner-live").addEventListener("click", () => document.getElementById("tab-set-integrations")?.click());
 
+// ---- the Workspaces menu in the top bar (new / open): closes on Escape, on a click elsewhere and when a form is sent; opens by itself when there is no workspace ----
+function initWsMenu() {
+  const menu = $("ws-menu");
+  const close = () => { menu.open = false; };
+  document.addEventListener("click", (e) => { if (menu.open && !menu.contains(e.target)) close(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && menu.open) { close(); menu.querySelector("summary").focus(); } });
+  menu.addEventListener("submit", close);
+  if (!state.sessions.length) menu.open = true;
+}
+
 // ---- events ----
 $("ws-select").addEventListener("change", (e) => selectWorkspace(e.target.value));
 
@@ -752,7 +762,7 @@ $("gen-form").addEventListener("submit", async (e) => {
   const status = $("gen-status");
   const btn = e.target.querySelector("button[type=submit]");
   $("gen-error").textContent = "";
-  if (!session()) { $("gen-error").textContent = "Create or open a workspace first (on Home)."; return; }
+  if (!session()) { $("gen-error").textContent = "Create or open a workspace first (Workspaces, in the top bar)."; return; }
   await once("generate", [btn], async () => {
     status.textContent = state.config?.ai?.local
       ? "Generating with the local model. On a CPU this can take a few minutes; keep this page open."
@@ -820,6 +830,7 @@ async function boot() {
   try { state.config = await api("/api/config", { scoped: false, quiet: true }); } catch (e) { showError(`Cannot reach the server: ${e.message}`); return; }
   renderBanner(); aiUi.renderBanner();
   loadSessions(); renderWorkspaces();
+  initWsMenu();
   await selectWorkspace(state.current);
   setInterval(() => { if (!document.hidden) refresh(); }, 1500);
 }

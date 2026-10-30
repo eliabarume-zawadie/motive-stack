@@ -3,6 +3,7 @@
 // Built with textContent only.
 
 const HOME = "s-dashboard";
+const GROUP_OF = { "s-new-campaign": "Create" }; // pages reached from a button rather than a place in the list
 
 let showPage = null; // set by initPages; revealEl uses it to switch pages without waiting for the address change
 
@@ -37,7 +38,7 @@ export function initPages() {
     crumbs.className = "crumbs";
     crumbs.setAttribute("aria-label", "Breadcrumb");
     const mk = (text, cur) => { const s = document.createElement("span"); s.textContent = text; if (cur) s.setAttribute("aria-current", "page"); return s; };
-    crumbs.append(mk(i.group), mk("›"), mk(i.label, true));
+    crumbs.append(mk(GROUP_OF[id] || i.group), mk("›"), mk(i.label, true));
     crumbs.children[1].setAttribute("aria-hidden", "true");
     page.prepend(crumbs);
     const title = page.querySelector("h2");

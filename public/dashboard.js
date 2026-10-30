@@ -65,7 +65,7 @@ export function initDashboard({ $, h, pill, simBadge, usd, state, openCampaign, 
 
   function renderPath(st) {
     const root = $("path-view");
-    if (!st.current) { root.replaceChildren(h("p", { class: "hint" }, "Create a new workspace, or open an existing one, to begin.")); return; }
+    if (!st.current) { root.replaceChildren(h("p", { class: "hint" }, "Use Workspaces in the top bar to create a new workspace or open an existing one, to begin.")); return; }
     const d = st.dash;
     const saved = (st.brainVersion || 0) > 0;
     const analysed = !!st.analysis && st.analysis.status === "ready";
@@ -78,7 +78,7 @@ export function initDashboard({ $, h, pill, simBadge, usd, state, openCampaign, 
         text: analysed ? "Your website was analyzed." : saved ? "Your business is described." : "Tell MotiveStack about your business, from your website or with a few questions." },
       { title: "Review my Business Brain", done: saved, to: "s-brain", cta: "Review and save",
         text: saved ? `Saved (version ${st.brainVersion}). Ads only use what you approved.` : "Check the details and press Save. Ads only use what you approve." },
-      { title: "Choose a marketing goal", done: total > 0, to: "s-campaigns", cta: "Choose a goal",
+      { title: "Choose a marketing goal", done: total > 0, to: "s-new-campaign", cta: "Choose a goal",
         text: total > 0 ? `${total} campaign draft${total === 1 ? "" : "s"} created.` : "Pick what you want (more leads) and create a draft campaign." },
       { title: "Review my proposed campaign", done: proposed, to: "s-campaigns", cta: "Review my campaign",
         text: proposed ? "A campaign was proposed for approval." : total > 0 ? "Read your draft, then propose it for approval." : "Your draft campaign appears here for you to read." },
@@ -111,7 +111,7 @@ export function initDashboard({ $, h, pill, simBadge, usd, state, openCampaign, 
   function renderDashboard(d) {
     const root = $("dash-view");
     if (!d) {
-      root.replaceChildren(h("p", { class: "hint" }, "Create or open a workspace below to see your dashboard."));
+      root.replaceChildren(h("p", { class: "hint" }, "Use Workspaces in the top bar to create or open a workspace and see your dashboard."));
       return;
     }
     const c = d.campaigns;
@@ -192,10 +192,11 @@ export function initDashboard({ $, h, pill, simBadge, usd, state, openCampaign, 
 
   /* ---------------------------------------------------------------- campaign list */
   function renderCampaignList(d) {
+    renderBudgetStrip(d);
     const root = $("campaign-list");
     if (!d) { root.replaceChildren(h("p", { class: "hint" }, "Create or open a workspace first.")); return; }
     const all = d.campaigns.list;
-    if (!all.length) { root.replaceChildren(h("p", { class: "hint" }, "No campaigns yet. Use “Create my campaign draft” above.")); return; }
+    if (!all.length) { root.replaceChildren(h("p", { class: "hint" }, "No campaigns yet. Use “New campaign” to create your first draft.")); return; }
     const q = ($("camp-search")?.value || "").trim().toLowerCase(), want = $("camp-status")?.value || "";
     const kind = (c) => (c.status === "launched_paused" ? "launched" : c.latestProposal?.status === "proposed" ? "proposed" : c.latestProposal?.status === "approved" ? "approved" : "draft");
     const list = all.filter((c) => (!q || c.name.toLowerCase().includes(q) || c.id.toLowerCase().endsWith(q.replace(/^#/, ""))) && (!want || kind(c) === want));
@@ -215,6 +216,19 @@ export function initDashboard({ $, h, pill, simBadge, usd, state, openCampaign, 
           h("button", { type: "button", class: "secondary", onclick: () => openCampaign(c.id) }, selected ? "Showing below" : "Open details"),
           c.latestProposal ? h("button", { type: "button", class: "secondary", onclick: () => goProposal(c.id) }, c.latestProposal.status === "proposed" ? "Review proposal" : "View proposal") : null));
     })));
+  }
+
+  /** The workspace's one daily budget as a strip above the campaign list: limit, committed, left, and a bar of how much is committed. */
+  function renderBudgetStrip(d) {
+    const root = $("camp-budget"), b = d && d.budget;
+    if (!b || b.ceilingCents == null) { root.replaceChildren(); return; }
+    const big = (v, l) => h("div", { class: "stat" }, h("strong", {}, v), h("span", { class: "muted" }, l));
+    const pct = b.ceilingCents > 0 ? Math.min(100, Math.round((b.committedCents / b.ceilingCents) * 100)) : 0;
+    root.replaceChildren(h("div", { class: "card budget-strip" },
+      h("div", { class: "stats" }, big(usd(b.ceilingCents), "daily limit"), big(usd(b.committedCents), "committed"), big(usd(b.availableCents), "left")),
+      h("label", { class: "bar" }, h("span", {}, `${pct}% of the limit is committed`), h("progress", { max: b.ceilingCents, value: Math.min(b.committedCents, b.ceilingCents) })),
+      b.overLimitCents > 0 ? h("p", { class: "flag-note" }, `Over the limit by ${usd(b.overLimitCents)} per day. Nothing new can be approved or run until a campaign is archived or completed, or the limit is raised in My business.`) : null,
+      h("p", { class: "hint" }, "One limit for the whole workspace: every plan and stand-alone campaign counts toward it, once.")));
   }
 
   /* ---------------------------------------------------------------- operations */

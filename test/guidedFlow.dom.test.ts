@@ -302,10 +302,10 @@ describe("the guided business flow (DOM-level)", () => {
   it("labels the campaign step honestly: one goal available, a draft is not sent anywhere", async () => {
     const ui = await openPage(server());
     await ui.createWorkspace();
-    expect(ui.text("s-campaigns")).toMatch(/Choose a marketing goal/);
-    expect(ui.text("s-campaigns")).toMatch(/Get more leads/);
-    expect(ui.text("s-campaigns")).toMatch(/not available in this version/);
-    expect(ui.text("s-campaigns")).toMatch(/Nothing is sent anywhere until you approve/);
+    expect(ui.text("s-new-campaign")).toMatch(/Choose a marketing goal/);
+    expect(ui.text("s-new-campaign")).toMatch(/Get more leads/);
+    expect(ui.text("s-new-campaign")).toMatch(/not available in this version/);
+    expect(ui.text("s-new-campaign")).toMatch(/Nothing is sent anywhere until you approve/);
     expect(ui.$("gen-form").querySelector("button[type=submit]")?.textContent).toBe("Create my campaign draft");
   });
 });
@@ -934,7 +934,7 @@ describe("Phase 1: permission-denied, loading and error states, and a readable A
     ui.click(ui.$("brain-demo"));
     ui.submit(ui.$("brain-form"));
     await vi.waitFor(() => expect(ui.text("brain-version")).toMatch(/Saved \(version 1\)/), { timeout: 4000 });
-    expect(ui.text("s-campaigns")).toMatch(/the plan is never approved as a whole/);
+    expect(ui.text("s-new-campaign")).toMatch(/the plan is never approved as a whole/);
     const f = (ui.$("plan-form") as HTMLFormElement).elements as any;
     f.total.value = "-5"; // a number input cannot hold text, so a negative total stands in for a value the page must refuse
     ui.submit(ui.$("plan-form"));

@@ -496,7 +496,7 @@ describe("navigation drawer (narrow screens)", () => {
 
     toggle.click();
     expect([toggle.getAttribute("aria-expanded"), open(), scrim.hidden]).toEqual(["true", true, false]);
-    expect(ui.doc.activeElement?.getAttribute("href")).toBe("#s-dashboard"); // focus moves into the list
+    expect(ui.doc.activeElement?.getAttribute("href")).toBe("#s-new-campaign"); // focus moves into the list (the New campaign button comes first)
 
     ui.doc.dispatchEvent(new ui.w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     expect([toggle.getAttribute("aria-expanded"), open()]).toEqual(["false", false]);
@@ -669,5 +669,46 @@ describe("pages: every side item is its own page", () => {
     const ui = await openPage(server());
     expect(ui.doc.querySelector(".skip")!.getAttribute("href")).toBe("#main");
     expect(ui.doc.getElementById("main")).not.toBeNull();
+  });
+});
+
+describe("workspace menu and the campaigns pages", () => {
+  it("the Workspaces menu holds the create and open forms, starts open when there is no workspace, and closes on Escape, on a click elsewhere and when a form is sent", async () => {
+    const ui = await openPage(server());
+    const menu = ui.$("ws-menu") as HTMLDetailsElement;
+    expect(menu.contains(ui.$("ws-create")) && menu.contains(ui.$("ws-open"))).toBe(true);
+    expect(ui.$("s-dashboard").contains(ui.$("ws-create"))).toBe(false); // no longer on Home
+    expect(menu.open).toBe(true); // first run: nothing to choose from yet
+    ui.doc.dispatchEvent(new ui.w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(menu.open).toBe(false);
+    menu.open = true;
+    ui.doc.body.click();
+    expect(menu.open).toBe(false);
+    await ui.createWorkspace();
+    expect(menu.open).toBe(false); // sending the form closed it
+    const again = await openPage(server(), ui.storage());
+    expect((again.$("ws-menu") as HTMLDetailsElement).open).toBe(false); // a workspace is remembered, so the menu waits to be opened
+  });
+
+  it("New campaign is its own page (goal, draft and plans), reached from the sidebar button, and Campaigns keeps the list, detail and budget", async () => {
+    const ui = await openPage(server());
+    const button = ui.$("main-nav").querySelector<HTMLAnchorElement>("a.new-campaign")!;
+    expect(button.getAttribute("href")).toBe("#s-new-campaign");
+    button.click();
+    const shown = [...ui.doc.querySelectorAll<HTMLElement>("main > section")].filter((s) => !s.hidden).map((s) => s.id);
+    expect(shown).toEqual(["s-new-campaign"]);
+    expect(ui.$("s-new-campaign").querySelector(".crumbs")!.textContent).toBe("Create\u203aNew campaign");
+    for (const id of ["gen-form", "plan-form", "plan-list"]) expect(ui.$("s-new-campaign").contains(ui.$(id))).toBe(true);
+    for (const id of ["campaign-list", "campaign-view", "camp-budget", "edit-details"]) expect(ui.$("s-campaigns").contains(ui.$(id))).toBe(true);
+  });
+
+  it("Campaigns shows the workspace's daily limit, what is committed and what is left, with a bar, once a limit exists", async () => {
+    const ui = await openPage(server());
+    await ui.createWorkspace();
+    await ui.saveBrain();
+    await vi.waitFor(() => expect(ui.$("camp-budget").textContent).toMatch(/daily limit/), { timeout: 3000 });
+    const bar = ui.$("camp-budget").querySelector("progress")!;
+    expect(Number(bar.getAttribute("value"))).toBeLessThanOrEqual(Number(bar.getAttribute("max")));
+    expect(ui.$("camp-budget").textContent).toMatch(/\d+% of the limit is committed/);
   });
 });
