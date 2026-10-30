@@ -34,7 +34,7 @@ export function initLeads({ $, h, api, pill, simBadge, can, once, showNotice, st
     if (!can("leads.erase")) return null;
     const why = h("input", { placeholder: "Why (kept in the audit trail, without any personal detail)", maxlength: "300", "aria-label": "Reason for erasing" });
     const sure = h("input", { type: "checkbox", "aria-label": "I understand this cannot be undone" });
-    return h("div", { class: "card" }, h("strong", {}, "Erase this person's personal data"),
+    return h("div", { class: "card danger-zone" }, h("strong", {}, "Erase this person's personal data"),
       h("p", { class: "hint" }, "Removes the name, e-mail address and phone number from this app, including the simulated CRM copy and the lead's status history. It cannot be undone. The audit trail keeps only that an erasure happened. A backup taken earlier still holds the data until it is retired."),
       h("div", { class: "actions" }, why, h("label", { class: "chk" }, sure, " I understand this cannot be undone"),
         h("button", { type: "button", class: "danger", onclick: () => {

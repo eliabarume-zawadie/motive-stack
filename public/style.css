@@ -444,3 +444,28 @@ progress::-moz-progress-bar { background: var(--accent-text); }
 #campaign-view > .card > h3 { counter-increment: sec; display: flex; align-items: center; gap: 10px; margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--line); }
 #campaign-view > .card > h3::before { content: counter(sec); display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--info-bg); color: var(--accent-text); font-size: .85rem; }
 @media (max-width: 1000px) { .split { grid-template-columns: minmax(0, 1fr); } .split-list { position: static; max-height: none; } }
+
+/* Leads: the list beside the opened lead, and a danger zone for erasing */
+.split-wide { grid-template-columns: minmax(0, 1fr) minmax(300px, 420px); margin-bottom: 20px; }
+.split-wide .split-list { position: static; max-height: none; overflow: visible; }
+.split-wide .split-detail { position: sticky; top: calc(var(--top-h) + 12px); max-height: calc(100vh - var(--top-h) - 24px); overflow-y: auto; }
+#lead-detail:not([hidden]) ~ #lead-empty { display: none; }
+#lead-empty { padding: 20px; border: 1px dashed var(--line); border-radius: var(--radius-lg); text-align: center; }
+@media (max-width: 1000px) { .split-wide { grid-template-columns: minmax(0, 1fr); } .split-wide .split-detail { position: static; max-height: none; } }
+.panel-card { margin: 0 0 20px; padding: 20px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--card); box-shadow: var(--shadow-1); }
+.panel-card > h3 { margin-top: 0; }
+details.panel-card > summary { font-weight: 700; cursor: pointer; }
+details.panel-card[open] > summary { margin-bottom: 12px; }
+.danger-zone { border-color: var(--bad); background: var(--bad-bg); }
+.danger-zone strong { color: var(--bad); }
+
+/* Brand: the kit as three cards, the assets as a grid of cards */
+.brand-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; align-items: start; }
+.brand-cards > fieldset.card { display: grid; gap: 12px; min-width: 0; margin: 0; }
+.brand-cards legend { padding: 0 8px; font: 700 .8rem var(--font-head); letter-spacing: .08em; text-transform: uppercase; color: var(--accent-text); }
+.kit-actions { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+#asset-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+#asset-list > li { padding: 14px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--card); box-shadow: var(--shadow-1); min-width: 0; }
+
+/* Results: numbered sections */
+#rs-view { counter-reset: rs; }

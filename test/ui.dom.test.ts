@@ -712,3 +712,24 @@ describe("workspace menu and the campaigns pages", () => {
     expect(ui.$("camp-budget").textContent).toMatch(/\d+% of the limit is committed/);
   });
 });
+
+describe("Leads and Brand layouts", () => {
+  it("Leads: the list and the opened lead sit side by side, with an empty prompt while none is open, and the simulate, import and form-definition forms keep their fields", async () => {
+    const ui = await openPage(server());
+    const leads = ui.$("s-leads");
+    expect(leads.querySelector(".split-wide")!.contains(ui.$("leads-view")) && leads.querySelector(".split-wide")!.contains(ui.$("lead-detail"))).toBe(true);
+    expect(ui.$("lead-detail").hidden).toBe(true);
+    expect(ui.$("lead-empty").textContent).toMatch(/Open a lead from the list/);
+    for (const id of ["lead-form", "in-import-form", "in-form-define"]) expect(leads.contains(ui.$(id)), id).toBe(true);
+  });
+
+  it("Brand: the kit form is three cards (voice, visual identity, audience) holding all twelve fields, and the asset upload is a collapsible card", async () => {
+    const ui = await openPage(server());
+    const form = ui.$("kit-form") as HTMLFormElement;
+    expect([...form.querySelectorAll("fieldset.card legend")].map((l) => l.textContent)).toEqual(["Voice", "Visual identity", "Audience, channels and wording"]);
+    const names = [...form.elements].map((e) => (e as HTMLInputElement).name).filter(Boolean);
+    for (const n of ["descriptors", "preferredTerms", "avoidTerms", "ctaStyle", "colors", "typography", "imageStyle", "logoRules", "audiences", "channels", "disclaimers", "notes"]) expect(names, n).toContain(n);
+    expect(ui.$("asset-upload-box").tagName).toBe("DETAILS");
+    expect(ui.$("asset-upload-box").contains(ui.$("asset-form"))).toBe(true);
+  });
+});

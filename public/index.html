@@ -207,20 +207,26 @@
     <p class="flag-note role-note" data-for="brandkit.write" hidden></p>
     <h3 class="first">Brand Kit</h3>
     <div id="kit-status" role="status"></div>
-    <form id="kit-form" class="grid">
-      <label class="wide">Words that describe your voice (one per line) <textarea name="descriptors" rows="2"></textarea></label>
+    <form id="kit-form" class="brand-cards">
+      <fieldset class="card"><legend>Voice</legend>
+      <label>Words that describe your voice (one per line) <textarea name="descriptors" rows="2"></textarea></label>
       <label>Words you like to use (one per line) <textarea name="preferredTerms" rows="3"></textarea></label>
       <label>Words to avoid (one per line) <textarea name="avoidTerms" rows="3"></textarea></label>
-      <label class="wide">How calls to action should sound <input name="ctaStyle" maxlength="200"></label>
-      <label class="wide">Colours (one per line: Name #1A4D8F primary; roles are primary, secondary, accent, neutral, background, text) <textarea name="colors" rows="3"></textarea></label>
+      <label>How calls to action should sound <input name="ctaStyle" maxlength="200"></label>
+      </fieldset>
+      <fieldset class="card"><legend>Visual identity</legend>
+      <label>Colours (one per line: Name #1A4D8F primary; roles are primary, secondary, accent, neutral, background, text) <textarea name="colors" rows="3"></textarea></label>
       <label>Typography guidance <textarea name="typography" rows="2" maxlength="500"></textarea></label>
       <label>Image style <textarea name="imageStyle" rows="2" maxlength="500"></textarea></label>
-      <label class="wide">Logo rules <textarea name="logoRules" rows="2" maxlength="500"></textarea></label>
-      <label class="wide">Who you want to reach (one per line: Name: description. Your own description, not evidence about real customers) <textarea name="audiences" rows="2"></textarea></label>
-      <label class="wide">Channel notes (one per line: Channel: notes) <textarea name="channels" rows="2"></textarea></label>
-      <label class="wide">Disclaimer wording you want shown (one per line, optionally "text | applies to"). This is wording, not a claim about your business. <textarea name="disclaimers" rows="2"></textarea></label>
-      <label class="wide">Notes <textarea name="notes" rows="2" maxlength="1000"></textarea></label>
-      <div class="wide"><button type="submit" id="kit-save" data-needs="brandkit.write" data-busy-label="Saving...">Save Brand Kit</button> <button type="button" id="kit-submit" class="secondary" data-needs="brandkit.write">Submit for review</button></div>
+      <label>Logo rules <textarea name="logoRules" rows="2" maxlength="500"></textarea></label>
+      </fieldset>
+      <fieldset class="card"><legend>Audience, channels and wording</legend>
+      <label>Who you want to reach (one per line: Name: description. Your own description, not evidence about real customers) <textarea name="audiences" rows="2"></textarea></label>
+      <label>Channel notes (one per line: Channel: notes) <textarea name="channels" rows="2"></textarea></label>
+      <label>Disclaimer wording you want shown (one per line, optionally "text | applies to"). This is wording, not a claim about your business. <textarea name="disclaimers" rows="2"></textarea></label>
+      <label>Notes <textarea name="notes" rows="2" maxlength="1000"></textarea></label>
+      </fieldset>
+      <div class="kit-actions"><button type="submit" id="kit-save" data-needs="brandkit.write" data-busy-label="Saving...">Save Brand Kit</button> <button type="button" id="kit-submit" class="secondary" data-needs="brandkit.write">Submit for review</button></div>
     </form>
     <div id="kit-review" class="card" hidden>
       <p id="kit-review-note"></p>
@@ -230,6 +236,7 @@
     <h3>Assets</h3>
     <p class="flag-note role-note" data-for="assets.write" hidden></p>
     <p class="hint">PNG, JPEG or WebP, up to 5 MB. The file type is checked from the file itself. Say where it came from and the right to use it: an asset cannot be approved without that.</p>
+    <details class="panel-card" id="asset-upload-box"><summary>Upload a new asset</summary>
     <form id="asset-form" class="grid">
       <label>File <input type="file" name="file" accept="image/png,image/jpeg,image/webp"></label>
       <label>Name <input name="name" maxlength="120"></label>
@@ -241,7 +248,7 @@
       <label>Licence note <input name="licenseNote" maxlength="300"></label>
       <label>Usage restrictions <input name="usageRestrictions" maxlength="300"></label>
       <div class="wide"><button type="submit" id="asset-upload" data-needs="assets.write" data-busy-label="Uploading...">Upload as a draft</button></div>
-    </form>
+    </form></details>
     <p id="asset-error" class="flag-note" role="alert"></p>
     <p id="asset-usage" class="hint"></p>
     <ul id="asset-list" class="plain"></ul>
@@ -393,43 +400,58 @@
 
   <section id="s-leads">
     <h2>Leads</h2>
+    <p class="lede">Every lead this workspace holds, with where it came from, whether it reached the CRM (a stand-in in this release) and its status history. Synthetic, imported and real leads are always labelled and never mixed.</p>
     <p class="flag-note role-note" data-for="leads.simulate" hidden></p>
-    <form id="lead-form" class="grid">
-      <label>Name <input name="fullName" value="Synthetic Lead" required></label>
-      <label>Email <input name="email" type="email" placeholder="pat@example.com"></label>
-      <label>Phone <input name="phone" placeholder="512-555-0100"></label>
-      <label>Event ID (optional; reuse to test duplicates) <input name="eventId"></label>
-      <div class="wide"><button type="submit" id="lead-btn" data-needs="leads.simulate" data-busy-label="Sending...">Inject synthetic lead</button> <span class="hint" id="lead-hint"></span></div>
-    </form>
-    <div id="leads-view"></div>
-    <div id="lead-detail" class="panel" hidden></div>
-    <h3>Bring in leads from elsewhere</h3>
-    <p class="hint">Leads you already have (a trade-show list, an old spreadsheet). They are labelled <strong>IMPORTED</strong>, kept apart from synthetic and real data, never sent to a CRM and never contacted. Say where they came from: that is recorded, and it is your word, not a verified source. A lead needs a campaign here; one with no campaign cannot be stored yet.</p>
-    <p class="flag-note role-note" data-for="leads.import" hidden></p>
-    <label>Campaign <select id="in-campaign"></select></label>
-    <form id="in-import-form" class="grid">
-      <label class="wide">Where did these leads come from? <input name="sourceNote" maxlength="300" placeholder="e.g. Trade show list, March"></label>
-      <label>Consent <select name="consent"><option value="not_recorded">Not recorded</option><option value="given">The people agreed to be contacted (my statement)</option></select></label>
-      <label class="wide">Paste CSV with a header row (fullName, email, phone, externalId, capturedAt, utm_source, utm_medium, utm_campaign, utm_content, utm_term) or a JSON list. At most 200 per batch. <textarea name="rows" rows="5" spellcheck="false"></textarea></label>
-      <div class="wide"><button type="submit" id="in-import-btn" data-needs="leads.import" data-busy-label="Importing...">Import as IMPORTED leads</button></div>
-    </form>
-    <p id="in-error" class="flag-note" role="alert"></p>
-    <div id="in-result" role="status"></div>
-    <div id="in-batches"></div>
-    <h3>Lead forms (definitions only)</h3>
-    <p class="hint">A form here is a definition: which details it asks for, the privacy notice, the consent wording, why the data is collected and how long it is kept. It is <strong>not published or hosted</strong>: there is no public page, no tracking pixel and nothing is sent. You can submit it as a clearly labelled test.</p>
-    <p class="flag-note role-note" data-for="forms.write" hidden></p>
-    <form id="in-form-define" class="grid">
-      <label>Form name <input name="name" maxlength="80" value="Quote request"></label>
-      <label>Email <select id="in-form-email" name="email"></select></label>
-      <label>Phone <select id="in-form-phone" name="phone"></select></label>
-      <label class="wide">Privacy notice shown to the visitor <textarea name="privacyNotice" rows="2" maxlength="600">We use your details only to reply to your request.</textarea></label>
-      <label class="wide">Consent wording <input name="consentText" maxlength="300" value="I agree to be contacted about my request."></label>
-      <label>Why the data is collected <input name="purpose" maxlength="300" value="Reply to quote requests"></label>
-      <label>How long it is kept <input name="retentionNote" maxlength="300" value="Deleted after 12 months"></label>
-      <div class="wide"><button type="submit" id="in-form-btn" data-needs="forms.write" data-busy-label="Saving...">Save form definition</button></div>
-    </form>
-    <div id="in-forms"></div>
+    <div class="split split-wide">
+      <div class="split-list">
+        <div id="leads-view"></div>
+      </div>
+      <aside class="split-detail">
+        <div id="lead-detail" class="panel" hidden></div>
+        <p id="lead-empty" class="hint">Open a lead from the list to see its details, CRM state and history here.</p>
+      </aside>
+    </div>
+    <div class="panel-card">
+      <h3>Simulate a lead</h3>
+      <form id="lead-form" class="grid">
+        <label>Name <input name="fullName" value="Synthetic Lead" required></label>
+        <label>Email <input name="email" type="email" placeholder="pat@example.com"></label>
+        <label>Phone <input name="phone" placeholder="512-555-0100"></label>
+        <label>Event ID (optional; reuse to test duplicates) <input name="eventId"></label>
+        <div class="wide"><button type="submit" id="lead-btn" data-needs="leads.simulate" data-busy-label="Sending...">Inject synthetic lead</button> <span class="hint" id="lead-hint"></span></div>
+      </form>
+    </div>
+    <div class="panel-card">
+      <h3>Bring in leads from elsewhere</h3>
+      <p class="hint">Leads you already have (a trade-show list, an old spreadsheet). They are labelled <strong>IMPORTED</strong>, kept apart from synthetic and real data, never sent to a CRM and never contacted. Say where they came from: that is recorded, and it is your word, not a verified source. A lead needs a campaign here; one with no campaign cannot be stored yet.</p>
+      <p class="flag-note role-note" data-for="leads.import" hidden></p>
+      <label>Campaign <select id="in-campaign"></select></label>
+      <form id="in-import-form" class="grid">
+        <label class="wide">Where did these leads come from? <input name="sourceNote" maxlength="300" placeholder="e.g. Trade show list, March"></label>
+        <label>Consent <select name="consent"><option value="not_recorded">Not recorded</option><option value="given">The people agreed to be contacted (my statement)</option></select></label>
+        <label class="wide">Paste CSV with a header row (fullName, email, phone, externalId, capturedAt, utm_source, utm_medium, utm_campaign, utm_content, utm_term) or a JSON list. At most 200 per batch. <textarea name="rows" rows="5" spellcheck="false"></textarea></label>
+        <div class="wide"><button type="submit" id="in-import-btn" data-needs="leads.import" data-busy-label="Importing...">Import as IMPORTED leads</button></div>
+      </form>
+      <p id="in-error" class="flag-note" role="alert"></p>
+      <div id="in-result" role="status"></div>
+      <div id="in-batches"></div>
+    </div>
+    <div class="panel-card">
+      <h3>Lead forms (definitions only)</h3>
+      <p class="hint">A form here is a definition: which details it asks for, the privacy notice, the consent wording, why the data is collected and how long it is kept. It is <strong>not published or hosted</strong>: there is no public page, no tracking pixel and nothing is sent. You can submit it as a clearly labelled test.</p>
+      <p class="flag-note role-note" data-for="forms.write" hidden></p>
+      <form id="in-form-define" class="grid">
+        <label>Form name <input name="name" maxlength="80" value="Quote request"></label>
+        <label>Email <select id="in-form-email" name="email"></select></label>
+        <label>Phone <select id="in-form-phone" name="phone"></select></label>
+        <label class="wide">Privacy notice shown to the visitor <textarea name="privacyNotice" rows="2" maxlength="600">We use your details only to reply to your request.</textarea></label>
+        <label class="wide">Consent wording <input name="consentText" maxlength="300" value="I agree to be contacted about my request."></label>
+        <label>Why the data is collected <input name="purpose" maxlength="300" value="Reply to quote requests"></label>
+        <label>How long it is kept <input name="retentionNote" maxlength="300" value="Deleted after 12 months"></label>
+        <div class="wide"><button type="submit" id="in-form-btn" data-needs="forms.write" data-busy-label="Saving...">Save form definition</button></div>
+      </form>
+      <div id="in-forms"></div>
+    </div>
   </section>
 
   <section id="s-results">
