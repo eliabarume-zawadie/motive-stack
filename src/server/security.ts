@@ -33,12 +33,13 @@ const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(["localhost", "127.0.0.1", "
 const STATE_CHANGING: ReadonlySet<string> = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const HOST_RE = /^(\[::1\]|[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?)(?::([0-9]{1,5}))?$/;
 
-/** The content policy for the UI and the API. The UI loads one module script and one stylesheet from this origin and talks only to this origin. */
+/** The content policy for the UI and the API. The UI loads one module script, one stylesheet and its self-hosted fonts from this origin and talks only to this origin. */
 export const CONTENT_SECURITY_POLICY = [
   "default-src 'none'",
   "script-src 'self'",
   "style-src 'self'",
   "img-src 'self'",
+  "font-src 'self'",
   "connect-src 'self'",
   "base-uri 'none'",
   "form-action 'self'",

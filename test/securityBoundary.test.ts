@@ -105,7 +105,7 @@ describe("security headers", () => {
   };
 
   it("the policy is strict: default deny, same-origin scripts, styles and connections, no framing, no plugins, no inline or eval", () => {
-    expect(CONTENT_SECURITY_POLICY).toBe("default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'");
+    expect(CONTENT_SECURITY_POLICY).toBe("default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'");
     expect(CONTENT_SECURITY_POLICY).not.toMatch(/unsafe-inline|unsafe-eval|\*|data:|blob:|https?:/);
   });
 
@@ -400,7 +400,7 @@ describe("the bundled UI and the policy", () => {
     const html = read("index.html");
     expect(html).toContain('<link rel="icon" href="favicon.svg" type="image/svg+xml">');
     expect(readFileSync("public/favicon.svg", "utf8")).toMatch(/^<svg /);
-    const targets = [...html.matchAll(/<a href="#([\w-]+)">/g)].map((m) => m[1]);
+    const targets = [...html.matchAll(/<a href="#([\w-]+)"[^>]*>/g)].map((m) => m[1]);
     expect(targets.length).toBe(13);
     for (const t of targets) expect(html, `nav link #${t} must reach a section`).toMatch(new RegExp(`<section[^>]*id="${t}"`));
   });

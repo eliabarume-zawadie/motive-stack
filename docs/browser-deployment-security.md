@@ -16,7 +16,7 @@ Added in one `onSend` hook (`src/server/security.ts`), so they cover static file
 
 | Header | Value | Why |
 |---|---|---|
-| `Content-Security-Policy` | `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'` | The UI needs exactly: its own module script and stylesheet, and fetches to its own origin. Everything else is denied. No `unsafe-inline`, no `unsafe-eval`, no wildcards, no other origins. `frame-ancestors 'none'` is the single framing policy (no separate `X-Frame-Options`). Tests read `public/` and fail if the UI ever needs an inline script/style, an event-handler attribute, or a third-party URL. |
+| `Content-Security-Policy` | `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'` | The UI needs exactly: its own module script and stylesheet, its own self-hosted fonts (`public/fonts/`), and fetches to its own origin. Everything else is denied. No `unsafe-inline`, no `unsafe-eval`, no wildcards, no other origins. `frame-ancestors 'none'` is the single framing policy (no separate `X-Frame-Options`). Tests read `public/` and fail if the UI ever needs an inline script/style, an event-handler attribute, or a third-party URL. |
 | `X-Content-Type-Options` | `nosniff` | Stops content-type guessing of API JSON or uploaded text. |
 | `Referrer-Policy` | `no-referrer` | Nothing in the UI needs the referrer, and addresses should not leak. |
 | `Cross-Origin-Opener-Policy` | `same-origin` | Isolates the UI's browsing context from windows opened by other sites. |

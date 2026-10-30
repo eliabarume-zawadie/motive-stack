@@ -515,9 +515,10 @@ function initNav() {
   mark(ids[0]);
   if (!("IntersectionObserver" in window)) return;
   const inBand = new Set();
+  const docOrder = [...document.querySelectorAll("main > section")].map((el) => el.id).filter((id) => ids.includes(id));
   const io = new IntersectionObserver((entries) => {
     for (const en of entries) (en.isIntersecting ? inBand.add(en.target.id) : inBand.delete(en.target.id));
-    const current = ids.filter((id) => inBand.has(id)).at(-1);
+    const current = docOrder.filter((id) => inBand.has(id)).at(-1); // the lowest section in the band, in page order (the list's order can differ from the page's)
     if (current) mark(current);
   }, { rootMargin: "-130px 0px -65% 0px", threshold: 0 });
   for (const id of ids) { const el = document.getElementById(id); if (el) io.observe(el); }
