@@ -382,7 +382,7 @@ describe("the bundled UI and the policy", () => {
     expect(html).not.toMatch(/https?:\/\//i);
     const css = read("style.css");
     expect(css).not.toMatch(/@import|url\(\s*["']?(?:https?:|\/\/|data:)/i);
-    for (const f of ["app.js", "ai.js", "dashboard.js", "recovery.js", "onboarding.js", "aitest.js", "claims.js", "activity.js", "provenance.js", "goal.js", "leads.js", "workspace.js", "brand.js", "plans.js", "creative.js", "team.js", "intake.js", "results.js", "learning.js", "integrations.js", "privacy.js"]) {
+    for (const f of ["app.js", "ai.js", "dashboard.js", "recovery.js", "onboarding.js", "aitest.js", "claims.js", "activity.js", "provenance.js", "goal.js", "leads.js", "workspace.js", "brand.js", "plans.js", "creative.js", "team.js", "intake.js", "results.js", "learning.js", "integrations.js", "privacy.js", "charts.js"]) {
       const js = read(f);
       expect(js, f).not.toMatch(/\beval\s*\(|new\s+Function\b|document\.write\b|\.innerHTML\b|\.outerHTML\b|insertAdjacentHTML|setAttribute\(\s*["']style|\.style\.cssText|createElement\(\s*["'](?:script|iframe|object)/);
       expect(js, f).not.toMatch(/https?:\/\//);
