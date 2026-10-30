@@ -207,6 +207,9 @@ export function initOnboarding({ $, h, api, state, showNotice, once, pill, simBa
       $("site-failure-text").textContent = (a.error && a.error.message) || "The analysis did not finish.";
       $("site-retry-ai").hidden = !a.canRetryAi;
     }
+    const status = $("site-status");
+    status.hidden = !(a && a.status === "ready");
+    status.replaceChildren(...(a && a.status === "ready" ? [h("dt", {}, "Connected website"), h("dd", {}, a.site), h("dt", {}, "Last read"), h("dd", {}, stamp(a.completedAt || a.createdAt)), h("dt", {}, "Pages read"), h("dd", {}, String(a.pages.filter((p) => p.status === "read").length))] : []));
     $("site-results").hidden = !(a && a.status === "ready");
     if (a && a.status === "ready") { renderResults(a); if (lastFill) showFillSummary(lastFill.patch, lastFill.result); } else $("site-results").replaceChildren();
     $("site-start").textContent = a && a.status === "ready" ? "Analyze a different website" : "Analyze my website";

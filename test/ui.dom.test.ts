@@ -566,3 +566,51 @@ describe("settings tabs, header signals and results charts", () => {
     expect(ui.$("rs-view").textContent).toMatch(/will appear here once the first lead is recorded/);
   });
 });
+
+describe("My business (Stitch layout)", () => {
+  it("shows an empty slot until the Business Brain is saved, then one card per group of facts with its source, and Edit opens the form at that field", async () => {
+    const ui = await openPage(server());
+    await ui.createWorkspace();
+    expect(ui.$("brain-facts").querySelector(".chart-slot")).not.toBeNull();
+    expect(ui.$("brain-facts").textContent).toMatch(/once you press Save Business Brain/);
+    expect(ui.$("claims-review").textContent).not.toMatch(/null/);
+
+    await ui.saveBrain();
+    await vi.waitFor(() => expect(ui.$("brain-facts").querySelectorAll("article.fact").length).toBeGreaterThanOrEqual(5), { timeout: 3000 });
+    const titles = [...ui.$("brain-facts").querySelectorAll("article.fact h4")].map((e) => e.textContent);
+    expect(titles).toEqual(expect.arrayContaining(["About the business", "Services", "Where and who", "Offer and tone"]));
+    expect(ui.$("brain-facts").querySelector(".fact-src")!.textContent).toMatch(/You entered this|Demo data/);
+    expect(ui.$("brain-facts").querySelector(".facts-bar")!.textContent).toMatch(/6 of 6 core facts filled in/);
+
+    ui.$("brain-details").removeAttribute("open"); // saving opens the details; close them so Edit has something to do
+    ui.$("brain-facts").querySelector<HTMLButtonElement>("article.fact .fact-foot button")!.click();
+    expect(ui.$("brain-details").hasAttribute("open")).toBe(true);
+    expect(ui.doc.activeElement).toBe((ui.$("brain-form") as HTMLFormElement).elements.namedItem("businessName"));
+  });
+
+  it("the two mode cards are the website radios: choosing one shows its panel", async () => {
+    const ui = await openPage(server());
+    await ui.createWorkspace();
+    const yes = ui.$("site-has-yes") as HTMLInputElement, no = ui.$("site-has-no") as HTMLInputElement;
+    expect(yes.closest("label.mode-card")).not.toBeNull();
+    expect(no.closest("label.mode-card")).not.toBeNull();
+    yes.dispatchEvent(new ui.w.Event("change", { bubbles: true }));
+    expect([ui.$("site-yes").hidden, ui.$("site-no").hidden]).toEqual([false, true]);
+    no.dispatchEvent(new ui.w.Event("change", { bubbles: true }));
+    expect([ui.$("site-yes").hidden, ui.$("site-no").hidden]).toEqual([true, false]);
+  });
+
+  it("a line that sounds like a claim needing proof raises 'Needs your confirmation' with a count, and removing it clears the alert", async () => {
+    const ui = await openPage(server());
+    await ui.createWorkspace();
+    const f = (ui.$("brain-form") as HTMLFormElement).elements as any;
+    f.differentiators.value = "Licensed and insured\nThe best technicians in town";
+    f.differentiators.dispatchEvent(new ui.w.Event("input", { bubbles: true }));
+    expect(ui.$("claims-review").textContent).toMatch(/Needs your confirmation \(1 item\)/);
+    expect(ui.$("claims-review").classList.contains("has-flags")).toBe(true);
+    expect(ui.$("claims-review").querySelectorAll("li.claim-row.needs")).toHaveLength(1);
+    ui.$("claims-review").querySelector<HTMLButtonElement>("li.claim-row.needs button")!.click();
+    expect(ui.$("claims-review").textContent).not.toMatch(/Needs your confirmation/);
+    expect(ui.$("claims-review").classList.contains("has-flags")).toBe(false);
+  });
+});

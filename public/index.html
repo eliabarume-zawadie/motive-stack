@@ -105,15 +105,24 @@
   <section id="s-brain">
     <h2>My business</h2>
     <p class="flag-note role-note" data-for="brain.write" hidden></p>
-    <h3 class="first">Step 1. Understand my business</h3>
+    <p class="lede">The facts you confirm here are the only things your ads can say. Choose how MotiveStack should learn about your business.</p>
     <fieldset class="site-q">
-      <legend>Does your business have a website?</legend>
-      <div class="row choices">
-        <label class="chk"><input type="radio" name="has-site" id="site-has-yes" value="yes"> Yes, it has a website</label>
-        <label class="chk"><input type="radio" name="has-site" id="site-has-no" value="no"> No, it does not</label>
+      <legend class="sr">Does your business have a website?</legend>
+      <div class="mode-grid">
+        <label class="mode-card">
+          <input type="radio" name="has-site" id="site-has-yes" value="yes">
+          <span class="mode-head"><strong>Read my website</strong> <span class="pill info">Automated</span></span>
+          <span class="mode-desc">Reads the public pages of your site (text only) and suggests what it found. You approve every finding before it is used.</span>
+        </label>
+        <label class="mode-card">
+          <input type="radio" name="has-site" id="site-has-no" value="no">
+          <span class="mode-head"><strong>Fill in myself</strong> <span class="pill">Manual</span></span>
+          <span class="mode-desc">No website, or you would rather enter the facts yourself? Answer a few short questions. Short answers are fine.</span>
+        </label>
       </div>
     </fieldset>
-    <div id="site-yes" hidden>
+    <div id="site-yes" class="mode-panel" hidden>
+      <dl id="site-status" class="site-status" hidden></dl>
       <form id="site-form" class="stack" novalidate>
         <label>Your website address <input id="site-url" name="url" type="text" inputmode="url" autocomplete="url" spellcheck="false" placeholder="www.example.com" maxlength="2048"></label>
         <details class="what">
@@ -139,7 +148,7 @@
       </div>
       <div id="site-results" hidden></div>
     </div>
-    <div id="site-no" hidden>
+    <div id="site-no" class="mode-panel" hidden>
       <form id="quick-form" class="grid">
         <p class="wide hint">A few quick questions. Short answers are fine, and you can add more later.</p>
         <label class="wide">What is your business called? <input name="businessName" maxlength="100"></label>
@@ -155,11 +164,15 @@
       <button type="button" id="brain-demo" data-needs="brain.write" class="secondary">Load demo business</button>
       <span id="brain-demo-hint" class="hint">Just trying it out? This fills the business details with a fictional business (marked DEMO). Nothing is saved until you press Save.</span>
     </div>
-    <h3>Step 2. Review my Business Brain</h3>
+    <h3>Review my Business Brain</h3>
     <p class="hint">This is what MotiveStack knows about your business. Ads can only use what you approve here.</p>
     <div id="claims-review" class="claims-review card"></div>
+    <div class="section-head"><div><h3>Verified Business Knowledge</h3>
+      <p class="hint">What is saved in your Business Brain, and where each part came from. These facts anchor every campaign headline and ad text.</p></div>
+      <button type="button" id="facts-add" class="secondary small">Add or edit details</button></div>
+    <div id="brain-facts" class="facts"></div>
     <details id="brain-details">
-      <summary>Business details: review and save</summary>
+      <summary>Edit all business details and save</summary>
       <p class="row"><button type="button" id="brain-skip" class="secondary">Fill in myself</button></p>
     <form id="brain-form" class="grid">
       <label>Business name <input name="businessName" required></label>
