@@ -485,3 +485,29 @@ describe("provenance records survive saving the Business Brain form (DOM-level)"
     expect(getBrain(s.ctx, wsId)?.brain.facts.map((f) => [f.text, f.status, f.approvedForMarketing])).toEqual([["Family-run", "owner_approved", true], ["Licensed and bonded", "owner_provided", false]]);
   });
 });
+
+describe("navigation drawer (narrow screens)", () => {
+  it("opens from the menu button and closes on Escape, on a link and on the backdrop, with aria-expanded always matching", async () => {
+    const ui = await openPage(server());
+    const toggle = ui.$("nav-toggle"), chrome = ui.$("chrome"), scrim = ui.$("nav-scrim");
+    const open = () => chrome.classList.contains("nav-open");
+    expect(toggle.getAttribute("aria-controls")).toBe("main-nav");
+    expect([toggle.getAttribute("aria-expanded"), open(), scrim.hidden]).toEqual(["false", false, true]);
+
+    toggle.click();
+    expect([toggle.getAttribute("aria-expanded"), open(), scrim.hidden]).toEqual(["true", true, false]);
+    expect(ui.doc.activeElement?.getAttribute("href")).toBe("#s-dashboard"); // focus moves into the list
+
+    ui.doc.dispatchEvent(new ui.w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect([toggle.getAttribute("aria-expanded"), open()]).toEqual(["false", false]);
+    expect(ui.doc.activeElement).toBe(toggle); // and back to the button
+
+    toggle.click();
+    ui.$("main-nav").querySelector<HTMLAnchorElement>('a[href="#s-leads"]')!.click();
+    expect([toggle.getAttribute("aria-expanded"), open()]).toEqual(["false", false]);
+
+    toggle.click();
+    scrim.click();
+    expect([toggle.getAttribute("aria-expanded"), open(), scrim.hidden]).toEqual(["false", false, true]);
+  });
+});

@@ -83,30 +83,29 @@ html { scroll-behavior: smooth; }
 .skip:focus { left: 8px; top: 8px; z-index: 100; background: var(--card); padding: 8px 12px; border-radius: 6px; }
 .chrome { position: sticky; top: 0; z-index: 50; background: var(--card); border-bottom: 1px solid var(--line); }
 .chrome .top { border-bottom: 0; min-height: var(--top-h); padding-top: 8px; padding-bottom: 8px; }
-.brand { display: flex; align-items: center; gap: 10px; }
+.brand { display: flex; align-items: center; gap: 10px; margin-right: auto; }
+.nav-toggle { padding: 0; width: 44px; height: 44px; display: inline-grid; place-items: center; margin-right: 4px; }
+.nav-scrim { position: fixed; top: var(--top-h); left: 0; right: 0; bottom: 0; z-index: 55; background: rgba(0, 0, 0, .45); }
 .brand-mark { width: 28px; height: 28px; flex: none; }
 .brand h1 { letter-spacing: -.01em; }
-.nav { display: flex; gap: 4px; padding: 0 12px 8px; overflow-x: auto; white-space: nowrap; scrollbar-width: thin; }
-.nav a { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; color: var(--fg); text-decoration: none; font-size: .88rem; border: 1px solid transparent; }
-.nav a:hover { border-color: var(--line); }
-.nav a[aria-current="true"] { background: var(--info-bg); color: var(--accent-text); font-weight: 600; }
-.nav .nav-group { display: none; }
+/* the section list is a dark drawer (opened by the menu button) on narrow screens and a fixed side rail on wide ones; same links, same ids */
+.nav { position: fixed; left: 0; top: var(--top-h); bottom: 0; z-index: 60; width: min(300px, 86vw); display: flex; flex-direction: column; gap: 2px; padding: 8px 12px 24px; overflow-y: auto; background: var(--side-bg); transform: translateX(-100%); visibility: hidden; transition: transform .2s, visibility 0s .2s; }
+.nav-open .nav { transform: none; visibility: visible; transition: transform .2s; }
+.nav a { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 9px 12px; border-radius: var(--radius-md); color: var(--side-fg); text-decoration: none; font-size: .9rem; font-weight: 500; }
+.nav a:hover { background: rgba(255, 255, 255, .07); color: #fff; }
+.nav a[aria-current="true"] { background: var(--side-active); color: #fff; font-weight: 600; }
+.nav a[aria-current="true"] .ico { color: var(--emerald); }
+.nav a:focus-visible { outline-color: #97e646; }
+.nav .nav-group { display: block; padding: 16px 12px 4px; font-size: .7rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: #7f9a99; }
 .ico { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-.nav .ico { display: none; }
 main > section { scroll-margin-top: 80px; }
-/* wide screens: the section list becomes a dark side rail beside the page (same links, same ids) */
+/* wide screens: the drawer becomes a permanent side rail beside the page */
 @media (min-width: 1024px) {
   body { padding-left: var(--side-w); }
   .chrome { margin-left: calc(-1 * var(--side-w)); }
   #errors, #notice { margin-left: calc(var(--side-w) + 16px); }
-  .nav { position: fixed; left: 0; top: var(--top-h); bottom: 0; width: var(--side-w); flex-direction: column; gap: 2px; padding: 8px 12px 24px; overflow-y: auto; white-space: normal; background: var(--side-bg); }
-  .nav .nav-group { display: block; padding: 16px 12px 4px; font-size: .7rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: #7f9a99; }
-  .nav .ico { display: block; }
-  .nav a { flex: none; padding: 9px 12px; border-radius: var(--radius-md); border: 0; color: var(--side-fg); font-weight: 500; }
-  .nav a:hover { background: rgba(255, 255, 255, .07); color: #fff; }
-  .nav a[aria-current="true"] { background: var(--side-active); color: #fff; font-weight: 600; }
-  .nav a[aria-current="true"] .ico { color: var(--emerald); }
-  .nav a:focus-visible { outline-color: #97e646; }
+  .nav { z-index: auto; width: var(--side-w); transform: none; visibility: visible; transition: none; }
+  .nav-toggle, .nav-scrim { display: none !important; }
 }
 /* narrower desktops: icon rail, the label stays available to screen readers and as a tooltip */
 @media (min-width: 1024px) and (max-width: 1199px) {
@@ -220,7 +219,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { border-color
 input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="true"] { border-color: var(--bad); }
 input, select { min-height: 40px; }
 input[type="checkbox"], input[type="radio"] { min-height: 0; accent-color: var(--accent-text); }
-::placeholder { color: var(--muted); opacity: .75; }
+::placeholder { color: var(--muted); opacity: 1; }
 .empty { padding: 24px; text-align: center; color: var(--muted); border: 1px dashed var(--line); border-radius: var(--radius-md); }
 .skeleton { min-height: 1em; border-radius: 6px; background: linear-gradient(90deg, var(--line) 25%, var(--info-bg) 50%, var(--line) 75%); background-size: 200% 100%; animation: shimmer 1.4s ease-in-out infinite; }
 @keyframes shimmer { to { background-position: -200% 0; } }
@@ -294,3 +293,18 @@ details.dev { border: 1px solid var(--line); border-radius: var(--radius-md); pa
 .camp-meta { font-size: .85rem; }
 .actions { gap: 10px; }
 label > input, label > select, label > textarea { margin-top: 2px; }
+
+/* touch screens and phones: every control is at least 44px, checkboxes and radios included */
+@media (pointer: coarse), (max-width: 640px) {
+  button, select, input:not([type="checkbox"]):not([type="radio"]), summary, .attention button.linklike { min-height: 44px; }
+  button.linklike, button.small { display: inline-flex; align-items: center; min-height: 44px; }
+  .chk { min-height: 44px; }
+  .chk input, input[type="checkbox"], input[type="radio"] { width: 24px; height: 24px; }
+}
+
+/* phone top bar: menu button, brand and workspace picker share one row */
+.ws-switch { min-width: 0; }
+@media (max-width: 640px) {
+  .brand h1 .muted { display: none; }
+  .ws-switch select { max-width: 150px; }
+}

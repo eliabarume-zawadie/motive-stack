@@ -9,6 +9,7 @@
 </head>
 <body>
 <svg class="sprite" width="0" height="0" aria-hidden="true" focusable="false">
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
   <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></symbol>
   <symbol id="i-business" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2M3 13h18"/></symbol>
   <symbol id="i-brand" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.6-.7 1.6-1.5 0-.5-.3-.9-.5-1.2-.3-.4-.5-.8-.5-1.3 0-1 .8-1.5 1.7-1.5H17a4 4 0 0 0 4-4c0-4.4-4-8.5-9-8.5z"/><circle cx="7.5" cy="11" r=".6"/><circle cx="11" cy="7.5" r=".6"/><circle cx="16" cy="8.5" r=".6"/></symbol>
@@ -26,6 +27,7 @@
 <a class="skip" href="#s-dashboard">Skip to content</a>
 <div id="chrome" class="chrome">
   <header class="top">
+    <button type="button" id="nav-toggle" class="nav-toggle secondary" aria-controls="main-nav" aria-expanded="false" aria-label="Menu"><svg class="ico" aria-hidden="true"><use href="#i-menu"/></svg></button>
     <div class="brand">
       <img class="brand-mark" src="logo-mark.svg" alt="" width="28" height="28">
       <h1>MotiveStack <span class="muted">local</span></h1>
@@ -36,6 +38,7 @@
       <span id="role-pill" class="pill" hidden></span>
     </div>
   </header>
+  <div id="nav-scrim" class="nav-scrim" hidden></div>
   <nav id="main-nav" class="nav" aria-label="Sections">
     <span class="nav-group" aria-hidden="true">Plan</span>
     <a href="#s-dashboard" title="Home"><svg class="ico" aria-hidden="true"><use href="#i-home"/></svg><span>Home</span></a>

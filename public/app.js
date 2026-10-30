@@ -525,6 +525,22 @@ function initNav() {
   for (const a of links) a.addEventListener("click", () => mark(a.getAttribute("href").slice(1)));
 }
 
+// ---- narrow screens: the section list is a drawer. Wide screens show it as a rail and hide the button, so none of this is reachable there. ----
+function initDrawer() {
+  const chrome = $("chrome"), toggle = $("nav-toggle"), scrim = $("nav-scrim"), nav = $("main-nav");
+  const setOpen = (open, { focus = false } = {}) => {
+    chrome.classList.toggle("nav-open", open);
+    toggle.setAttribute("aria-expanded", String(open));
+    scrim.hidden = !open;
+    if (open) nav.querySelector("a")?.focus();
+    else if (focus) toggle.focus();
+  };
+  toggle.addEventListener("click", () => setOpen(toggle.getAttribute("aria-expanded") !== "true"));
+  scrim.addEventListener("click", () => setOpen(false));
+  nav.addEventListener("click", (e) => { if (e.target.closest("a")) setOpen(false); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && toggle.getAttribute("aria-expanded") === "true") setOpen(false, { focus: true }); });
+}
+
 // ---- events ----
 $("ws-select").addEventListener("change", (e) => selectWorkspace(e.target.value));
 
@@ -745,6 +761,7 @@ $("lead-form").addEventListener("submit", async (e) => {
 // ---- boot ----
 async function boot() {
   initNav();
+  initDrawer();
   try { state.config = await api("/api/config", { scoped: false, quiet: true }); } catch (e) { showError(`Cannot reach the server: ${e.message}`); return; }
   renderBanner(); aiUi.renderBanner();
   loadSessions(); renderWorkspaces();
