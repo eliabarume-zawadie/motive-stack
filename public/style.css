@@ -8,7 +8,7 @@
   --ok: #007a5a; --warn: #b45309; --bad: #b3261e; --on-bad: #ffffff; --sim: #6b3fa0;
   --ok-bg: #e0f4ec; --warn-bg: #fff3d6; --bad-bg: #fde8e6; --sim-bg: #efe7f8; --info-bg: #e1f0f2;
   --accent-hover: #2ed3a0; --accent-press: #009b73; --chart-1: #006864; --chart-2: #45a040; --chart-3: #8c8c8c; --chart-4: #ffbb00; --chart-5: #f6886d;
-  --side-bg: #072b2b; --side-active: #001716; --side-fg: #b7c7cb; --side-w: 240px; --top-h: 56px;
+  --side-bg: #072b2b; --side-active: #001716; --side-fg: #b7c7cb; --side-w: 240px; --top-h: 60px;
   --font-body: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-head: "Plus Jakarta Sans", "Inter", system-ui, sans-serif;
   --radius-sm: 8px; --radius-md: 12px; --radius-lg: 16px;
@@ -308,3 +308,56 @@ label > input, label > select, label > textarea { margin-top: 2px; }
   .brand h1 .muted { display: none; }
   .ws-switch select { max-width: 150px; }
 }
+
+/* Tabs (Settings): a pill track with the selected tab raised, as in the design */
+.tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; margin: 12px 0 16px; background: var(--info-bg); border-radius: var(--radius-md); width: fit-content; max-width: 100%; }
+.tabs [role="tab"] { background: transparent; color: var(--fg); border: 1px solid transparent; box-shadow: none; font-weight: 600; }
+.tabs [role="tab"]:hover { background: var(--card); }
+.tabs [role="tab"][aria-selected="true"] { background: var(--card); border-color: var(--line); box-shadow: var(--shadow-1); color: var(--accent-text); }
+.tab-n { display: inline-grid; place-items: center; width: 22px; height: 22px; margin-right: 6px; border-radius: 50%; background: var(--line); font-size: 12px; }
+.tabs [aria-selected="true"] .tab-n { background: var(--accent); color: var(--accent-fg); }
+
+/* An empty slot where a chart will appear once there is data: dashed, quiet, and clearly not a chart */
+.chart-slot { border-style: dashed; background: transparent; box-shadow: none; }
+.chart-slot::before { content: ""; display: block; width: 56px; height: 56px; margin-bottom: 8px; border: 4px solid var(--line); border-radius: 50%; }
+
+/* Header tools: section search and the attention bell */
+.top-tools { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.top-tools input[type="search"] { width: 220px; max-width: 28vw; }
+.bell { position: relative; display: inline-grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; color: var(--fg); }
+.bell:hover { background: var(--info-bg); }
+.count, .badge { display: inline-block; min-width: 20px; padding: 0 6px; border-radius: 999px; font-size: .7rem; font-weight: 700; line-height: 20px; text-align: center; }
+.bell .count { position: absolute; top: 2px; right: 0; background: var(--bad); color: var(--on-bad); }
+.nav a .badge { margin-left: auto; background: rgba(255, 255, 255, .14); color: #fff; }
+.nav a .badge.warn { background: #ffd766; color: #3a2a00; }
+.nav a .badge.bad { background: var(--bad); color: var(--on-bad); }
+.nav a .badge.sim { background: #d9c8f0; color: #2b1450; letter-spacing: .04em; }
+.banner-link { margin-left: 12px; color: inherit; font-weight: 700; text-decoration: underline; }
+@media (min-width: 1024px) and (max-width: 1199px) {
+  .nav a { position: relative; }
+  .nav a .badge { position: absolute; left: auto; right: 6px; top: 4px; min-width: 16px; padding: 0 4px; line-height: 16px; font-size: .62rem; }
+}
+@media (max-width: 760px) { .top-tools input[type="search"] { display: none; } }
+
+/* Activity as a timeline: a rail with a dot per entry, each entry a card; simulated ones are tinted purple */
+#activity-view { position: relative; padding-left: 22px; }
+#activity-view::before { content: ""; position: absolute; left: 6px; top: 8px; bottom: 8px; width: 2px; background: var(--line); }
+#activity-view .log { position: relative; margin: 0 0 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--card); }
+#activity-view .log::before { content: ""; position: absolute; left: -22px; top: 16px; width: 14px; height: 14px; border-radius: 50%; background: var(--card); border: 3px solid var(--accent-text); }
+#activity-view .log.sim { background: var(--sim-bg); border-color: transparent; }
+#activity-view .log.sim::before { border-color: var(--sim); }
+
+/* Problems and retries: the job counters as tiles */
+#ops-view > .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; }
+#ops-view > .stats .stat { padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--card); box-shadow: var(--shadow-1); }
+
+/* keep the workspace picker and the role pill on one row so the header keeps the height the side rail expects */
+.ws-switch { display: flex; align-items: center; gap: 8px; }
+.ws-switch select { min-width: 0; }
+@media (max-width: 640px) {
+  .brand h1 { display: none; }
+  .ws-switch select { max-width: 120px; }
+  .ws-switch .pill { max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+.ws-switch .pill { white-space: nowrap; flex: none; }
+@media (pointer: coarse), (max-width: 640px) { .banner-link { display: inline-flex; align-items: center; min-height: 44px; } }

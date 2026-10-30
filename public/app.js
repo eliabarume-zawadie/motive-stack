@@ -190,7 +190,7 @@ function renderBanner() {
     c.live.ai ? "AI: LIVE (real provider calls, possibly billed)" : local ? "AI: LOCAL model on this machine (real output, free, nothing leaves this computer)" : "AI: simulated",
     "GoHighLevel: simulated",
   ];
-  b.textContent = anyLive || local
+  $("banner-text").textContent = anyLive || local
     ? `${parts.join(" | ")}. Simulated parts are NOT real results.`
     : "MOCK MODE: Meta, GoHighLevel and AI are all simulated. No real ads, spend, messages or provider calls. Results are NOT real advertising performance.";
 }
@@ -232,6 +232,7 @@ function fillEditForm(c) {
 let lastViewsKey = "";
 function renderDashboardViews() {
   const key = JSON.stringify([state.loading, state.loadError, state.role, state.dash, state.campaignId, state.workspace?.id, state.config?.mode, state.brainVersion, state.analysis?.id, state.analysis?.status, state.current, state.brainMissing, state.analysis?.insights?.filter((i) => i.status === "proposed").length, state.campaign?.brief?.openQuestions?.length], (k, v) => (k === "generatedAt" ? undefined : v));
+  renderSignals();
   if (key === lastViewsKey) return;
   lastViewsKey = key;
   updateGenHint();
@@ -541,6 +542,75 @@ function initDrawer() {
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && toggle.getAttribute("aria-expanded") === "true") setOpen(false, { focus: true }); });
 }
 
+// ---- tabs: any [role=tablist] switches the panels it controls. Arrow keys, Home and End move between tabs. All panels stay in the page, so their content is always there for screen readers and tests. ----
+function initTabs() {
+  for (const list of document.querySelectorAll('[role="tablist"]')) {
+    const tabs = [...list.querySelectorAll('[role="tab"]')];
+    const select = (tab, { focus = false } = {}) => {
+      for (const t of tabs) {
+        const on = t === tab;
+        t.setAttribute("aria-selected", String(on));
+        t.tabIndex = on ? 0 : -1;
+        const panel = document.getElementById(t.getAttribute("aria-controls"));
+        if (panel) panel.hidden = !on;
+      }
+      if (focus) tab.focus();
+    };
+    list.addEventListener("click", (e) => { const t = e.target.closest('[role="tab"]'); if (t) select(t); });
+    list.addEventListener("keydown", (e) => {
+      const i = tabs.indexOf(document.activeElement);
+      if (i < 0) return;
+      const next = { ArrowRight: (i + 1) % tabs.length, ArrowLeft: (i - 1 + tabs.length) % tabs.length, Home: 0, End: tabs.length - 1 }[e.key];
+      if (next === undefined) return;
+      e.preventDefault();
+      select(tabs[next], { focus: true });
+    });
+  }
+}
+
+// ---- header and sidebar signals, all read from the dashboard summary the page already holds: nothing is counted that the server did not report ----
+function renderSignals() {
+  const d = state.dash;
+  const waiting = d ? d.pendingApprovals.length : 0;
+  const problems = d ? d.needsAttention.length + (d.jobs ? d.jobs.attention.length : 0) : 0;
+  const attention = d ? d.attention.length : 0;
+  const set = (key, text, kind) => {
+    const el = document.querySelector(`[data-badge="${key}"]`);
+    if (!el) return;
+    el.hidden = !text;
+    el.textContent = text || "";
+    el.className = `badge${kind ? " " + kind : ""}`;
+  };
+  set("review", waiting ? String(waiting) : "", "warn");
+  set("problems", problems ? String(problems) : "", "bad");
+  set("sim", d && d.leads.simulated > 0 ? "SIM" : "", "sim");
+  const bell = $("bell"), count = $("bell-count");
+  count.hidden = !attention;
+  count.textContent = attention ? String(attention) : "";
+  bell.setAttribute("aria-label", attention ? `Needs your attention: ${attention} item${attention === 1 ? "" : "s"}` : "Needs your attention: nothing right now");
+}
+
+// The "Go to" box: type a section name (the list is the same one as the sidebar, plus the Settings tabs) and press Enter.
+function initJump() {
+  const targets = [...document.querySelectorAll("#main-nav a")].map((a) => ({ label: a.textContent.trim(), href: a.getAttribute("href") }));
+  for (const t of document.querySelectorAll("#set-tabs [role=tab]")) targets.push({ label: `Settings: ${t.textContent.replace(/^\d+\s*/, "").trim()}`, href: "#s-settings", tab: t });
+  $("jump-list").replaceChildren(...targets.map((t) => h("option", { value: t.label })));
+  const go = () => {
+    const q = $("jump").value.trim().toLowerCase();
+    if (!q) return;
+    const hit = targets.find((t) => t.label.toLowerCase() === q) || targets.find((t) => t.label.toLowerCase().includes(q));
+    if (!hit) { showNotice(`No section matches "${$("jump").value.trim()}".`); return; }
+    hit.tab?.click();
+    $("jump").value = "";
+    scrollToEl(document.querySelector(hit.href), "start");
+  };
+  $("jump").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); go(); } });
+  $("jump").addEventListener("change", go);
+}
+
+// "Live setup" is a pointer, not a switch: going live is decided by how the server is configured, so it opens the Integrations tab that says exactly what each connection can do.
+$("banner-live").addEventListener("click", () => document.getElementById("tab-set-integrations")?.click());
+
 // ---- events ----
 $("ws-select").addEventListener("change", (e) => selectWorkspace(e.target.value));
 
@@ -762,6 +832,8 @@ $("lead-form").addEventListener("submit", async (e) => {
 async function boot() {
   initNav();
   initDrawer();
+  initTabs();
+  initJump();
   try { state.config = await api("/api/config", { scoped: false, quiet: true }); } catch (e) { showError(`Cannot reach the server: ${e.message}`); return; }
   renderBanner(); aiUi.renderBanner();
   loadSessions(); renderWorkspaces();

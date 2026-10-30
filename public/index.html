@@ -22,6 +22,7 @@
   <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.7 4H7.3a2 2 0 0 0-1.8 1.1z"/></symbol>
   <symbol id="i-activity" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2"/></symbol>
   <symbol id="i-problems" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0"/></symbol>
   <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></symbol>
 </svg>
 <a class="skip" href="#s-dashboard">Skip to content</a>
@@ -37,6 +38,12 @@
       <select id="ws-select"></select>
       <span id="role-pill" class="pill" hidden></span>
     </div>
+    <div class="top-tools">
+      <label class="sr" for="jump">Go to a section</label>
+      <input id="jump" type="search" list="jump-list" placeholder="Go to a section..." autocomplete="off" spellcheck="false">
+      <datalist id="jump-list"></datalist>
+      <a id="bell" class="bell" href="#s-dashboard" aria-label="Needs your attention: nothing right now"><svg class="ico" aria-hidden="true"><use href="#i-bell"/></svg><span id="bell-count" class="count" hidden></span></a>
+    </div>
   </header>
   <div id="nav-scrim" class="nav-scrim" hidden></div>
   <nav id="main-nav" class="nav" aria-label="Sections">
@@ -47,22 +54,22 @@
     <span class="nav-group" aria-hidden="true">Create</span>
     <a href="#s-campaigns" title="Campaigns"><svg class="ico" aria-hidden="true"><use href="#i-campaign"/></svg><span>Campaigns</span></a>
     <a href="#s-creative" title="Creative"><svg class="ico" aria-hidden="true"><use href="#i-creative"/></svg><span>Creative</span></a>
-    <a href="#s-launch" title="Review & approve"><svg class="ico" aria-hidden="true"><use href="#i-review"/></svg><span>Review &amp; approve</span></a>
+    <a href="#s-launch" title="Review & approve"><svg class="ico" aria-hidden="true"><use href="#i-review"/></svg><span>Review &amp; approve</span><span class="badge" data-badge="review" hidden></span></a>
     <span class="nav-group" aria-hidden="true">Run</span>
-    <a href="#s-leads" title="Leads"><svg class="ico" aria-hidden="true"><use href="#i-leads"/></svg><span>Leads</span></a>
+    <a href="#s-leads" title="Leads"><svg class="ico" aria-hidden="true"><use href="#i-leads"/></svg><span>Leads</span><span class="badge" data-badge="sim" hidden></span></a>
     <a href="#s-results" title="Results"><svg class="ico" aria-hidden="true"><use href="#i-results"/></svg><span>Results</span></a>
     <a href="#s-learning" title="Learning"><svg class="ico" aria-hidden="true"><use href="#i-learning"/></svg><span>Learning</span></a>
     <a href="#s-inbox" title="Inbox"><svg class="ico" aria-hidden="true"><use href="#i-inbox"/></svg><span>Inbox</span></a>
     <span class="nav-group" aria-hidden="true">System</span>
     <a href="#s-activity" title="Activity"><svg class="ico" aria-hidden="true"><use href="#i-activity"/></svg><span>Activity</span></a>
-    <a href="#s-ops" title="Problems & retries"><svg class="ico" aria-hidden="true"><use href="#i-problems"/></svg><span>Problems &amp; retries</span></a>
+    <a href="#s-ops" title="Problems & retries"><svg class="ico" aria-hidden="true"><use href="#i-problems"/></svg><span>Problems &amp; retries</span><span class="badge" data-badge="problems" hidden></span></a>
     <a href="#s-settings" title="Settings"><svg class="ico" aria-hidden="true"><use href="#i-settings"/></svg><span>Settings</span></a>
   </nav>
   <div id="errors" class="errors" role="alert" hidden></div>
   <div id="notice" class="notice" role="status" hidden></div>
 </div>
 
-<div id="banner" class="banner" role="status">Loading mode&hellip;</div>
+<div id="banner" class="banner" role="status"><span id="banner-text">Loading mode&hellip;</span> <a id="banner-live" href="#s-settings" class="banner-link">Live setup</a></div>
 
 <div id="token-panel" class="token-panel" role="alertdialog" aria-labelledby="token-title" hidden>
   <h2 id="token-title">Save your workspace recovery code now</h2>
@@ -415,19 +422,29 @@
     <h2>Settings</h2>
     <p class="flag-note role-note" data-for="ai.settings.write" hidden></p>
     <p><button type="button" id="ws-settings-reload" class="secondary">Reload this page's data</button></p>
-    <h3>This workspace and its people</h3>
-    <div id="ws-people-view"></div>
-    <h3>Meta ad accounts</h3>
-    <div id="ws-meta-view"></div>
-    <h3>AI: status, usage and cost</h3>
-    <div id="ws-usage-view"></div>
-    <h3>Integrations</h3>
-    <div id="integrations-view"></div>
-    <h3>Integration registry</h3>
-    <p class="hint">What each connection really is and exactly what it can do. This describes: it has no switch to turn anything on.</p>
-    <div id="integ-registry"></div>
-    <h3>Data, privacy and usage</h3>
-    <div id="pv-view"></div>
+    <div class="tabs" role="tablist" aria-label="Settings sections" id="set-tabs">
+      <button type="button" role="tab" id="tab-set-integrations" aria-controls="set-integrations" aria-selected="true"><span class="tab-n">1</span> Integrations</button>
+      <button type="button" role="tab" id="tab-set-team" aria-controls="set-team" aria-selected="false" tabindex="-1"><span class="tab-n">2</span> Team &amp; Roles</button>
+      <button type="button" role="tab" id="tab-set-data" aria-controls="set-data" aria-selected="false" tabindex="-1"><span class="tab-n">3</span> Data, Privacy &amp; Usage</button>
+    </div>
+    <div role="tabpanel" id="set-integrations" aria-labelledby="tab-set-integrations">
+      <h3>Integrations</h3>
+      <div id="integrations-view"></div>
+      <h3>Meta ad accounts</h3>
+      <div id="ws-meta-view"></div>
+      <h3>Integration registry</h3>
+      <p class="hint">What each connection really is and exactly what it can do. This describes: it has no switch to turn anything on.</p>
+      <div id="integ-registry"></div>
+    </div>
+    <div role="tabpanel" id="set-team" aria-labelledby="tab-set-team" hidden>
+      <h3>This workspace and its people</h3>
+      <div id="ws-people-view"></div>
+    </div>
+    <div role="tabpanel" id="set-data" aria-labelledby="tab-set-data" hidden>
+      <h3>AI: status, usage and cost</h3>
+      <div id="ws-usage-view"></div>
+      <h3>Data, privacy and usage</h3>
+      <div id="pv-view"></div>
     <details id="dev-mode" class="dev">
     <summary>Developer mode: AI providers, models and test requests</summary>
     <p class="hint">Most people never need this. It controls which AI model is used and lets you try one short request.</p>
@@ -469,6 +486,7 @@
     <h3>Recent AI usage</h3>
     <div id="ai-usage"></div>
     </details>
+    </div>
   </section>
 </main>
 <script src="app.js" type="module"></script>

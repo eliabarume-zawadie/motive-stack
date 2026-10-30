@@ -16,7 +16,7 @@ import { BRAIN } from "./fixtures.js";
 const HTML = readFileSync("public/index.html", "utf8");
 // The page is a set of ES modules; the test evaluates them as one script in jsdom, so `export` and `import` lines are removed (names are unique across the files).
 const asScript = (f: string) => readFileSync(`public/${f}`, "utf8").replace(/^export /gm, "").replace(/^import .*\n/gm, "");
-const AI_JS = [asScript("recovery.js"), asScript("dashboard.js"), asScript("activity.js"), asScript("claims.js"), asScript("onboarding.js"), asScript("provenance.js"), asScript("goal.js"), asScript("leads.js"), asScript("workspace.js"), asScript("brand.js"), asScript("plans.js"), asScript("creative.js"), asScript("team.js"), asScript("intake.js"), asScript("results.js"), asScript("learning.js"), asScript("integrations.js"), asScript("privacy.js"), asScript("aitest.js"), asScript("ai.js")].join("\n");
+const AI_JS = [asScript("recovery.js"), asScript("dashboard.js"), asScript("activity.js"), asScript("claims.js"), asScript("onboarding.js"), asScript("provenance.js"), asScript("goal.js"), asScript("leads.js"), asScript("workspace.js"), asScript("brand.js"), asScript("plans.js"), asScript("creative.js"), asScript("team.js"), asScript("intake.js"), asScript("charts.js"), asScript("results.js"), asScript("learning.js"), asScript("integrations.js"), asScript("privacy.js"), asScript("aitest.js"), asScript("ai.js")].join("\n");
 const APP_JS = asScript("app.js");
 const FAKE_KEYS = { OPENAI_API_KEY: "sk-FAKE-OPENAI-DOM-TEST", ANTHROPIC_API_KEY: "sk-ant-FAKE-DOM-TEST", META_ACCESS_TOKEN: "EAA-FAKE-META-DOM-TEST" };
 
@@ -509,5 +509,60 @@ describe("navigation drawer (narrow screens)", () => {
     toggle.click();
     scrim.click();
     expect([toggle.getAttribute("aria-expanded"), open(), scrim.hidden]).toEqual(["false", false, true]);
+  });
+});
+
+describe("settings tabs, header signals and results charts", () => {
+  it("settings: three tabs, one panel shown at a time, arrow keys move between tabs, and every view stays inside the right panel", async () => {
+    const ui = await openPage(server());
+    const tabs = ["tab-set-integrations", "tab-set-team", "tab-set-data"].map((id) => ui.$(id));
+    const panels = ["set-integrations", "set-team", "set-data"].map((id) => ui.$(id));
+    const state = () => [tabs.map((t) => t.getAttribute("aria-selected")), panels.map((p) => p.hidden)];
+    expect(state()).toEqual([["true", "false", "false"], [false, true, true]]);
+    expect(tabs.every((t, i) => t.getAttribute("aria-controls") === panels[i]!.id)).toBe(true);
+    expect(panels[0]!.contains(ui.$("integrations-view")) && panels[0]!.contains(ui.$("integ-registry")) && panels[0]!.contains(ui.$("ws-meta-view"))).toBe(true);
+    expect(panels[1]!.contains(ui.$("ws-people-view"))).toBe(true);
+    expect(panels[2]!.contains(ui.$("ws-usage-view")) && panels[2]!.contains(ui.$("pv-view")) && panels[2]!.contains(ui.$("dev-mode"))).toBe(true);
+
+    tabs[1]!.click();
+    expect(state()).toEqual([["false", "true", "false"], [true, false, true]]);
+    tabs[1]!.focus();
+    tabs[1]!.dispatchEvent(new ui.w.KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    expect(state()).toEqual([["false", "false", "true"], [true, true, false]]);
+    expect(ui.doc.activeElement).toBe(tabs[2]);
+    tabs[2]!.dispatchEvent(new ui.w.KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    expect(state()[1]).toEqual([false, true, true]); // wraps to the first
+  });
+
+  it("the Go to box opens a section's tab by name, and says so when nothing matches", async () => {
+    const ui = await openPage(server());
+    const jump = ui.$("jump") as HTMLInputElement;
+    expect(ui.doc.querySelectorAll("#jump-list option").length).toBeGreaterThanOrEqual(13 + 3);
+    jump.value = "settings: team";
+    jump.dispatchEvent(new ui.w.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    expect(ui.$("set-team").hidden).toBe(false);
+    expect(jump.value).toBe("");
+    jump.value = "zzz";
+    jump.dispatchEvent(new ui.w.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    expect(ui.$("notice").textContent).toMatch(/No section matches "zzz"/);
+  });
+
+  it("the bell and the sidebar badges show only what the dashboard reports, and stay hidden otherwise", async () => {
+    const ui = await openPage(server());
+    expect(ui.$("bell-count").hidden).toBe(true);
+    expect(ui.$("bell").getAttribute("aria-label")).toMatch(/nothing right now/);
+    await ui.createWorkspace();
+    await vi.waitFor(() => expect(ui.$("bell-count").hidden).toBe(false), { timeout: 3000 }); // a new workspace has things to do
+    expect(ui.$("bell").getAttribute("aria-label")).toBe(`Needs your attention: ${ui.$("bell-count").textContent} item${ui.$("bell-count").textContent === "1" ? "" : "s"}`);
+    expect([...ui.doc.querySelectorAll(".badge")].every((b) => (b as HTMLElement).hidden)).toBe(true); // nothing waiting, failed or simulated yet
+  });
+
+  it("results: with no leads each chart has a labelled empty slot and nothing is drawn", async () => {
+    const ui = await openPage(server());
+    await ui.createWorkspace();
+    ui.$("main-nav").querySelector<HTMLAnchorElement>('a[href="#s-results"]')!.click();
+    await vi.waitFor(() => expect(ui.$("rs-view").querySelectorAll(".chart-slot").length).toBe(2), { timeout: 3000 });
+    expect(ui.$("rs-view").querySelector("svg.chart")).toBeNull();
+    expect(ui.$("rs-view").textContent).toMatch(/will appear here once the first lead is recorded/);
   });
 });

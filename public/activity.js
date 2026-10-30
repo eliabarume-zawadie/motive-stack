@@ -85,7 +85,7 @@ export function initActivity({ $, h, pill, simBadge, state }) {
     lastKey = key;
     if (!items.length) { root.replaceChildren(h("p", { class: "hint" }, "Nothing has happened in this workspace yet. Saving your Business Brain, analyzing a website or creating a campaign will appear here.")); return; }
     if (!shown.length) { root.replaceChildren(h("p", { class: "hint" }, "No activity of that kind. Choose “Everything” to see all of it.")); return; }
-    root.replaceChildren(...shown.map((e) => h("div", { class: "log" },
+    root.replaceChildren(...shown.map((e) => h("div", { class: simulated(e) ? "log sim" : "log" },
       h("time", {}, e.at.replace("T", " ").slice(0, 19)),
       h("span", {}, h("strong", {}, acHuman(e.type)), " ", simulated(e) ? simBadge() : null, h("span", { class: "muted" }, ` by ${acActor(e.actor)}`),
         h("details", { class: "what" }, h("summary", {}, "Details"), h("pre", { class: "answer" }, JSON.stringify({ event: e.type, about: `${e.entityType} ${e.entityId}`, ...(e.detail && typeof e.detail === "object" ? e.detail : {}) }, null, 2).slice(0, 900)))))));
