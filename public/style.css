@@ -398,3 +398,12 @@ label > input, label > select, label > textarea { margin-top: 2px; }
 .btn-link { display: inline-flex; align-items: center; min-height: 40px; padding: 0 16px; border-radius: var(--radius-md); background: var(--accent); color: var(--accent-fg); font-weight: 600; text-decoration: none; }
 .btn-link:hover { background: var(--accent-hover); }
 @media (pointer: coarse), (max-width: 640px) { .btn-link { min-height: 44px; } .mode-card > input { width: 24px; height: 24px; } }
+
+/* Pages: one section of <main> is shown at a time, headed by a breadcrumb and a large title */
+main > section[hidden] { display: none; }
+main:focus, main > section > h2:focus { outline: none; }
+.crumbs { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; font-size: .85rem; color: var(--muted); }
+.crumbs [aria-current] { color: var(--accent-text); font-weight: 600; }
+main > section > h2 { font-size: clamp(1.6rem, 1.2rem + 1.2vw, 2.1rem); margin-bottom: 8px; }
+main > section > h2 + .hint, main > section > h2 + .lede { max-width: 70ch; }
+.banner-link { white-space: nowrap; }

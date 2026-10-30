@@ -3,6 +3,7 @@
 // Brain form. Everything shown is built with textContent (via h()), and website text is only ever displayed, never interpreted.
 
 import { isDemoText } from "./recovery.js";
+import { revealEl } from "./pages.js";
 
 const OB_GROUPS = [
   { basis: "found_on_site", title: "Found on your website", hint: "These come from your own pages. Each one shows the words we found and where." },
@@ -324,7 +325,7 @@ export function initOnboarding({ $, h, api, state, showNotice, once, pill, simBa
     $("brain-details").open = true;
     $("brain-version").textContent = msg;
     const el = $("brain-form");
-    if (typeof el.scrollIntoView === "function") el.scrollIntoView({ behavior: "smooth", block: "start" });
+    revealEl(el, "start");
   }
 
   const pendingClaimsNow = () => (state.analysis ? pendingClaims(state.analysis) : 0);

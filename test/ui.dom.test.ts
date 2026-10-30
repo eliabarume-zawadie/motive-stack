@@ -16,7 +16,7 @@ import { BRAIN } from "./fixtures.js";
 const HTML = readFileSync("public/index.html", "utf8");
 // The page is a set of ES modules; the test evaluates them as one script in jsdom, so `export` and `import` lines are removed (names are unique across the files).
 const asScript = (f: string) => readFileSync(`public/${f}`, "utf8").replace(/^export /gm, "").replace(/^import .*\n/gm, "");
-const AI_JS = [asScript("recovery.js"), asScript("dashboard.js"), asScript("activity.js"), asScript("claims.js"), asScript("onboarding.js"), asScript("provenance.js"), asScript("goal.js"), asScript("leads.js"), asScript("workspace.js"), asScript("brand.js"), asScript("plans.js"), asScript("creative.js"), asScript("team.js"), asScript("intake.js"), asScript("charts.js"), asScript("results.js"), asScript("learning.js"), asScript("integrations.js"), asScript("privacy.js"), asScript("aitest.js"), asScript("ai.js")].join("\n");
+const AI_JS = [asScript("pages.js"), asScript("recovery.js"), asScript("dashboard.js"), asScript("activity.js"), asScript("claims.js"), asScript("onboarding.js"), asScript("provenance.js"), asScript("goal.js"), asScript("leads.js"), asScript("workspace.js"), asScript("brand.js"), asScript("plans.js"), asScript("creative.js"), asScript("team.js"), asScript("intake.js"), asScript("charts.js"), asScript("results.js"), asScript("learning.js"), asScript("integrations.js"), asScript("privacy.js"), asScript("aitest.js"), asScript("ai.js")].join("\n");
 const APP_JS = asScript("app.js");
 const FAKE_KEYS = { OPENAI_API_KEY: "sk-FAKE-OPENAI-DOM-TEST", ANTHROPIC_API_KEY: "sk-ant-FAKE-DOM-TEST", META_ACCESS_TOKEN: "EAA-FAKE-META-DOM-TEST" };
 
@@ -515,6 +515,7 @@ describe("navigation drawer (narrow screens)", () => {
 describe("settings tabs, header signals and results charts", () => {
   it("settings: three tabs, one panel shown at a time, arrow keys move between tabs, and every view stays inside the right panel", async () => {
     const ui = await openPage(server());
+    ui.$("main-nav").querySelector<HTMLAnchorElement>('a[href="#s-settings"]')!.click(); // a page has to be open for its tabs to take focus
     const tabs = ["tab-set-integrations", "tab-set-team", "tab-set-data"].map((id) => ui.$(id));
     const panels = ["set-integrations", "set-team", "set-data"].map((id) => ui.$(id));
     const state = () => [tabs.map((t) => t.getAttribute("aria-selected")), panels.map((p) => p.hidden)];
@@ -582,6 +583,7 @@ describe("My business (Stitch layout)", () => {
     expect(ui.$("brain-facts").querySelector(".fact-src")!.textContent).toMatch(/You entered this|Demo data/);
     expect(ui.$("brain-facts").querySelector(".facts-bar")!.textContent).toMatch(/6 of 6 core facts filled in/);
 
+    ui.$("main-nav").querySelector<HTMLAnchorElement>('a[href="#s-brain"]')!.click();
     ui.$("brain-details").removeAttribute("open"); // saving opens the details; close them so Edit has something to do
     ui.$("brain-facts").querySelector<HTMLButtonElement>("article.fact .fact-foot button")!.click();
     expect(ui.$("brain-details").hasAttribute("open")).toBe(true);
@@ -612,5 +614,60 @@ describe("My business (Stitch layout)", () => {
     ui.$("claims-review").querySelector<HTMLButtonElement>("li.claim-row.needs button")!.click();
     expect(ui.$("claims-review").textContent).not.toMatch(/Needs your confirmation/);
     expect(ui.$("claims-review").classList.contains("has-flags")).toBe(false);
+  });
+});
+
+describe("pages: every side item is its own page", () => {
+  const pageIds = (ui: Awaited<ReturnType<typeof openPage>>) => [...ui.doc.querySelectorAll("main > section")].map((s) => s.id);
+  const shown = (ui: Awaited<ReturnType<typeof openPage>>) => [...ui.doc.querySelectorAll<HTMLElement>("main > section")].filter((s) => !s.hidden).map((s) => s.id);
+  const link = (ui: Awaited<ReturnType<typeof openPage>>, id: string) => ui.$("main-nav").querySelector<HTMLAnchorElement>(`a[href="#${id}"]`)!;
+
+  it("opens on Home with exactly one page shown, and every side link opens only its own page, marks itself current and sets the title", async () => {
+    const ui = await openPage(server());
+    expect(shown(ui)).toEqual(["s-dashboard"]);
+    expect(ui.doc.title).toBe("Home - MotiveStack");
+    for (const id of pageIds(ui)) {
+      link(ui, id).click();
+      expect(shown(ui)).toEqual([id]);
+      const current = [...ui.$("main-nav").querySelectorAll("a")].filter((a) => a.getAttribute("aria-current") === "true");
+      expect(current.map((a) => a.getAttribute("href"))).toEqual([`#${id}`]);
+      if (id !== "s-dashboard") expect(ui.doc.activeElement?.tagName).toBe("H2"); // focus moves to the new page's title (Home is already open at the start)
+    }
+    expect(ui.doc.title).toBe("Settings - MotiveStack");
+  });
+
+  it("each page has a breadcrumb naming its group and page", async () => {
+    const ui = await openPage(server());
+    const crumb = (id: string) => ui.$(id).querySelector(".crumbs")!.textContent;
+    expect(crumb("s-brain")).toBe("Plan›My business");
+    expect(crumb("s-launch")).toBe("Create›Review & approve");
+    expect(crumb("s-ops")).toBe("System›Problems & retries");
+  });
+
+  it("an address with a page in it (or the back button) shows that page; an unknown one leaves the current page alone", async () => {
+    const ui = await openPage(server());
+    ui.w.location.hash = "#s-results";
+    await vi.waitFor(() => expect(shown(ui)).toEqual(["s-results"]), { timeout: 2000 });
+    ui.w.location.hash = "#main";
+    await new Promise((r) => setTimeout(r, 50));
+    expect(shown(ui)).toEqual(["s-results"]);
+  });
+
+  it("buttons that point at another page (Home's list, the Go to box) open that page rather than scrolling a hidden one", async () => {
+    const ui = await openPage(server());
+    const jump = ui.$("jump") as HTMLInputElement;
+    jump.value = "leads";
+    jump.dispatchEvent(new ui.w.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    expect(shown(ui)).toEqual(["s-leads"]);
+    jump.value = "settings: data";
+    jump.dispatchEvent(new ui.w.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    expect(shown(ui)).toEqual(["s-settings"]);
+    expect(ui.$("set-data").hidden).toBe(false);
+  });
+
+  it("the skip link goes to the main area, not to a page", async () => {
+    const ui = await openPage(server());
+    expect(ui.doc.querySelector(".skip")!.getAttribute("href")).toBe("#main");
+    expect(ui.doc.getElementById("main")).not.toBeNull();
   });
 });

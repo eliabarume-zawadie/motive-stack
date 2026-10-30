@@ -1,6 +1,8 @@
 // Dashboard, campaign list, operations and integrations views. Everything shown comes from GET /dashboard (and the config the server
 // already publishes); nothing is computed from guesses. Uses textContent only (via h()): no HTML is ever built from data.
 
+import { revealEl } from "./pages.js";
+
 const STATUS_LABEL = { proposed: "waiting for approval", approved: "approved, not run yet", executing: "running", executed: "done", rejected: "rejected", failed: "failed", stale: "out of date", needs_review: "needs review" };
 const STATUS_CLASS = { executed: "ok", approved: "info", proposed: "warn", rejected: "bad", failed: "bad", stale: "warn", needs_review: "bad", executing: "info" };
 
@@ -20,7 +22,7 @@ const REFUSED = {
 const JOB_TYPE = { execute_proposal: "Create the approved draft", process_lead: "Sync a lead to the CRM" };
 
 export function initDashboard({ $, h, pill, simBadge, usd, state, openCampaign, goProposal, can = () => true, retryJob = () => {} }) {
-  const go = (el) => { if (el && typeof el.scrollIntoView === "function") el.scrollIntoView({ behavior: "smooth" }); };
+  const go = (el) => revealEl(el, "start");
   const ago = (iso) => {
     const t = Date.parse(iso);
     if (!t) return "unknown";

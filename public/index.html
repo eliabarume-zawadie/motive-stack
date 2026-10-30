@@ -25,7 +25,7 @@
   <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0"/></symbol>
   <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></symbol>
 </svg>
-<a class="skip" href="#s-dashboard">Skip to content</a>
+<a class="skip" href="#main">Skip to content</a>
 <div id="chrome" class="chrome">
   <header class="top">
     <button type="button" id="nav-toggle" class="nav-toggle secondary" aria-controls="main-nav" aria-expanded="false" aria-label="Menu"><svg class="ico" aria-hidden="true"><use href="#i-menu"/></svg></button>
@@ -83,7 +83,7 @@
   <button type="button" id="token-dismiss" class="secondary">I have saved it, dismiss</button>
 </div>
 
-<main>
+<main id="main" tabindex="-1">
   <section id="s-dashboard">
     <h2>Home</h2>
     <div id="path-view"></div>
@@ -280,7 +280,7 @@
   <section id="s-campaigns">
     <h2>Campaigns</h2>
     <p class="flag-note role-note" data-for="campaigns.generate" hidden></p>
-    <h3 class="first">Step 3. Choose a marketing goal</h3>
+    <h3 class="first">Choose a marketing goal</h3>
     <fieldset class="goal">
       <legend>What do you want from your marketing?</legend>
       <label class="chk"><input type="radio" name="goal" value="lead_generation" checked> Get more leads (people asking about your services)</label>
@@ -290,7 +290,7 @@
       <label>How many days do you expect to run it? (optional) <input id="goal-days" type="number" min="1" max="90" step="1" placeholder="e.g. 14"></label>
       <p class="hint">Your ad platform objective is lead generation in every case: other goals, such as phone calls, store visits or online sales, are not available in this version. This goal is saved with the draft. In mock mode the draft text does not change with it, and no result is predicted.</p>
     </fieldset>
-    <p id="gen-hint" class="flag-note" hidden>Step 2 comes first: your Business Brain is not saved yet. Review it under My business and press Save Business Brain, then come back here.</p>
+    <p id="gen-hint" class="flag-note" hidden>Your Business Brain is not saved yet. Review it under My business and press Save Business Brain, then come back here.</p>
     <form id="gen-form" class="stack">
       <div><button type="submit" data-needs="campaigns.generate" data-busy-label="Creating...">Create my campaign draft</button></div>
       <details class="what"><summary>Advanced: choose the AI model</summary><label>Model <select id="gen-model"></select></label></details>
@@ -309,7 +309,7 @@
     </form>
     <p id="plan-error" class="flag-note" role="alert"></p>
     <ul id="plan-list" class="plain"></ul>
-    <h3>Step 4. Review my proposed campaign</h3>
+    <h3>Review my proposed campaign</h3>
     <div class="list-filter"><label>Search <input id="camp-search" type="search" placeholder="Name or number" maxlength="60"></label> <label>Show <select id="camp-status"><option value="">All</option><option value="draft">Drafts</option><option value="proposed">Waiting for approval</option><option value="approved">Approved</option><option value="launched">Run (simulated)</option></select></label></div>
     <div id="campaign-list"></div>
     <h3>Campaign details</h3>
@@ -367,7 +367,7 @@
   <section id="s-launch">
     <h2>Review &amp; approve</h2>
     <p class="flag-note role-note" data-for="proposals.decide" hidden></p>
-    <h3 class="first">Step 5. Approve and track</h3>
+    <h3 class="first">Approve and track</h3>
     <p class="hint">For the campaign selected above. Nothing is sent to an ad platform until someone approves.</p>
     <div id="proposal-view"></div>
   </section>

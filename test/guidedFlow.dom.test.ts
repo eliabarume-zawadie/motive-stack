@@ -22,7 +22,7 @@ import { decideProposal, requestExecution } from "../src/app/proposals.js";
 
 const HTML = readFileSync("public/index.html", "utf8");
 const asScript = (f: string) => readFileSync(`public/${f}`, "utf8").replace(/^export /gm, "").replace(/^import .*\n/gm, "");
-const SCRIPT = [asScript("recovery.js"), asScript("dashboard.js"), asScript("activity.js"), asScript("claims.js"), asScript("onboarding.js"), asScript("provenance.js"), asScript("goal.js"), asScript("leads.js"), asScript("workspace.js"), asScript("brand.js"), asScript("plans.js"), asScript("creative.js"), asScript("team.js"), asScript("intake.js"), asScript("charts.js"), asScript("results.js"), asScript("learning.js"), asScript("integrations.js"), asScript("privacy.js"), asScript("aitest.js"), asScript("ai.js"), asScript("app.js")].join("\n");
+const SCRIPT = [asScript("pages.js"), asScript("recovery.js"), asScript("dashboard.js"), asScript("activity.js"), asScript("claims.js"), asScript("onboarding.js"), asScript("provenance.js"), asScript("goal.js"), asScript("leads.js"), asScript("workspace.js"), asScript("brand.js"), asScript("plans.js"), asScript("creative.js"), asScript("team.js"), asScript("intake.js"), asScript("charts.js"), asScript("results.js"), asScript("learning.js"), asScript("integrations.js"), asScript("privacy.js"), asScript("aitest.js"), asScript("ai.js"), asScript("app.js")].join("\n");
 
 const cleanup: Array<() => void> = [];
 afterEach(() => { while (cleanup.length) cleanup.pop()?.(); });

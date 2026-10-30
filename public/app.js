@@ -17,6 +17,7 @@ import { initIntegrations } from "./integrations.js";
 import { initPrivacy } from "./privacy.js";
 import { initOnboarding } from "./onboarding.js";
 import { initProvenance } from "./provenance.js";
+import { initPages, revealEl } from "./pages.js";
 import { DEMO_BUSINESS, formatRecoveryCode, parseRecoveryCode } from "./recovery.js";
 
 // MotiveStack local UI. Talks only to this server's API. Uses textContent everywhere (no innerHTML),
@@ -438,7 +439,7 @@ async function refresh({ fillForms = false } = {}) {
 }
 
 // Scrolling is a convenience: where the browser cannot do it, the action still completes.
-function scrollToEl(el, block) { if (typeof el.scrollIntoView === "function") el.scrollIntoView({ behavior: "smooth", block }); }
+function scrollToEl(el, block) { revealEl(el, block); } // switches to the page that holds it, then scrolls
 
 async function selectWorkspace(id) {
   state.current = id || null; saveSessions(); state.campaignId = null; state.campaign = null; state.dash = null; state.workspace = null; state.brainVersion = 0; state.role = null; state.permissions = null; state.loadError = null; state.loading = !!session();
@@ -507,24 +508,6 @@ const activityUi = initActivity({ $, h, pill, simBadge, state });
 const onboardUi = initOnboarding({ $, h, api, state, showNotice, once, pill, simBadge, can, onFormChanged: () => { claimsUi.render(); updateBrainMissing(); renderDashboardViews(); refreshDashIfAnalysisChanged(); } });
 const aiTestUi = initAiTest({ $, h, api, once, pill, simBadge });
 $("dev-mode").addEventListener("toggle", () => { if ($("dev-mode").open && session()) aiTestUi.load(); });
-
-// ---- navigation: highlights the section being read (links are plain in-page anchors, so they work without this) ----
-function initNav() {
-  const links = [...document.querySelectorAll("#main-nav a")];
-  const ids = links.map((a) => a.getAttribute("href").slice(1));
-  const mark = (id) => links.forEach((a) => a.setAttribute("aria-current", a.getAttribute("href") === `#${id}` ? "true" : "false"));
-  mark(ids[0]);
-  if (!("IntersectionObserver" in window)) return;
-  const inBand = new Set();
-  const docOrder = [...document.querySelectorAll("main > section")].map((el) => el.id).filter((id) => ids.includes(id));
-  const io = new IntersectionObserver((entries) => {
-    for (const en of entries) (en.isIntersecting ? inBand.add(en.target.id) : inBand.delete(en.target.id));
-    const current = docOrder.filter((id) => inBand.has(id)).at(-1); // the lowest section in the band, in page order (the list's order can differ from the page's)
-    if (current) mark(current);
-  }, { rootMargin: "-130px 0px -65% 0px", threshold: 0 });
-  for (const id of ids) { const el = document.getElementById(id); if (el) io.observe(el); }
-  for (const a of links) a.addEventListener("click", () => mark(a.getAttribute("href").slice(1)));
-}
 
 // ---- narrow screens: the section list is a drawer. Wide screens show it as a rail and hide the button, so none of this is reachable there. ----
 function initDrawer() {
@@ -830,7 +813,7 @@ $("lead-form").addEventListener("submit", async (e) => {
 
 // ---- boot ----
 async function boot() {
-  initNav();
+  initPages();
   initDrawer();
   initTabs();
   initJump();

@@ -2,6 +2,8 @@
 // Everything shown comes from the server's records. Owner and reviewer are coordination only: they grant nothing. Dates are plain calendar dates.
 // Nothing here is sent outside the app (no e-mail, SMS or push) and nothing is scheduled on any ad platform. Built with textContent only (via h()).
 
+import { revealEl } from "./pages.js";
+
 const TEAM_KINDS = { draft: "Finish the draft", review: "Review a creative version", approval: "Approve or reject a proposal", run: "Run an approved proposal (simulated)", schedule_proposal: "Proposed date (not a platform schedule)", other: "Other" };
 const TEAM_GO = { review: "s-launch", creative: "s-creative", brand: "s-brand", ops: "s-ops", brain: "s-brain", campaigns: "s-campaigns" };
 
@@ -23,7 +25,7 @@ export function initTeam({ $, h, api, state, can, once, pill, showNotice, sessio
     const id = TEAM_GO[go];
     if (go === "creative" && item.campaignId && $("cr-campaign")) { $("cr-campaign").value = item.campaignId; $("cr-campaign").dispatchEvent(new Event("change", { bubbles: true })); }
     const el = id ? $(id) : null;
-    if (el && typeof el.scrollIntoView === "function") el.scrollIntoView({ behavior: "smooth" });
+    revealEl(el, "start");
   }
 
   /* ---------------------------------------------------------------- tasks */
